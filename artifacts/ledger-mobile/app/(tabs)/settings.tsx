@@ -10,13 +10,20 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useAuth, useUser } from "@clerk/expo";
-import { useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
+import { Switch } from "react-native";
+import { useCallback, useEffect, useState } from "react";
 
 import { useCurrency } from "@/context/CurrencyContext";
 import { useColors } from "@/hooks/useColors";
+import { getAlertsEnabled, setAlertsEnabled } from "@/lib/alerts";
+import {
+  listAccounts,
+  removeAccount,
+  type StoredBinanceAccount,
+} from "@/lib/binanceKeys";
 import { fmtAge } from "@/utils/format";
 import { LIQ_LTV, TARGET_LTV, WARNING_LTV } from "@/utils/risk";
-import { useListAccounts } from "@workspace/api-client-react";
 
 function Section({
   title,
@@ -105,8 +112,50 @@ export default function SettingsScreen() {
   const { user } = useUser();
   const router = useRouter();
   const email = user?.primaryEmailAddress?.emailAddress ?? null;
-  const accountsQ = useListAccounts();
-  const accounts = accountsQ.data?.accounts ?? [];
+  const [accounts, setAccounts] = useState<StoredBinanceAccount[]>([]);
+  const [alerts, setAlerts] = useState(false);
+
+  useEffect(() => {
+    getAlertsEnabled().then(setAlerts);
+  }, []);
+
+  const onToggleAlerts = async (next: boolean) => {
+    const ok = await setAlertsEnabled(next);
+    if (!ok && next) {
+      Alert.alert(
+        "Notifications blocked",
+        "Enable notifications for Ledger in iOS Settings to receive LTV alerts.",
+      );
+      return;
+    }
+    setAlerts(next);
+  };
+
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+      listAccounts().then((a) => {
+        if (active) setAccounts(a);
+      });
+      return () => {
+        active = false;
+      };
+    }, []),
+  );
+
+  const onRemove = (id: string, name: string) => {
+    Alert.alert(`Remove "${name}"?`, "The key will be deleted from this device.", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Remove",
+        style: "destructive",
+        onPress: async () => {
+          await removeAccount(id);
+          setAccounts(await listAccounts());
+        },
+      },
+    ]);
+  };
 
   const onSignOut = () => {
     Alert.alert("Sign out?", "You'll need to log in again.", [
@@ -135,26 +184,30 @@ export default function SettingsScreen() {
       <Text style={[styles.title, { color: colors.foreground }]}>Settings</Text>
 
       <Section title="Accounts">
-        {accounts.map((a, i) => (
+        {accounts.length === 0 ? (
           <Row
-            key={a.id}
-            label={a.name}
-            value={`${a.kind} · added ${fmtAge(a.connectedAt)}`}
-            onPress={() => {}}
+            label="No accounts connected"
+            value="Tap below to add"
           />
-        ))}
+        ) : (
+          accounts.map((a, i) => (
+            <View key={a.id}>
+              {i > 0 ? (
+                <View style={[styles.divider, { backgroundColor: colors.border }]} />
+              ) : null}
+              <Row
+                label={a.name}
+                value={`${a.apiKeyMasked} · added ${fmtAge(a.createdAt)}`}
+                onPress={() => onRemove(a.id, a.name)}
+              />
+            </View>
+          ))
+        )}
         <View style={[styles.divider, { backgroundColor: colors.border }]} />
         <Row
-          label="Add account"
-          right={
-            <Feather name="plus" size={18} color={colors.primary} />
-          }
-          onPress={() =>
-            Alert.alert(
-              "Add account",
-              "API key import will be available in a later build.",
-            )
-          }
+          label="Add Binance account"
+          right={<Feather name="plus" size={18} color={colors.primary} />}
+          onPress={() => router.push("/add-account")}
         />
       </Section>
 
@@ -177,6 +230,20 @@ export default function SettingsScreen() {
             ) : null
           }
           onPress={() => set("ZAR")}
+        />
+      </Section>
+
+      <Section title="Alerts">
+        <Row
+          label="Push when LTV crosses warning"
+          right={
+            <Switch
+              value={alerts}
+              onValueChange={onToggleAlerts}
+              trackColor={{ true: colors.primary, false: colors.border }}
+              thumbColor={colors.background}
+            />
+          }
         />
       </Section>
 

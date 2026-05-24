@@ -86,6 +86,13 @@ export default function RootLayout() {
                         name="loan/[id]"
                         options={{ title: "Loan", presentation: "card" }}
                       />
+                      <Stack.Screen
+                        name="add-account"
+                        options={{
+                          presentation: "modal",
+                          headerShown: false,
+                        }}
+                      />
                     </Stack>
                   </CurrencyProvider>
                 </KeyboardProvider>

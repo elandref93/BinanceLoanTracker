@@ -1,8 +1,10 @@
 import { Feather } from "@expo/vector-icons";
+import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  Platform,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -12,6 +14,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { checkAndNotifyLoans } from "@/lib/alerts";
 import { AccountChip } from "@/components/AccountChip";
 import { ErrorView } from "@/components/ErrorView";
 import { LoanRow } from "@/components/LoanRow";
@@ -27,6 +30,12 @@ import {
   statusFromLtv,
   statusLabel,
 } from "@/utils/risk";
+
+function tap() {
+  if (Platform.OS !== "web") {
+    void Haptics.selectionAsync();
+  }
+}
 import {
   useListAccounts,
   useListLoans,
@@ -75,6 +84,11 @@ export default function DashboardScreen() {
       }, 0),
     [loans],
   );
+
+  useEffect(() => {
+    if (all.length === 0) return;
+    void checkAndNotifyLoans(all);
+  }, [all]);
 
   const refreshing = accountsQ.isFetching || loansQ.isFetching;
   const onRefresh = () => {
@@ -128,7 +142,10 @@ export default function DashboardScreen() {
           </Text>
         </View>
         <Pressable
-          onPress={toggle}
+          onPress={() => {
+            tap();
+            toggle();
+          }}
           style={({ pressed }) => [
             styles.fxBtn,
             {
@@ -155,7 +172,10 @@ export default function DashboardScreen() {
           label="All"
           hint={fmtPct(aggLtv)}
           selected={filter === null}
-          onPress={() => setFilter(null)}
+          onPress={() => {
+            tap();
+            setFilter(null);
+          }}
         />
         {accounts.map((a) => (
           <AccountChip
@@ -163,7 +183,10 @@ export default function DashboardScreen() {
             label={a.name}
             hint={`LTV ${fmtPct(accountLtv.get(a.id) ?? 0)}`}
             selected={filter === a.id}
-            onPress={() => setFilter(a.id)}
+            onPress={() => {
+              tap();
+              setFilter(a.id);
+            }}
           />
         ))}
       </ScrollView>

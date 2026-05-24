@@ -7,6 +7,10 @@ export type ErrorType<T = unknown> = ApiError<T>;
 export type BodyType<T> = T;
 
 export type AuthTokenGetter = () => Promise<string | null> | string | null;
+export type ExtraHeadersGetter = () =>
+  | Promise<Record<string, string> | null>
+  | Record<string, string>
+  | null;
 
 const NO_BODY_STATUS = new Set([204, 205, 304]);
 const DEFAULT_JSON_ACCEPT = "application/json, application/problem+json";
@@ -17,6 +21,7 @@ const DEFAULT_JSON_ACCEPT = "application/json, application/problem+json";
 
 let _baseUrl: string | null = null;
 let _authTokenGetter: AuthTokenGetter | null = null;
+let _extraHeadersGetter: ExtraHeadersGetter | null = null;
 
 /**
  * Set a base URL that is prepended to every relative request URL
@@ -42,6 +47,15 @@ export function setBaseUrl(url: string | null): void {
  */
 export function setAuthTokenGetter(getter: AuthTokenGetter | null): void {
   _authTokenGetter = getter;
+}
+
+/**
+ * Register a getter that supplies additional request headers (e.g. credentials
+ * for a downstream third-party API the server proxies to). Called once per
+ * request; headers returned are merged into the outgoing request.
+ */
+export function setExtraHeadersGetter(getter: ExtraHeadersGetter | null): void {
+  _extraHeadersGetter = getter;
 }
 
 function isRequest(input: RequestInfo | URL): input is Request {
@@ -355,6 +369,15 @@ export async function customFetch<T = unknown>(
     const token = await _authTokenGetter();
     if (token) {
       headers.set("authorization", `Bearer ${token}`);
+    }
+  }
+
+  if (_extraHeadersGetter) {
+    const extras = await _extraHeadersGetter();
+    if (extras) {
+      for (const [k, v] of Object.entries(extras)) {
+        if (!headers.has(k.toLowerCase())) headers.set(k, v);
+      }
     }
   }
 

@@ -1,4 +1,4 @@
-import { Router, type IRouter } from "express";
+import { Router, type IRouter, type Request } from "express";
 import {
   GetPricesQueryParams,
   ListInterestQueryParams,
@@ -8,15 +8,94 @@ import {
   ListInterestResponse,
   ListLoansResponse,
 } from "@workspace/api-zod";
-import { createMockBinanceClient } from "../lib/binance";
+import {
+  BinanceApiError,
+  type BinanceClient,
+  createMockBinanceClient,
+  createMultiplexBinanceClient,
+  createRealBinanceClient,
+} from "../lib/binance";
 import { logger } from "../lib/logger";
 
-const router: IRouter = Router();
-const client = createMockBinanceClient();
+// Hard cap on the credentials header to prevent CPU/OOM DoS via a giant
+// base64 blob — the legitimate payload for 5 accounts is ~1.5 KB.
+const MAX_ACCOUNTS_HEADER_BYTES = 16 * 1024;
+const MAX_ACCOUNTS = 10;
 
-router.get("/accounts", async (_req, res, next) => {
+const router: IRouter = Router();
+const mockClient = createMockBinanceClient();
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Per-request client selection
+//
+// The device sends `X-Binance-Accounts` containing a base64-encoded JSON array
+// of `{ id, name, apiKey, apiSecret }`. The server builds one real client per
+// entry and a multiplex wrapper so the route handlers stay account-agnostic.
+// Secrets live only for the lifetime of the request — never logged, never
+// persisted.
+//
+// If the header is missing or unparseable, we fall back to the mock client so
+// development, previews, and unsigned smoke tests keep working.
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface DeviceAccount {
+  id: string;
+  name: string;
+  apiKey: string;
+  apiSecret: string;
+}
+
+function parseAccountsHeader(req: Request): DeviceAccount[] | null {
+  const header = req.header("x-binance-accounts");
+  if (!header) return null;
+  if (header.length > MAX_ACCOUNTS_HEADER_BYTES) {
+    logger.warn(
+      { len: header.length },
+      "X-Binance-Accounts header exceeds size cap",
+    );
+    return null;
+  }
   try {
-    const accounts = await client.listAccounts();
+    const json = Buffer.from(header, "base64").toString("utf8");
+    if (json.length > MAX_ACCOUNTS_HEADER_BYTES) return null;
+    const parsed = JSON.parse(json);
+    if (!Array.isArray(parsed) || parsed.length === 0) return null;
+    if (parsed.length > MAX_ACCOUNTS) return null;
+    const out: DeviceAccount[] = [];
+    for (const r of parsed) {
+      if (!r || typeof r !== "object") continue;
+      const id = typeof r.id === "string" ? r.id : null;
+      const name = typeof r.name === "string" ? r.name : null;
+      const apiKey = typeof r.apiKey === "string" ? r.apiKey : null;
+      const apiSecret = typeof r.apiSecret === "string" ? r.apiSecret : null;
+      if (id && name && apiKey && apiSecret) {
+        out.push({ id, name, apiKey, apiSecret });
+      }
+    }
+    return out.length > 0 ? out : null;
+  } catch (err) {
+    logger.warn({ err }, "X-Binance-Accounts header parse failed");
+    return null;
+  }
+}
+
+function clientFor(req: Request): BinanceClient {
+  const accounts = parseAccountsHeader(req);
+  if (!accounts) return mockClient;
+  return createMultiplexBinanceClient(
+    accounts.map((a) => ({
+      account: { id: a.id, name: a.name },
+      client: createRealBinanceClient(
+        { id: a.id, name: a.name },
+        { apiKey: a.apiKey, apiSecret: a.apiSecret },
+      ),
+    })),
+  );
+}
+
+router.get("/accounts", async (req, res, next) => {
+  try {
+    const accounts = await clientFor(req).listAccounts();
     res.json(ListAccountsResponse.parse({ accounts }));
   } catch (err) {
     next(err);
@@ -26,7 +105,7 @@ router.get("/accounts", async (_req, res, next) => {
 router.get("/loans", async (req, res, next) => {
   try {
     const { accountId } = ListLoansQueryParams.parse(req.query);
-    const loans = await client.listLoans(accountId);
+    const loans = await clientFor(req).listLoans(accountId);
     const totalDebtUsd = loans.reduce((s, l) => s + l.debtUsd, 0);
     const totalCollateralUsd = loans.reduce(
       (s, l) => s + l.collateral.valueUsd,
@@ -55,7 +134,7 @@ router.get("/prices", async (req, res, next) => {
       .split(",")
       .map((s) => s.trim().toUpperCase())
       .filter(Boolean);
-    const result = await client.getPrices(symbols);
+    const result = await clientFor(req).getPrices(symbols);
     res.json(GetPricesResponse.parse(result));
   } catch (err) {
     next(err);
@@ -65,8 +144,11 @@ router.get("/prices", async (req, res, next) => {
 router.get("/interest", async (req, res, next) => {
   try {
     const { accountId, from, to } = ListInterestQueryParams.parse(req.query);
-    const rows = await client.listInterest({ accountId, from, to });
-    const loans = await client.listLoans(accountId);
+    const client = clientFor(req);
+    const [rows, loans] = await Promise.all([
+      client.listInterest({ accountId, from, to }),
+      client.listLoans(accountId),
+    ]);
 
     const totalUsd = rows.reduce((s, r) => s + r.amountUsd, 0);
     const totalDebt = loans.reduce((s, l) => s + l.debtUsd, 0);
@@ -173,6 +255,15 @@ router.use(
     _next: import("express").NextFunction,
   ) => {
     logger.error({ err }, "binance route error");
+    // For Binance upstream errors, surface only the safe parsed code/msg —
+    // never the raw error message, which could include credential-derived
+    // fragments from a echoed request URL.
+    if (err instanceof BinanceApiError) {
+      res.status(502).json({
+        error: `Binance upstream error (${err.code ?? err.status})`,
+      });
+      return;
+    }
     const message = err instanceof Error ? err.message : "Internal error";
     res.status(400).json({ error: message });
   },

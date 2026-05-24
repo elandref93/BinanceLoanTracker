@@ -34,6 +34,11 @@ function maskKey(key: string): string {
   return `${key.slice(0, 4)}…${key.slice(-4)}`;
 }
 
+/** All accounts including secrets — only call from local-trust paths (auth headers, etc.). */
+export async function listAccountsWithSecrets(): Promise<BinanceAccount[]> {
+  return readAll();
+}
+
 export async function listAccounts(): Promise<StoredBinanceAccount[]> {
   const accounts = await readAll();
   return accounts.map(({ apiSecret: _s, apiKey, ...rest }) => ({

@@ -229,11 +229,81 @@ export const ACCOUNTS: Account[] = [
 ];
 
 export const TARGET_LTV = 65;
+export const WARNING_LTV = 72;
 export const LIQUIDATION_LTV = 78;
+
+// Live collateral prices (mocked) — used for "distance to liquidation" calculations.
+// Derived from the LOAN_DATA collateralUsd to stay consistent.
+export const LIVE_PRICES: Record<string, number> = {
+  BTC: 77500,
+  ETH: 2470,
+  BNB: 540,
+};
 
 // Per-loan "headroom": how much more USDT can be borrowed before hitting target LTV.
 export function headroom(loan: Loan, targetLtv = TARGET_LTV): number {
   return Math.max(0, Math.round((targetLtv / 100) * loan.collateralUsd - loan.borrowed));
+}
+
+// At what collateral price does this loan reach `ltv` percent?
+// LTV = borrowed / (units * price)  →  price = borrowed / (units * ltv/100)
+export function priceAtLtv(loan: Loan, ltv: number): number {
+  return loan.borrowed / (loan.collateral * (ltv / 100));
+}
+
+// % change from current price to the price that triggers `ltv`.
+// Returns a negative number for collateral that needs to FALL (the usual case).
+export function priceDropPctTo(loan: Loan, ltv: number): number {
+  const current = LIVE_PRICES[loan.collateralAsset] ?? loan.collateralUsd / loan.collateral;
+  const trigger = priceAtLtv(loan, ltv);
+  return ((trigger - current) / current) * 100;
+}
+
+// Synthetic per-loan LTV history (most recent value = current LTV).
+// `days` points, gently drifting toward current — used in sparklines.
+export function ltvHistory(loan: Loan, days = 7): number[] {
+  // Deterministic pseudo-noise from loan id
+  const seed = loan.id.split("").reduce((a, c) => a + c.charCodeAt(0), 0);
+  const rand = (i: number) => {
+    const x = Math.sin(seed * 9.31 + i * 12.7) * 10000;
+    return x - Math.floor(x);
+  };
+  const out: number[] = [];
+  for (let i = 0; i < days; i++) {
+    const t = i / (days - 1);
+    const base = loan.ltv - (1 - t) * 3.5;
+    out.push(Number((base + (rand(i) - 0.5) * 1.8).toFixed(1)));
+  }
+  out[out.length - 1] = loan.ltv;
+  return out;
+}
+
+// Aggregate LTV history over a set of loans (weighted by borrowed amount).
+export function aggLtvHistory(loans: Loan[], days = 7): number[] {
+  const series = loans.map(l => ltvHistory(l, days));
+  const totalBorrowed = loans.reduce((s, l) => s + l.borrowed, 0);
+  return Array.from({ length: days }, (_, i) => {
+    const numer = loans.reduce((s, l, idx) => {
+      // Implied collateral at that day = borrowed / (ltv/100)
+      const ltv = series[idx][i];
+      return s + l.borrowed / (ltv / 100);
+    }, 0);
+    return Number(((totalBorrowed / numer) * 100).toFixed(1));
+  });
+}
+
+// "Next action" — the most useful single nudge across all loans.
+// If any loan is over target → top-up that one. Otherwise → the loan with biggest headroom.
+export function nextAction(loans: Loan[]): { kind: "topup" | "borrow" | "none"; loan: Loan | null; usd: number; native?: number } {
+  const overTarget = loans.filter(l => l.ltv > TARGET_LTV).sort((a, b) => b.ltv - a.ltv);
+  if (overTarget.length > 0) {
+    const loan = overTarget[0];
+    const t = topUpCollateral(loan);
+    return { kind: "topup", loan, usd: t.usd, native: t.native };
+  }
+  const byRoom = loans.map(l => ({ l, h: headroom(l) })).sort((a, b) => b.h - a.h);
+  if (byRoom.length === 0) return { kind: "none", loan: null, usd: 0 };
+  return { kind: "borrow", loan: byRoom[0].l, usd: byRoom[0].h };
 }
 
 // Per-loan top-up needed (in collateral asset native units) to bring LTV back to target.

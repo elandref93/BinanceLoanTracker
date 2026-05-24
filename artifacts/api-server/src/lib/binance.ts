@@ -30,6 +30,12 @@ export interface BinanceLoan {
   marginCallLtv: number;
   liqLtv: number;
   hourlyInterestRate: number;
+  apr: number;
+}
+
+export interface BinanceRatePoint {
+  ts: string;
+  apr: number;
 }
 
 export interface BinanceInterestRow {
@@ -55,6 +61,11 @@ export interface BinanceClient {
     from?: Date;
     to?: Date;
   }): Promise<BinanceInterestRow[]>;
+  getRateHistory(loanId: string, days: number): Promise<BinanceRatePoint[]>;
+}
+
+function hourlyToApr(hourly: number): number {
+  return hourly * 24 * 365 * 100;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -99,6 +110,7 @@ const SEED_LOANS: BinanceLoan[] = [
     marginCallLtv: 72,
     liqLtv: 78,
     hourlyInterestRate: 0.0000125,
+    apr: hourlyToApr(0.0000125),
   },
   {
     id: "loan_alt_eth",
@@ -111,6 +123,7 @@ const SEED_LOANS: BinanceLoan[] = [
     marginCallLtv: 72,
     liqLtv: 78,
     hourlyInterestRate: 0.0000142,
+    apr: hourlyToApr(0.0000142),
   },
   {
     id: "loan_main_bnb",
@@ -123,8 +136,30 @@ const SEED_LOANS: BinanceLoan[] = [
     marginCallLtv: 72,
     liqLtv: 78,
     hourlyInterestRate: 0.0000133,
+    apr: hourlyToApr(0.0000133),
   },
 ];
+
+/**
+ * Deterministic-looking APR history with mild sinusoidal variance so the
+ * sparkline isn't flat. Wave amplitude is ~12% of the nominal APR.
+ */
+function generateRateHistory(loan: BinanceLoan, days: number): BinanceRatePoint[] {
+  const out: BinanceRatePoint[] = [];
+  // Snap to UTC midnight so the curve is stable within a day (no sparkline flicker).
+  const startOfToday = Math.floor(Date.now() / 86_400_000) * 86_400_000;
+  const seed = loan.id
+    .split("")
+    .reduce((s, c) => s + c.charCodeAt(0), 0);
+  for (let d = days - 1; d >= 0; d--) {
+    const ts = new Date(startOfToday - d * 86_400_000);
+    const phase = ((seed + d) * 0.7) % (Math.PI * 2);
+    const noise = Math.sin(phase) * 0.12 + Math.sin(phase * 2.3) * 0.04;
+    const apr = round(loan.apr * (1 + noise), 4);
+    out.push({ ts: ts.toISOString(), apr });
+  }
+  return out;
+}
 
 function generateInterestRows(): BinanceInterestRow[] {
   const rows: BinanceInterestRow[] = [];
@@ -176,6 +211,11 @@ export function createMockBinanceClient(): BinanceClient {
       if (from) rows = rows.filter((r) => new Date(r.ts) >= from);
       if (to) rows = rows.filter((r) => new Date(r.ts) <= to);
       return rows;
+    },
+    async getRateHistory(loanId, days) {
+      const loan = SEED_LOANS.find((l) => l.id === loanId);
+      if (!loan) return [];
+      return generateRateHistory(loan, days);
     },
   };
 }

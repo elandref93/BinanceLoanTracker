@@ -1,6 +1,9 @@
-import { Stack, useLocalSearchParams } from "expo-router";
+import { Feather } from "@expo/vector-icons";
+import { Stack, useLocalSearchParams, useRouter } from "expo-router";
+import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -10,8 +13,15 @@ import {
 import { ErrorView } from "@/components/ErrorView";
 import { Pill } from "@/components/Pill";
 import { RiskGauge } from "@/components/RiskGauge";
+import { Sparkline } from "@/components/Sparkline";
 import { useCurrency } from "@/context/CurrencyContext";
 import { useColors } from "@/hooks/useColors";
+import {
+  deleteAlertRule,
+  listAlertRules,
+  ruleAppliesTo,
+  type AlertRule,
+} from "@/lib/alertRules";
 import { fmtMoney, fmtPct, fmtQty } from "@/utils/format";
 import {
   headroomToTarget,
@@ -20,11 +30,11 @@ import {
   priceDropPctTo,
   statusFromLtv,
   statusLabel,
-  TARGET_LTV,
   WARNING_LTV,
 } from "@/utils/risk";
 import {
   useListAccounts,
+  useListInterest,
   useListLoans,
 } from "@workspace/api-client-react";
 
@@ -45,9 +55,11 @@ function Row({ label, value }: { label: string; value: string }) {
 function Card({
   title,
   children,
+  right,
 }: {
   title: string;
   children: React.ReactNode;
+  right?: React.ReactNode;
 }) {
   const colors = useColors();
   return (
@@ -61,9 +73,12 @@ function Card({
         },
       ]}
     >
-      <Text style={[styles.cardTitle, { color: colors.mutedForeground }]}>
-        {title.toUpperCase()}
-      </Text>
+      <View style={styles.cardHead}>
+        <Text style={[styles.cardTitle, { color: colors.mutedForeground }]}>
+          {title.toUpperCase()}
+        </Text>
+        {right}
+      </View>
       <View style={{ gap: 6 }}>{children}</View>
     </View>
   );
@@ -71,10 +86,18 @@ function Card({
 
 export default function LoanDetailScreen() {
   const colors = useColors();
+  const router = useRouter();
   const { currency } = useCurrency();
   const { id } = useLocalSearchParams<{ id: string }>();
   const loansQ = useListLoans();
   const accountsQ = useListAccounts();
+  const interestQ = useListInterest();
+
+  const [rules, setRules] = useState<AlertRule[]>([]);
+  const refreshRules = () => {
+    void listAlertRules().then(setRules);
+  };
+  useEffect(refreshRules, []);
 
   if (loansQ.isLoading || accountsQ.isLoading) {
     return (
@@ -118,6 +141,16 @@ export default function LoanDetailScreen() {
   const liqDrop = priceDropPctTo(loan, LIQ_LTV);
   const hourly = loan.debt * loan.hourlyInterestRate;
   const daily = hourly * 24;
+
+  const byLoan = interestQ.data?.byLoan.find((b) => b.loanId === loan.id);
+  const rateHistory = byLoan?.rateHistory ?? [];
+  const sparkValues = rateHistory.map((p) => p.apr);
+  const aprDelta =
+    byLoan && byLoan.avg30dApr > 0
+      ? ((byLoan.currentApr - byLoan.avg30dApr) / byLoan.avg30dApr) * 100
+      : 0;
+
+  const relevantRules = rules.filter((r) => ruleAppliesTo(r, loan.id));
 
   return (
     <ScrollView
@@ -172,11 +205,127 @@ export default function LoanDetailScreen() {
         />
       </Card>
 
-      <Card title="Interest">
-        <Row label="Hourly rate" value={`${(loan.hourlyInterestRate * 100).toFixed(5)}%`} />
+      <Card
+        title="Interest rate"
+        right={
+          aprDelta !== 0 && byLoan ? (
+            <Text
+              style={[
+                styles.delta,
+                {
+                  color: aprDelta > 0 ? colors.warn : colors.ok,
+                },
+              ]}
+            >
+              {aprDelta > 0 ? "▲" : "▼"} {Math.abs(aprDelta).toFixed(1)}% vs 30d
+            </Text>
+          ) : null
+        }
+      >
+        <View style={styles.bigRow}>
+          <Text style={[styles.bigValue, { color: colors.foreground }]}>
+            {fmtPct(loan.apr, 2)}
+          </Text>
+          <Text style={[styles.bigUnit, { color: colors.mutedForeground }]}>
+            APR
+          </Text>
+        </View>
+        {sparkValues.length >= 2 ? (
+          <View style={{ marginVertical: 4 }}>
+            <Sparkline
+              values={sparkValues}
+              width={300}
+              height={48}
+              reference={byLoan?.avg30dApr}
+            />
+            <View style={styles.sparkAxis}>
+              <Text style={[styles.sparkAxisText, { color: colors.mutedForeground }]}>
+                30d ago
+              </Text>
+              <Text style={[styles.sparkAxisText, { color: colors.mutedForeground }]}>
+                today
+              </Text>
+            </View>
+          </View>
+        ) : null}
+        {byLoan ? (
+          <>
+            <Row label="30d average" value={fmtPct(byLoan.avg30dApr, 2)} />
+            <Row
+              label="30d range"
+              value={`${fmtPct(byLoan.min30dApr, 2)} – ${fmtPct(byLoan.max30dApr, 2)}`}
+            />
+            <Row label="Hourly rate" value={`${(loan.hourlyInterestRate * 100).toFixed(5)}%`} />
+          </>
+        ) : (
+          <Row label="Hourly rate" value={`${(loan.hourlyInterestRate * 100).toFixed(5)}%`} />
+        )}
+      </Card>
+
+      <Card title="Cost projection">
         <Row label="Per day" value={fmtMoney(daily, currency)} />
         <Row label="Per 30 days" value={fmtMoney(daily * 30, currency)} />
         <Row label="Per 365 days" value={fmtMoney(daily * 365, currency)} />
+        {byLoan ? (
+          <Row
+            label="Accrued last 30d"
+            value={fmtMoney(byLoan.accrued30dUsd, currency)}
+          />
+        ) : null}
+      </Card>
+
+      <Card
+        title="Alerts for this loan"
+        right={
+          <Pressable
+            onPress={() =>
+              router.push({
+                pathname: "/alert-rule",
+                params: { loanId: loan.id },
+              })
+            }
+            hitSlop={8}
+          >
+            <Feather name="plus" size={18} color={colors.primary} />
+          </Pressable>
+        }
+      >
+        {relevantRules.length === 0 ? (
+          <Text style={[styles.empty, { color: colors.mutedForeground }]}>
+            No alerts configured
+          </Text>
+        ) : (
+          relevantRules.map((r) => (
+            <Pressable
+              key={r.id}
+              onPress={() =>
+                router.push({ pathname: "/alert-rule", params: { id: r.id } })
+              }
+              style={({ pressed }) => [
+                styles.ruleRow,
+                { opacity: pressed ? 0.6 : 1 },
+              ]}
+            >
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.ruleLtv, { color: colors.foreground }]}>
+                  {fmtPct(r.ltv, 1)} LTV
+                </Text>
+                <Text style={[styles.ruleScope, { color: colors.mutedForeground }]}>
+                  {r.label ?? (r.scope === "any" ? "Any loan" : "This loan only")}
+                </Text>
+              </View>
+              <Pressable
+                hitSlop={10}
+                onPress={async () => {
+                  await deleteAlertRule(r.id);
+                  refreshRules();
+                }}
+              >
+                <Feather name="trash-2" size={16} color={colors.mutedForeground} />
+              </Pressable>
+            </Pressable>
+          ))
+        )}
       </Card>
 
       <Text style={[styles.foot, { color: colors.mutedForeground }]}>
@@ -200,6 +349,11 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     gap: 10,
   },
+  cardHead: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
   cardTitle: { fontSize: 10, letterSpacing: 1, fontFamily: "Inter_600SemiBold" },
   row: { flexDirection: "row", justifyContent: "space-between" },
   rowLabel: { fontSize: 13, fontFamily: "Inter_400Regular" },
@@ -208,6 +362,37 @@ const styles = StyleSheet.create({
     fontFamily: "Inter_600SemiBold",
     fontVariant: ["tabular-nums"],
   },
+  bigRow: { flexDirection: "row", alignItems: "baseline", gap: 6, marginTop: 2 },
+  bigValue: {
+    fontSize: 36,
+    fontFamily: "Inter_700Bold",
+    fontVariant: ["tabular-nums"],
+    letterSpacing: -1,
+  },
+  bigUnit: { fontSize: 12, fontFamily: "Inter_600SemiBold" },
+  delta: {
+    fontSize: 11,
+    fontFamily: "Inter_600SemiBold",
+    fontVariant: ["tabular-nums"],
+  },
+  sparkAxis: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginTop: 4,
+  },
+  sparkAxisText: { fontSize: 10, fontFamily: "Inter_400Regular" },
+  ruleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 8,
+  },
+  ruleLtv: {
+    fontSize: 14,
+    fontFamily: "Inter_700Bold",
+    fontVariant: ["tabular-nums"],
+  },
+  ruleScope: { fontSize: 11, fontFamily: "Inter_400Regular", marginTop: 2 },
+  empty: { fontSize: 12, fontFamily: "Inter_400Regular", paddingVertical: 4 },
   foot: {
     textAlign: "center",
     fontSize: 11,

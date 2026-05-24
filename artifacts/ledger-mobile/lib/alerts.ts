@@ -2,15 +2,15 @@ import * as Notifications from "expo-notifications";
 import * as SecureStore from "expo-secure-store";
 import { Platform } from "react-native";
 
-import { LIQ_LTV, WARNING_LTV } from "@/utils/risk";
+import { listAlertRules, ruleAppliesTo, type AlertRule } from "@/lib/alertRules";
 import type { Loan } from "@workspace/api-client-react";
 
 const ENABLED_KEY = "ledger.alerts.enabled.v1";
-const SEEN_KEY = "ledger.alerts.seen.v1";
+const FIRED_KEY = "ledger.alerts.fired.v2";
 
-type Tier = "warn" | "liq";
-
-type SeenMap = Record<string, Tier | null>;
+// Map of "<ruleId>:<loanId>" → true once we've fired for an up-crossing.
+// Resets when the loan drops back under the rule's threshold.
+type FiredMap = Record<string, true>;
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -46,68 +46,63 @@ async function ensurePermissions(): Promise<boolean> {
   return req.granted;
 }
 
-async function readSeen(): Promise<SeenMap> {
+async function readFired(): Promise<FiredMap> {
   try {
-    const raw = await SecureStore.getItemAsync(SEEN_KEY);
-    return raw ? (JSON.parse(raw) as SeenMap) : {};
+    const raw = await SecureStore.getItemAsync(FIRED_KEY);
+    return raw ? (JSON.parse(raw) as FiredMap) : {};
   } catch {
     return {};
   }
 }
 
-async function writeSeen(seen: SeenMap): Promise<void> {
-  await SecureStore.setItemAsync(SEEN_KEY, JSON.stringify(seen));
+async function writeFired(fired: FiredMap): Promise<void> {
+  await SecureStore.setItemAsync(FIRED_KEY, JSON.stringify(fired));
 }
 
-function tierFor(ltv: number): Tier | null {
-  if (ltv >= LIQ_LTV) return "liq";
-  if (ltv >= WARNING_LTV) return "warn";
-  return null;
-}
-
-function tierRank(t: Tier | null): number {
-  return t === "liq" ? 2 : t === "warn" ? 1 : 0;
+function key(ruleId: string, loanId: string): string {
+  return `${ruleId}:${loanId}`;
 }
 
 /**
- * Fire a local notification for each loan that crossed *up* into a worse tier
- * since the last check. No-op when alerts are disabled, on web, or when the
- * loan was already at that tier on the previous refresh.
+ * For each user-defined alert rule, fire a local notification on UP-crossings
+ * since the last check. Each (rule, loan) pair fires once and resets when the
+ * loan's LTV drops back under the threshold. No-op on web or when alerts are
+ * disabled.
  */
 export async function checkAndNotifyLoans(loans: Loan[]): Promise<void> {
   if (Platform.OS === "web") return;
   if (!(await getAlertsEnabled())) return;
 
-  const seen = await readSeen();
-  const next: SeenMap = {};
-  const toNotify: { loan: Loan; tier: Tier }[] = [];
+  const rules = await listAlertRules();
+  if (rules.length === 0) return;
+
+  const fired = await readFired();
+  const next: FiredMap = {};
+  const toNotify: { rule: AlertRule; loan: Loan }[] = [];
 
   for (const loan of loans) {
-    const tier = tierFor(loan.ltv);
-    next[loan.id] = tier;
-    const prev = seen[loan.id] ?? null;
-    if (tier && tierRank(tier) > tierRank(prev)) {
-      toNotify.push({ loan, tier });
+    for (const rule of rules) {
+      if (!ruleAppliesTo(rule, loan.id)) continue;
+      const k = key(rule.id, loan.id);
+      const over = loan.ltv >= rule.ltv;
+      if (over) {
+        next[k] = true;
+        if (!fired[k]) toNotify.push({ rule, loan });
+      }
+      // when over=false, we simply omit k → resets, so a future crossing fires.
     }
   }
 
-  await writeSeen(next);
+  await writeFired(next);
 
-  for (const { loan, tier } of toNotify) {
+  for (const { rule, loan } of toNotify) {
     const pair = `${loan.collateral.asset}/${loan.asset}`;
-    const title =
-      tier === "liq"
-        ? `Liquidation risk: ${pair}`
-        : `LTV warning: ${pair}`;
-    const body =
-      tier === "liq"
-        ? `LTV ${loan.ltv.toFixed(1)}% is at or above the liquidation threshold (${LIQ_LTV}%).`
-        : `LTV ${loan.ltv.toFixed(1)}% crossed the ${WARNING_LTV}% warning line.`;
+    const label = rule.label ?? `${rule.ltv}% LTV`;
     await Notifications.scheduleNotificationAsync({
       content: {
-        title,
-        body,
-        data: { loanId: loan.id, tier },
+        title: `${label} · ${pair}`,
+        body: `LTV ${loan.ltv.toFixed(1)}% reached your ${rule.ltv}% threshold.`,
+        data: { loanId: loan.id, ruleId: rule.id },
       },
       trigger: null,
     });

@@ -66,20 +66,92 @@ router.get("/interest", async (req, res, next) => {
   try {
     const { accountId, from, to } = ListInterestQueryParams.parse(req.query);
     const rows = await client.listInterest({ accountId, from, to });
+    const loans = await client.listLoans(accountId);
+
     const totalUsd = rows.reduce((s, r) => s + r.amountUsd, 0);
-    // Weighted APR (simple): assume each row's loan debt at row time is ~stable.
-    // For mock we approximate from total interest vs total loan debt over period days.
-    const days = Math.max(1, uniqueDays(rows));
-    const annualized = (totalUsd / days) * 365;
-    const totalDebt = await client
-      .listLoans(accountId)
-      .then((ls) => ls.reduce((s, l) => s + l.debtUsd, 0));
+    const totalDebt = loans.reduce((s, l) => s + l.debtUsd, 0);
+    // Instantaneous debt-weighted APR (forward-looking, matches byAsset.weightedApr)
     const weightedApr =
-      totalDebt > 0 ? round((annualized / totalDebt) * 100, 2) : 0;
+      totalDebt > 0
+        ? round(
+            loans.reduce((s, l) => s + l.debtUsd * l.apr, 0) / totalDebt,
+            2,
+          )
+        : 0;
+    const projected30dUsd = round(
+      loans.reduce((s, l) => s + l.debt * l.hourlyInterestRate * 24 * 30, 0),
+      2,
+    );
+
+    const byLoan = await Promise.all(
+      loans.map(async (loan) => {
+        const loanRows = rows.filter((r) => r.loanId === loan.id);
+        const accrued30dUsd = round(
+          loanRows.reduce((s, r) => s + r.amountUsd, 0),
+          2,
+        );
+        const dailyUsd = round(loan.debt * loan.hourlyInterestRate * 24, 4);
+        const rateHistory = await client.getRateHistory(loan.id, 30);
+        const aprs = rateHistory.map((p) => p.apr);
+        const avg30dApr = aprs.length
+          ? round(aprs.reduce((s, a) => s + a, 0) / aprs.length, 3)
+          : loan.apr;
+        return {
+          loanId: loan.id,
+          accountId: loan.accountId,
+          asset: loan.asset,
+          collateralAsset: loan.collateral.asset,
+          currentApr: round(loan.apr, 3),
+          avg30dApr,
+          min30dApr: aprs.length ? round(Math.min(...aprs), 3) : loan.apr,
+          max30dApr: aprs.length ? round(Math.max(...aprs), 3) : loan.apr,
+          accrued30dUsd,
+          projected30dUsd: round(dailyUsd * 30, 2),
+          dailyUsd,
+          rateHistory,
+        };
+      }),
+    );
+
+    const byAssetMap = new Map<
+      string,
+      {
+        debtUsd: number;
+        weightedAprNum: number;
+        accrued30dUsd: number;
+        projected30dUsd: number;
+      }
+    >();
+    for (const loan of loans) {
+      const existing =
+        byAssetMap.get(loan.asset) ?? {
+          debtUsd: 0,
+          weightedAprNum: 0,
+          accrued30dUsd: 0,
+          projected30dUsd: 0,
+        };
+      const bl = byLoan.find((b) => b.loanId === loan.id);
+      existing.debtUsd += loan.debtUsd;
+      existing.weightedAprNum += loan.debtUsd * loan.apr;
+      existing.accrued30dUsd += bl?.accrued30dUsd ?? 0;
+      existing.projected30dUsd += bl?.projected30dUsd ?? 0;
+      byAssetMap.set(loan.asset, existing);
+    }
+    const byAsset = Array.from(byAssetMap.entries()).map(([asset, v]) => ({
+      asset,
+      debtUsd: round(v.debtUsd, 2),
+      weightedApr: v.debtUsd > 0 ? round(v.weightedAprNum / v.debtUsd, 3) : 0,
+      accrued30dUsd: round(v.accrued30dUsd, 2),
+      projected30dUsd: round(v.projected30dUsd, 2),
+    }));
+
     res.json(
       ListInterestResponse.parse({
         totalUsd: round(totalUsd, 2),
         weightedApr,
+        projected30dUsd,
+        byLoan,
+        byAsset,
         rows,
       }),
     );
@@ -91,11 +163,6 @@ router.get("/interest", async (req, res, next) => {
 function round(n: number, dp: number): number {
   const f = 10 ** dp;
   return Math.round(n * f) / f;
-}
-
-function uniqueDays(rows: { ts: string }[]): number {
-  const set = new Set(rows.map((r) => r.ts.slice(0, 10)));
-  return set.size;
 }
 
 router.use(

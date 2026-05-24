@@ -47,6 +47,8 @@ export interface Loan {
   liqLtv: number;
   /** Hourly interest rate as a decimal (e.g. 0.0000125) */
   hourlyInterestRate: number;
+  /** Annualised percentage rate derived from hourlyInterestRate (e.g. 10.95) */
+  apr: number;
 }
 
 export interface LoansResponse {
@@ -69,6 +71,37 @@ export interface InterestRow {
   asset: string;
   amount: number;
   amountUsd: number;
+}
+
+export interface RatePoint {
+  ts: string;
+  /** APR % at that timestamp */
+  apr: number;
+}
+
+export interface InterestByLoan {
+  loanId: string;
+  accountId: string;
+  /** Borrowed asset */
+  asset: string;
+  collateralAsset: string;
+  currentApr: number;
+  avg30dApr: number;
+  min30dApr: number;
+  max30dApr: number;
+  accrued30dUsd: number;
+  projected30dUsd: number;
+  dailyUsd: number;
+  rateHistory: RatePoint[];
+}
+
+export interface InterestByAsset {
+  /** Borrowed asset symbol */
+  asset: string;
+  debtUsd: number;
+  weightedApr: number;
+  accrued30dUsd: number;
+  projected30dUsd: number;
 }
 
 export type ListAccounts200 = {
@@ -100,6 +133,10 @@ to?: string;
 export type ListInterest200 = {
   totalUsd: number;
   weightedApr: number;
+  /** Forward-looking interest over next 30 days at current rates */
+  projected30dUsd: number;
+  byLoan: InterestByLoan[];
+  byAsset: InterestByAsset[];
   rows: InterestRow[];
 };
 

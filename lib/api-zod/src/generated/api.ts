@@ -57,7 +57,8 @@ export const ListLoansResponse = zod.object({
   "ltv": zod.number().describe('Current loan-to-value as a percentage (0-100)'),
   "marginCallLtv": zod.number(),
   "liqLtv": zod.number(),
-  "hourlyInterestRate": zod.number().describe('Hourly interest rate as a decimal (e.g. 0.0000125)')
+  "hourlyInterestRate": zod.number().describe('Hourly interest rate as a decimal (e.g. 0.0000125)'),
+  "apr": zod.number().describe('Annualised percentage rate derived from hourlyInterestRate (e.g. 10.95)')
 }))
 })
 
@@ -90,6 +91,31 @@ export const ListInterestQueryParams = zod.object({
 export const ListInterestResponse = zod.object({
   "totalUsd": zod.number(),
   "weightedApr": zod.number(),
+  "projected30dUsd": zod.number().describe('Forward-looking interest over next 30 days at current rates'),
+  "byLoan": zod.array(zod.object({
+  "loanId": zod.string(),
+  "accountId": zod.string(),
+  "asset": zod.string().describe('Borrowed asset'),
+  "collateralAsset": zod.string(),
+  "currentApr": zod.number(),
+  "avg30dApr": zod.number(),
+  "min30dApr": zod.number(),
+  "max30dApr": zod.number(),
+  "accrued30dUsd": zod.number(),
+  "projected30dUsd": zod.number(),
+  "dailyUsd": zod.number(),
+  "rateHistory": zod.array(zod.object({
+  "ts": zod.coerce.date(),
+  "apr": zod.number().describe('APR % at that timestamp')
+}))
+})),
+  "byAsset": zod.array(zod.object({
+  "asset": zod.string().describe('Borrowed asset symbol'),
+  "debtUsd": zod.number(),
+  "weightedApr": zod.number(),
+  "accrued30dUsd": zod.number(),
+  "projected30dUsd": zod.number()
+})),
   "rows": zod.array(zod.object({
   "ts": zod.coerce.date(),
   "accountId": zod.string(),

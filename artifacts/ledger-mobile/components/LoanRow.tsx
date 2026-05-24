@@ -56,6 +56,9 @@ export function LoanRow({ loan, accountName, onPress }: Props) {
           <Text style={[styles.ltv, { color: tone }]}>
             {fmtPct(loan.ltv, 1)}
           </Text>
+          <Text style={[styles.apr, { color: colors.mutedForeground }]}>
+            APR {fmtPct(loan.apr, 2)}
+          </Text>
           <Feather name="chevron-right" size={16} color={colors.mutedForeground} />
         </View>
       </View>
@@ -86,7 +89,13 @@ const styles = StyleSheet.create({
   },
   row: { flexDirection: "row", alignItems: "flex-start" },
   left: { flex: 1, gap: 4 },
-  right: { flexDirection: "row", alignItems: "center", gap: 4 },
+  right: { flexDirection: "column", alignItems: "flex-end", gap: 0 },
+  apr: {
+    fontSize: 11,
+    fontFamily: "Inter_500Medium",
+    fontVariant: ["tabular-nums"],
+    marginTop: 2,
+  },
   asset: { fontSize: 15, fontFamily: "Inter_600SemiBold" },
   account: { fontSize: 13, fontFamily: "Inter_400Regular" },
   debt: {

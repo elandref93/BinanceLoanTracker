@@ -5,10 +5,16 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { InterestByAsset } from './interestByAsset';
+import type { InterestByLoan } from './interestByLoan';
 import type { InterestRow } from './interestRow';
 
 export type ListInterest200 = {
   totalUsd: number;
   weightedApr: number;
+  /** Forward-looking interest over next 30 days at current rates */
+  projected30dUsd: number;
+  byLoan: InterestByLoan[];
+  byAsset: InterestByAsset[];
   rows: InterestRow[];
 };

@@ -18,12 +18,16 @@ import { useCurrency } from "@/context/CurrencyContext";
 import { useColors } from "@/hooks/useColors";
 import { getAlertsEnabled, setAlertsEnabled } from "@/lib/alerts";
 import {
+  listAlertRules,
+  type AlertRule,
+} from "@/lib/alertRules";
+import {
   listAccounts,
   removeAccount,
   type StoredBinanceAccount,
 } from "@/lib/binanceKeys";
-import { fmtAge } from "@/utils/format";
-import { LIQ_LTV, TARGET_LTV, WARNING_LTV } from "@/utils/risk";
+import { fmtAge, fmtPct } from "@/utils/format";
+import { TARGET_LTV } from "@/utils/risk";
 
 function Section({
   title,
@@ -114,6 +118,7 @@ export default function SettingsScreen() {
   const email = user?.primaryEmailAddress?.emailAddress ?? null;
   const [accounts, setAccounts] = useState<StoredBinanceAccount[]>([]);
   const [alerts, setAlerts] = useState(false);
+  const [rules, setRules] = useState<AlertRule[]>([]);
 
   useEffect(() => {
     getAlertsEnabled().then(setAlerts);
@@ -136,6 +141,9 @@ export default function SettingsScreen() {
       let active = true;
       listAccounts().then((a) => {
         if (active) setAccounts(a);
+      });
+      listAlertRules().then((r) => {
+        if (active) setRules(r);
       });
       return () => {
         active = false;
@@ -233,9 +241,9 @@ export default function SettingsScreen() {
         />
       </Section>
 
-      <Section title="Alerts">
+      <Section title="Notifications">
         <Row
-          label="Push when LTV crosses warning"
+          label="Push when LTV alerts trigger"
           right={
             <Switch
               value={alerts}
@@ -247,12 +255,35 @@ export default function SettingsScreen() {
         />
       </Section>
 
-      <Section title="Thresholds">
-        <Row label="Target LTV" value={`${TARGET_LTV}%`} />
+      <Section title="LTV Alert Rules">
+        {rules.length === 0 ? (
+          <Row label="No alerts" value="Add one below" />
+        ) : (
+          rules.map((r, i) => (
+            <View key={r.id}>
+              {i > 0 ? (
+                <View style={[styles.divider, { backgroundColor: colors.border }]} />
+              ) : null}
+              <Row
+                label={r.label ? `${r.label} · ${fmtPct(r.ltv, 1)}` : fmtPct(r.ltv, 1)}
+                value={r.scope === "any" ? "Any loan" : "1 loan"}
+                onPress={() =>
+                  router.push({ pathname: "/alert-rule", params: { id: r.id } })
+                }
+              />
+            </View>
+          ))
+        )}
         <View style={[styles.divider, { backgroundColor: colors.border }]} />
-        <Row label="Warning LTV" value={`${WARNING_LTV}%`} />
-        <View style={[styles.divider, { backgroundColor: colors.border }]} />
-        <Row label="Liquidation LTV" value={`${LIQ_LTV}%`} />
+        <Row
+          label="Add alert rule"
+          right={<Feather name="plus" size={18} color={colors.primary} />}
+          onPress={() => router.push("/alert-rule")}
+        />
+      </Section>
+
+      <Section title="Reference">
+        <Row label="Target LTV (headroom calc)" value={`${TARGET_LTV}%`} />
       </Section>
 
       <Section title="Account">

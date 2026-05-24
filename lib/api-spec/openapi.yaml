@@ -122,11 +122,22 @@ paths:
                     type: number
                   weightedApr:
                     type: number
+                  projected30dUsd:
+                    type: number
+                    description: Forward-looking interest over next 30 days at current rates
+                  byLoan:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/InterestByLoan"
+                  byAsset:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/InterestByAsset"
                   rows:
                     type: array
                     items:
                       $ref: "#/components/schemas/InterestRow"
-                required: [totalUsd, weightedApr, rows]
+                required: [totalUsd, weightedApr, projected30dUsd, byLoan, byAsset, rows]
 
 components:
   schemas:
@@ -180,6 +191,9 @@ components:
         hourlyInterestRate:
           type: number
           description: Hourly interest rate as a decimal (e.g. 0.0000125)
+        apr:
+          type: number
+          description: Annualised percentage rate derived from hourlyInterestRate (e.g. 10.95)
       required:
         - id
         - accountId
@@ -191,6 +205,7 @@ components:
         - marginCallLtv
         - liqLtv
         - hourlyInterestRate
+        - apr
 
     LoansResponse:
       type: object
@@ -227,3 +242,52 @@ components:
         amount: { type: number }
         amountUsd: { type: number }
       required: [ts, accountId, loanId, asset, amount, amountUsd]
+
+    RatePoint:
+      type: object
+      properties:
+        ts: { type: string, format: date-time }
+        apr: { type: number, description: APR % at that timestamp }
+      required: [ts, apr]
+
+    InterestByLoan:
+      type: object
+      properties:
+        loanId: { type: string }
+        accountId: { type: string }
+        asset: { type: string, description: Borrowed asset }
+        collateralAsset: { type: string }
+        currentApr: { type: number }
+        avg30dApr: { type: number }
+        min30dApr: { type: number }
+        max30dApr: { type: number }
+        accrued30dUsd: { type: number }
+        projected30dUsd: { type: number }
+        dailyUsd: { type: number }
+        rateHistory:
+          type: array
+          items:
+            $ref: "#/components/schemas/RatePoint"
+      required:
+        - loanId
+        - accountId
+        - asset
+        - collateralAsset
+        - currentApr
+        - avg30dApr
+        - min30dApr
+        - max30dApr
+        - accrued30dUsd
+        - projected30dUsd
+        - dailyUsd
+        - rateHistory
+
+    InterestByAsset:
+      type: object
+      properties:
+        asset: { type: string, description: Borrowed asset symbol }
+        debtUsd: { type: number }
+        weightedApr: { type: number }
+        accrued30dUsd: { type: number }
+        projected30dUsd: { type: number }
+      required: [asset, debtUsd, weightedApr, accrued30dUsd, projected30dUsd]

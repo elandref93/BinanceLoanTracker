@@ -22,4 +22,6 @@ export interface Loan {
   liqLtv: number;
   /** Hourly interest rate as a decimal (e.g. 0.0000125) */
   hourlyInterestRate: number;
+  /** Annualised percentage rate derived from hourlyInterestRate (e.g. 10.95) */
+  apr: number;
 }

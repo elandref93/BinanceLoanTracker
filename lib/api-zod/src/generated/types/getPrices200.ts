@@ -5,7 +5,9 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { Price } from './price';
 
-export interface HealthStatus {
-  status: string;
-}
+export type GetPrices200 = {
+  asOf: Date;
+  prices: Price[];
+};

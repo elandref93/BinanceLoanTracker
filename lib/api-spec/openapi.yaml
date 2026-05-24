@@ -10,6 +10,8 @@ servers:
 tags:
   - name: health
     description: Health operations
+  - name: binance
+    description: Binance loan tracker (read-only)
 paths:
   /healthz:
     get:
@@ -24,6 +26,108 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /accounts:
+    get:
+      operationId: listAccounts
+      tags: [binance]
+      summary: List connected Binance accounts
+      responses:
+        "200":
+          description: Accounts list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  accounts:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Account"
+                required: [accounts]
+
+  /loans:
+    get:
+      operationId: listLoans
+      tags: [binance]
+      summary: List open loans across all (or one) account
+      parameters:
+        - in: query
+          name: accountId
+          required: false
+          schema: { type: string }
+      responses:
+        "200":
+          description: Loans list with aggregate metrics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoansResponse"
+
+  /prices:
+    get:
+      operationId: getPrices
+      tags: [binance]
+      summary: Spot prices in USD for the given assets
+      parameters:
+        - in: query
+          name: assets
+          required: true
+          description: Comma-separated asset symbols, e.g. BTC,ETH,BNB
+          schema: { type: string }
+      responses:
+        "200":
+          description: Price map
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  asOf:
+                    type: string
+                    format: date-time
+                  prices:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Price"
+                required: [asOf, prices]
+
+  /interest:
+    get:
+      operationId: listInterest
+      tags: [binance]
+      summary: Interest charge history
+      parameters:
+        - in: query
+          name: accountId
+          required: false
+          schema: { type: string }
+        - in: query
+          name: from
+          required: false
+          schema: { type: string, format: date-time }
+        - in: query
+          name: to
+          required: false
+          schema: { type: string, format: date-time }
+      responses:
+        "200":
+          description: Interest charges
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  totalUsd:
+                    type: number
+                  weightedApr:
+                    type: number
+                  rows:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/InterestRow"
+                required: [totalUsd, weightedApr, rows]
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +138,92 @@ components:
       required:
         - status
 
+    Account:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        kind:
+          type: string
+          enum: [Spot, Margin, Funding]
+        readOnly: { type: boolean }
+        connectedAt: { type: string, format: date-time }
+      required: [id, name, kind, readOnly, connectedAt]
+
+    Collateral:
+      type: object
+      properties:
+        asset: { type: string }
+        qty: { type: number }
+        valueUsd: { type: number }
+      required: [asset, qty, valueUsd]
+
+    Loan:
+      type: object
+      properties:
+        id: { type: string }
+        accountId: { type: string }
+        asset:
+          type: string
+          description: Borrowed asset symbol (e.g. USDT)
+        debt:
+          type: number
+          description: Outstanding principal + accrued interest in the borrowed asset
+        debtUsd: { type: number }
+        collateral:
+          $ref: "#/components/schemas/Collateral"
+        ltv:
+          type: number
+          description: Current loan-to-value as a percentage (0-100)
+        marginCallLtv: { type: number }
+        liqLtv: { type: number }
+        hourlyInterestRate:
+          type: number
+          description: Hourly interest rate as a decimal (e.g. 0.0000125)
+      required:
+        - id
+        - accountId
+        - asset
+        - debt
+        - debtUsd
+        - collateral
+        - ltv
+        - marginCallLtv
+        - liqLtv
+        - hourlyInterestRate
+
+    LoansResponse:
+      type: object
+      properties:
+        asOf: { type: string, format: date-time }
+        aggregateLtv: { type: number }
+        totalDebtUsd: { type: number }
+        totalCollateralUsd: { type: number }
+        loans:
+          type: array
+          items:
+            $ref: "#/components/schemas/Loan"
+      required:
+        - asOf
+        - aggregateLtv
+        - totalDebtUsd
+        - totalCollateralUsd
+        - loans
+
+    Price:
+      type: object
+      properties:
+        asset: { type: string }
+        usd: { type: number }
+      required: [asset, usd]
+
+    InterestRow:
+      type: object
+      properties:
+        ts: { type: string, format: date-time }
+        accountId: { type: string }
+        loanId: { type: string }
+        asset: { type: string }
+        amount: { type: number }
+        amountUsd: { type: number }
+      required: [ts, accountId, loanId, asset, amount, amountUsd]

@@ -15,6 +15,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { checkAndNotifyLoans } from "@/lib/alerts";
+import { buildSnapshot, writeWidgetSnapshot } from "@/lib/widgetSnapshot";
 import { AccountChip } from "@/components/AccountChip";
 import { ErrorView } from "@/components/ErrorView";
 import { LoanRow } from "@/components/LoanRow";
@@ -88,6 +89,7 @@ export default function DashboardScreen() {
   useEffect(() => {
     if (all.length === 0) return;
     void checkAndNotifyLoans(all);
+    void writeWidgetSnapshot(buildSnapshot(all));
   }, [all]);
 
   const refreshing = accountsQ.isFetching || loansQ.isFetching;

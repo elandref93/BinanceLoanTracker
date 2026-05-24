@@ -1,9 +1,10 @@
 import React from "react";
-import { ChevronRight, KeyRound } from "lucide-react";
+import { ChevronRight, KeyRound, Plus } from "lucide-react";
 import "./_group.css";
-import { Phone, StatusBar, HomeIndicator, TabBar } from "./_phone";
+import { Phone, StatusBar, HomeIndicator, TabBar, ACCOUNTS, useCurrency, USD_ZAR_RATE } from "./_phone";
 
 export function Settings() {
+  const { c, set } = useCurrency();
   return (
     <Phone>
       <StatusBar />
@@ -18,24 +19,55 @@ export function Settings() {
           <Row label="Danger threshold" value="75%" chev last />
         </Section>
 
-        <Section title="Binance connection">
-          <div className="px-4 py-3 flex items-center gap-3 border-b border-subtle">
-            <div className="w-9 h-9 rounded-lg flex items-center justify-center" style={{ backgroundColor: "var(--ledger-accent-muted)" }}>
-              <KeyRound className="w-4 h-4 text-accent" />
+        <Section title="Display currency">
+          <div className="px-4 py-3">
+            <div className="grid grid-cols-2 gap-1 p-1 rounded-lg bg-[#0F0F11]">
+              {(["USD", "ZAR"] as const).map(opt => (
+                <button
+                  key={opt}
+                  onClick={() => set(opt)}
+                  className="py-2 text-[12px] font-semibold rounded-md transition-colors"
+                  style={{
+                    backgroundColor: c === opt ? "var(--ledger-surface-elevated)" : "transparent",
+                    color: c === opt ? "var(--ledger-text)" : "var(--ledger-muted)",
+                  }}
+                >
+                  {opt === "USD" ? "US Dollar ($)" : "South African Rand (R)"}
+                </button>
+              ))}
             </div>
-            <div className="flex-1">
-              <div className="flex items-center gap-2">
-                <span className="text-[13px] font-medium text-primary">API Key</span>
-                <span className="inline-flex items-center gap-1">
-                  <div className="w-1.5 h-1.5 rounded-full bg-safe" />
-                  <span className="text-[10px] uppercase tracking-wide text-safe font-medium">Connected</span>
-                </span>
-              </div>
-              <div className="text-[11px] text-muted tabular">A1B2···f9 · read-only</div>
-            </div>
+            <div className="text-[10px] text-muted tabular mt-2">Rate: 1 USD = R {USD_ZAR_RATE.toFixed(2)} · auto-updated daily</div>
           </div>
-          <Row label="Reconnect" value="" chev />
-          <Row label="Remove API key" value="" valueClass="text-danger" last />
+        </Section>
+
+        <Section
+          title="Binance accounts"
+          trailing={<span className="text-[10px] text-muted tabular">{ACCOUNTS.length} connected</span>}
+        >
+          {ACCOUNTS.map((a, i) => (
+            <div key={a.id} className={`px-4 py-3 flex items-center gap-3 ${i < ACCOUNTS.length - 1 ? "border-b border-subtle" : "border-b border-subtle"}`}>
+              <div className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: "var(--ledger-accent-muted)" }}>
+                <KeyRound className="w-4 h-4 text-accent" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-[13px] font-medium text-primary truncate">{a.name}</span>
+                  <span className="inline-flex items-center gap-1 shrink-0">
+                    <div className="w-1.5 h-1.5 rounded-full bg-safe" />
+                    <span className="text-[10px] uppercase tracking-wide text-safe font-medium">Live</span>
+                  </span>
+                </div>
+                <div className="text-[11px] text-muted tabular truncate">{a.apiKeyMasked} · read-only · {a.loans.length} loan{a.loans.length === 1 ? "" : "s"}</div>
+              </div>
+              <ChevronRight className="w-3.5 h-3.5 text-[#3A3A3C] shrink-0" />
+            </div>
+          ))}
+          <div className="px-4 py-3 flex items-center gap-3">
+            <div className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0 bg-[#0F0F11] border border-dashed border-subtle">
+              <Plus className="w-4 h-4 text-muted" />
+            </div>
+            <span className="text-[13px] font-medium text-accent">Add another Binance account</span>
+          </div>
         </Section>
 
         <Section title="Notifications">
@@ -59,10 +91,13 @@ export function Settings() {
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({ title, children, trailing }: { title: string; children: React.ReactNode; trailing?: React.ReactNode }) {
   return (
     <div className="mb-5">
-      <div className="text-[10px] uppercase tracking-widest text-muted mb-2 px-1">{title}</div>
+      <div className="flex items-center justify-between mb-2 px-1">
+        <div className="text-[10px] uppercase tracking-widest text-muted">{title}</div>
+        {trailing}
+      </div>
       <div className="rounded-2xl bg-surface border border-subtle overflow-hidden">{children}</div>
     </div>
   );

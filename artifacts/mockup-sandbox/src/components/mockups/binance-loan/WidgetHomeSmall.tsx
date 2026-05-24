@@ -11,7 +11,7 @@ export function WidgetHomeSmall() {
           <div className="w-5 h-5 rounded-md flex items-center justify-center" style={{ backgroundColor: "var(--ledger-accent-muted)" }}>
             <div className="w-2 h-2 rounded-sm bg-accent" />
           </div>
-          <span className="text-[9px] uppercase tracking-widest text-muted font-medium">LTV</span>
+          <span className="text-[9px] uppercase tracking-widest text-muted font-medium">All · LTV</span>
         </div>
         <div>
           <div className="flex items-baseline gap-0.5">

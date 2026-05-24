@@ -20,7 +20,7 @@ export function WidgetHomeLarge() {
           </div>
           <div className="flex-1">
             <div className="flex items-center justify-between">
-              <span className="text-[10px] uppercase tracking-widest text-muted">Ledger</span>
+              <span className="text-[10px] uppercase tracking-widest text-muted">All accounts</span>
               <StatusPill status="Healthy" />
             </div>
             <div className="mt-1.5 tabular text-[15px] font-semibold text-primary">${D.loanEquity.toLocaleString()}</div>

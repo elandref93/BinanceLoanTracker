@@ -24,11 +24,13 @@ export function HomeIndicator() {
 
 export function Phone({ children }: { children: React.ReactNode }) {
   return (
-    <div className="min-h-screen flex items-center justify-center bg-black p-4">
-      <div className="ledger-theme w-[390px] h-[844px] relative bg-app overflow-hidden flex flex-col border border-[#111] rounded-[40px] shadow-2xl">
-        {children}
+    <CurrencyProvider>
+      <div className="min-h-screen flex items-center justify-center bg-black p-4">
+        <div className="ledger-theme w-[390px] h-[844px] relative bg-app overflow-hidden flex flex-col border border-[#111] rounded-[40px] shadow-2xl">
+          {children}
+        </div>
       </div>
-    </div>
+    </CurrencyProvider>
   );
 }
 
@@ -59,44 +61,22 @@ export function TabBar({ active }: { active: "dashboard" | "loans" | "history" |
 export function LtvGauge({ value, target, liquidation, size = 200, strokeWidth = 14, showZones = true }: { value: number; target: number; liquidation: number; size?: number; strokeWidth?: number; showZones?: boolean }) {
   const r = (size - strokeWidth) / 2;
   const circ = 2 * Math.PI * r;
-  // semi-circle: start at 180deg, sweep 180deg
   const arcLen = circ / 2;
   const max = liquidation;
   const pct = Math.min(value / max, 1);
   const dash = arcLen * pct;
   const color = value < target ? "var(--ledger-safe)" : value < liquidation * 0.92 ? "var(--ledger-warning)" : "var(--ledger-danger)";
-
-  // Tick positions (in degrees from left, 180 to 360)
   const angleFor = (v: number) => 180 + (v / max) * 180;
   const tickPos = (deg: number) => {
     const rad = (deg * Math.PI) / 180;
-    return {
-      x: size / 2 + r * Math.cos(rad),
-      y: size / 2 + r * Math.sin(rad),
-    };
+    return { x: size / 2 + r * Math.cos(rad), y: size / 2 + r * Math.sin(rad) };
   };
   const targetA = tickPos(angleFor(target));
   const liqA = tickPos(angleFor(liquidation));
-
   return (
     <svg width={size} height={size / 2 + strokeWidth} viewBox={`0 0 ${size} ${size / 2 + strokeWidth}`}>
-      {/* Track */}
-      <path
-        d={`M ${strokeWidth / 2} ${size / 2} A ${r} ${r} 0 0 1 ${size - strokeWidth / 2} ${size / 2}`}
-        fill="none"
-        stroke="#1F1F22"
-        strokeWidth={strokeWidth}
-        strokeLinecap="round"
-      />
-      {/* Value */}
-      <path
-        d={`M ${strokeWidth / 2} ${size / 2} A ${r} ${r} 0 0 1 ${size - strokeWidth / 2} ${size / 2}`}
-        fill="none"
-        stroke={color}
-        strokeWidth={strokeWidth}
-        strokeLinecap="round"
-        strokeDasharray={`${dash} ${arcLen}`}
-      />
+      <path d={`M ${strokeWidth / 2} ${size / 2} A ${r} ${r} 0 0 1 ${size - strokeWidth / 2} ${size / 2}`} fill="none" stroke="#1F1F22" strokeWidth={strokeWidth} strokeLinecap="round" />
+      <path d={`M ${strokeWidth / 2} ${size / 2} A ${r} ${r} 0 0 1 ${size - strokeWidth / 2} ${size / 2}`} fill="none" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeDasharray={`${dash} ${arcLen}`} />
       {showZones && (
         <>
           <circle cx={targetA.x} cy={targetA.y} r={3} fill="#FFFFFF" />
@@ -116,16 +96,7 @@ export function LtvRing({ value, target, liquidation, size = 80, strokeWidth = 8
   return (
     <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{ transform: "rotate(-90deg)" }}>
       <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="#1F1F22" strokeWidth={strokeWidth} />
-      <circle
-        cx={size / 2}
-        cy={size / 2}
-        r={r}
-        fill="none"
-        stroke={color}
-        strokeWidth={strokeWidth}
-        strokeLinecap="round"
-        strokeDasharray={`${circ * pct} ${circ}`}
-      />
+      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeDasharray={`${circ * pct} ${circ}`} />
     </svg>
   );
 }
@@ -153,27 +124,162 @@ export function StatusPill({ status }: { status: "Healthy" | "Warning" | "Danger
   );
 }
 
-// Numbers are internally consistent:
-//   Loan 1: 0.412 BTC @ $77,500 ≈ $31,930 collateral; $18,500 borrowed → LTV 57.9%
-//   Loan 2: 2.85 ETH @ $2,470 ≈ $7,040 collateral;    $4,200 borrowed  → LTV 59.7%
-//   Aggregate collateral $38,970; borrowed $22,700 → LTV 58.2% (rounded to 58%)
-//   Portfolio total (incl. unlocked balances) $124,830.42
+// ============================================================================
+// Currency (USD / ZAR) — per-screen state via context
+// ============================================================================
+
+export type Currency = "USD" | "ZAR";
+export const USD_ZAR_RATE = 18.45; // Mock rate · May 2026
+
+const CurrencyContext = React.createContext<{ c: Currency; set: (c: Currency) => void }>({
+  c: "USD",
+  set: () => {},
+});
+
+export function CurrencyProvider({ children }: { children: React.ReactNode }) {
+  const [c, set] = React.useState<Currency>("USD");
+  return <CurrencyContext.Provider value={{ c, set }}>{children}</CurrencyContext.Provider>;
+}
+
+export function useCurrency() {
+  return React.useContext(CurrencyContext);
+}
+
+export function fmtMoney(usd: number, c: Currency, decimals = 2): string {
+  const value = c === "USD" ? usd : usd * USD_ZAR_RATE;
+  const symbol = c === "USD" ? "$" : "R ";
+  return `${symbol}${value.toLocaleString(undefined, { minimumFractionDigits: decimals, maximumFractionDigits: decimals })}`;
+}
+
+export function CurrencyToggle() {
+  const { c, set } = useCurrency();
+  return (
+    <div className="inline-flex p-0.5 rounded-lg bg-surface border border-subtle">
+      {(["USD", "ZAR"] as const).map(opt => (
+        <button
+          key={opt}
+          onClick={() => set(opt)}
+          className="px-2.5 py-1 text-[10px] font-semibold rounded-md tracking-wide transition-colors"
+          style={{
+            backgroundColor: c === opt ? "var(--ledger-surface-elevated)" : "transparent",
+            color: c === opt ? "var(--ledger-text)" : "var(--ledger-muted)",
+          }}
+        >
+          {opt}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// ============================================================================
+// Multi-account data model
+// ============================================================================
+
+export type Loan = {
+  id: string;
+  accountId: string;
+  accountName: string;
+  borrowAsset: string;       // e.g. "USDT"
+  collateralAsset: string;   // e.g. "BTC"
+  borrowed: number;          // USDT amount
+  collateral: number;        // native units (BTC, ETH, BNB)
+  collateralUsd: number;     // USD value of collateral
+  apr: number;               // %
+  ltv: number;               // %
+  interest30d: number;       // USD
+};
+
+export type Account = {
+  id: string;
+  name: string;
+  apiKeyMasked: string;
+  connectedAt: string;
+  portfolioUsd: number;      // total Binance equity for this account (incl. unlocked balances)
+  loans: Loan[];
+};
+
+// Two Binance accounts. Loan numbers are internally consistent:
+//   Main BTC : 0.412 BTC @ $77,500 ≈ $31,930   18,500 USDT → LTV 57.9%
+//   Main ETH : 2.85 ETH @ $2,470  ≈ $7,040     4,200 USDT  → LTV 59.7%
+//   Hedge BNB: 22.5 BNB @ $540    ≈ $12,150    6,800 USDT  → LTV 56.0%
+// Aggregate: $29,500 borrowed / $51,120 collateral = LTV 57.7% → rounded to 58%
+export const ACCOUNTS: Account[] = [
+  {
+    id: "main",
+    name: "Main · Spot",
+    apiKeyMasked: "A1B2···f9",
+    connectedAt: "Apr 12, 2026",
+    portfolioUsd: 124830.42,
+    loans: [
+      { id: "main-btc", accountId: "main", accountName: "Main · Spot", borrowAsset: "USDT", collateralAsset: "BTC", borrowed: 18500, collateral: 0.412, collateralUsd: 31930, apr: 7.2, ltv: 58, interest30d: 108.42 },
+      { id: "main-eth", accountId: "main", accountName: "Main · Spot", borrowAsset: "USDT", collateralAsset: "ETH", borrowed: 4200,  collateral: 2.85,  collateralUsd: 7040,  apr: 6.9, ltv: 60, interest30d: 24.61 },
+    ],
+  },
+  {
+    id: "hedge",
+    name: "Hedge",
+    apiKeyMasked: "C3D4···k2",
+    connectedAt: "May 03, 2026",
+    portfolioUsd: 41250.18,
+    loans: [
+      { id: "hedge-bnb", accountId: "hedge", accountName: "Hedge", borrowAsset: "USDT", collateralAsset: "BNB", borrowed: 6800, collateral: 22.5, collateralUsd: 12150, apr: 7.0, ltv: 56, interest30d: 39.12 },
+    ],
+  },
+];
+
+export const TARGET_LTV = 65;
+export const LIQUIDATION_LTV = 78;
+
+// Per-loan "headroom": how much more USDT can be borrowed before hitting target LTV.
+export function headroom(loan: Loan, targetLtv = TARGET_LTV): number {
+  return Math.max(0, Math.round((targetLtv / 100) * loan.collateralUsd - loan.borrowed));
+}
+
+// Per-loan top-up needed (in collateral asset native units) to bring LTV back to target.
+// Returns 0 when already healthy.
+export function topUpCollateral(loan: Loan, targetLtv = TARGET_LTV): { native: number; usd: number } {
+  if (loan.ltv <= targetLtv) return { native: 0, usd: 0 };
+  const requiredCollateralUsd = loan.borrowed / (targetLtv / 100);
+  const deficitUsd = requiredCollateralUsd - loan.collateralUsd;
+  const pricePerUnit = loan.collateralUsd / loan.collateral;
+  return { native: deficitUsd / pricePerUnit, usd: deficitUsd };
+}
+
+// Aggregate computed across a set of accounts (or all of them).
+export function aggregate(accounts: Account[]) {
+  const loans = accounts.flatMap(a => a.loans);
+  const totalBorrowed = loans.reduce((s, l) => s + l.borrowed, 0);
+  const totalCollateral = loans.reduce((s, l) => s + l.collateralUsd, 0);
+  const portfolioTotal = accounts.reduce((s, a) => s + a.portfolioUsd, 0);
+  const interest30d = loans.reduce((s, l) => s + l.interest30d, 0);
+  const currentLtv = totalCollateral > 0 ? Math.round((totalBorrowed / totalCollateral) * 100) : 0;
+  const loanEquity = totalCollateral - totalBorrowed;
+  const totalHeadroom = loans.reduce((s, l) => s + headroom(l), 0);
+  return {
+    totalBorrowed, totalCollateral, portfolioTotal, interest30d,
+    currentLtv, loanEquity, totalHeadroom, loans,
+    targetLtv: TARGET_LTV, liquidationLtv: LIQUIDATION_LTV,
+  };
+}
+
+// Aggregate across ALL accounts. Widgets always show this.
+export const ALL_AGG = aggregate(ACCOUNTS);
+
+// Backward-compat shim so the lock/home widgets keep working unchanged.
 export const LOAN_DATA = {
-  targetLtv: 65,
-  currentLtv: 58,
-  liquidationLtv: 78,
-  portfolioTotal: 124830.42,
+  targetLtv: TARGET_LTV,
+  liquidationLtv: LIQUIDATION_LTV,
+  currentLtv: ALL_AGG.currentLtv,
+  portfolioTotal: ALL_AGG.portfolioTotal,
   delta24h: 1284.17,
   deltaPct: 1.04,
-  totalCollateral: 38970,
-  totalBorrowed: 22700,
-  loanEquity: 16270, // collateral - borrowed
-  interest30d: 133.03,
-  interest7d: 31.07,
-  interest90d: 412.86,
-  interestAll: 1284.41,
-  loans: [
-    { id: 1, borrowAsset: "USDT", collateralAsset: "BTC", borrowed: 18500, collateral: 0.412, collateralUsd: 31930, apr: 7.2, ltv: 58, interest30d: 108.42 },
-    { id: 2, borrowAsset: "USDT", collateralAsset: "ETH", borrowed: 4200,  collateral: 2.85,  collateralUsd: 7040,  apr: 6.9, ltv: 60, interest30d: 24.61 },
-  ],
+  totalCollateral: ALL_AGG.totalCollateral,
+  totalBorrowed: ALL_AGG.totalBorrowed,
+  loanEquity: ALL_AGG.loanEquity,
+  interest30d: ALL_AGG.interest30d,
+  interest7d: 40.13,
+  interest90d: 534.50,
+  interestAll: 1660.20,
+  loans: ALL_AGG.loans,
 };

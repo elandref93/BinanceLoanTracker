@@ -18,7 +18,7 @@ export function WidgetHomeMedium() {
         {/* Right: meta */}
         <div className="flex-1 min-w-0 flex flex-col">
           <div className="flex items-center justify-between">
-            <span className="text-[10px] uppercase tracking-widest text-muted">Ledger</span>
+            <span className="text-[10px] uppercase tracking-widest text-muted">All accounts</span>
             <StatusPill status="Healthy" />
           </div>
           <div className="mt-3 space-y-2.5">

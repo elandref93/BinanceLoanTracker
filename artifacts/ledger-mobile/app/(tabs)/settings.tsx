@@ -9,7 +9,9 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { useAuth } from "@/context/AuthContext";
+import { useAuth, useUser } from "@clerk/expo";
+import { useRouter } from "expo-router";
+
 import { useCurrency } from "@/context/CurrencyContext";
 import { useColors } from "@/hooks/useColors";
 import { fmtAge } from "@/utils/format";
@@ -99,14 +101,24 @@ export default function SettingsScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { currency, set } = useCurrency();
-  const { email, signOut } = useAuth();
+  const { signOut } = useAuth();
+  const { user } = useUser();
+  const router = useRouter();
+  const email = user?.primaryEmailAddress?.emailAddress ?? null;
   const accountsQ = useListAccounts();
   const accounts = accountsQ.data?.accounts ?? [];
 
   const onSignOut = () => {
     Alert.alert("Sign out?", "You'll need to log in again.", [
       { text: "Cancel", style: "cancel" },
-      { text: "Sign out", style: "destructive", onPress: () => signOut() },
+      {
+        text: "Sign out",
+        style: "destructive",
+        onPress: async () => {
+          await signOut();
+          router.replace("/(auth)/sign-in");
+        },
+      },
     ]);
   };
 

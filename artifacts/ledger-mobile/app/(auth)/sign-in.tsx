@@ -1,7 +1,10 @@
+import { useSSO } from "@clerk/expo";
 import { Feather } from "@expo/vector-icons";
+import * as AuthSession from "expo-auth-session";
 import * as Haptics from "expo-haptics";
 import { Image } from "expo-image";
-import { useState } from "react";
+import * as WebBrowser from "expo-web-browser";
+import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Platform,
@@ -12,23 +15,49 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { useAuth } from "@/context/AuthContext";
 import { useColors } from "@/hooks/useColors";
 
-export default function LoginScreen() {
+WebBrowser.maybeCompleteAuthSession();
+
+function useWarmUpBrowser() {
+  useEffect(() => {
+    if (Platform.OS !== "android") return;
+    void WebBrowser.warmUpAsync();
+    return () => {
+      void WebBrowser.coolDownAsync();
+    };
+  }, []);
+}
+
+export default function SignInScreen() {
+  useWarmUpBrowser();
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { signIn } = useAuth();
+  const { startSSOFlow } = useSSO();
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const onPress = async () => {
+  const onPress = useCallback(async () => {
     setBusy(true);
+    setError(null);
     if (Platform.OS !== "web") {
       await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     }
-    await new Promise((r) => setTimeout(r, 500));
-    await signIn("user@ledger.local");
-  };
+    try {
+      const { createdSessionId, setActive } = await startSSOFlow({
+        strategy: "oauth_google",
+        redirectUrl: AuthSession.makeRedirectUri({ scheme: "ledger-mobile" }),
+      });
+      if (createdSessionId && setActive) {
+        await setActive({ session: createdSessionId });
+      }
+    } catch (err) {
+      console.error(JSON.stringify(err, null, 2));
+      setError("Sign-in failed. Please try again.");
+    } finally {
+      setBusy(false);
+    }
+  }, [startSSOFlow]);
 
   return (
     <View
@@ -43,7 +72,7 @@ export default function LoginScreen() {
     >
       <View style={styles.hero}>
         <Image
-          source={require("../assets/images/icon.png")}
+          source={require("../../assets/images/icon.png")}
           style={styles.icon}
           contentFit="contain"
         />
@@ -54,6 +83,9 @@ export default function LoginScreen() {
       </View>
 
       <View style={styles.footer}>
+        {error ? (
+          <Text style={[styles.error, { color: colors.danger }]}>{error}</Text>
+        ) : null}
         <Pressable
           onPress={onPress}
           disabled={busy}
@@ -118,5 +150,10 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontFamily: "Inter_400Regular",
     lineHeight: 16,
+  },
+  error: {
+    textAlign: "center",
+    fontSize: 13,
+    fontFamily: "Inter_500Medium",
   },
 });

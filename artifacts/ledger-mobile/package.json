@@ -18,7 +18,7 @@
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",
-    "@bacons/apple-targets": "^0.5.0",
+    "@bacons/apple-targets": "^4.0.7",
     "@clerk/expo": "^3.2.16",
     "@expo-google-fonts/inter": "^0.4.0",
     "@expo/cli": "54.0.23",

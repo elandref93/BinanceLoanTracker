@@ -22,6 +22,7 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.ubuntu.life.ledger",
+      "appleTeamId": "42G8TCTL98",
       "buildNumber": "1",
       "entitlements": {
         "com.apple.security.application-groups": ["group.com.ledger.shared"]

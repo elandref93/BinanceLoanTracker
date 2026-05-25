@@ -47,7 +47,7 @@
     "production": {
       "ios": {
         "appleId": "elandref@eapfs.co.za",
-        "ascAppId": "REPLACE_WITH_NEW_LEDGER_APP_RECORD_ID",
+        "ascAppId": "6772935899",
         "appleTeamId": "42G8TCTL98"
       }
     }

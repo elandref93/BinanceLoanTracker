@@ -7,32 +7,39 @@
     "development": {
       "developmentClient": true,
       "distribution": "internal",
+      "node": "20.18.3",
+      "pnpm": "9.15.9",
       "ios": {
         "simulator": true,
         "resourceClass": "m-medium"
       },
       "env": {
-        "EXPO_PUBLIC_DOMAIN": "REPLACE_WITH_DEPLOYED_API_DOMAIN"
+        "EXPO_PUBLIC_DOMAIN": "REPLACE_WITH_DEPLOYED_API_DOMAIN",
+        "EXPO_USE_METRO_WORKSPACE_ROOT": "1"
       }
     },
     "preview": {
       "distribution": "internal",
+      "node": "20.18.3",
+      "pnpm": "9.15.9",
       "ios": {
         "resourceClass": "m-medium"
       },
-      "channel": "preview",
       "env": {
-        "EXPO_PUBLIC_DOMAIN": "REPLACE_WITH_DEPLOYED_API_DOMAIN"
+        "EXPO_PUBLIC_DOMAIN": "REPLACE_WITH_DEPLOYED_API_DOMAIN",
+        "EXPO_USE_METRO_WORKSPACE_ROOT": "1"
       }
     },
     "production": {
       "autoIncrement": true,
+      "node": "20.18.3",
+      "pnpm": "9.15.9",
       "ios": {
         "resourceClass": "m-medium"
       },
-      "channel": "production",
       "env": {
-        "EXPO_PUBLIC_DOMAIN": "REPLACE_WITH_DEPLOYED_API_DOMAIN"
+        "EXPO_PUBLIC_DOMAIN": "REPLACE_WITH_DEPLOYED_API_DOMAIN",
+        "EXPO_USE_METRO_WORKSPACE_ROOT": "1"
       }
     }
   },

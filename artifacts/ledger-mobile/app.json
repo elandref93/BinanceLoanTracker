@@ -1,8 +1,13 @@
 {
   "expo": {
     "name": "Ledger",
-    "slug": "ledger-mobile",
+    "slug": "binance-loan-tracker",
     "owner": "elandref",
+    "extra": {
+      "eas": {
+        "projectId": "507ca16a-ae95-4f54-84f2-fef5180a4f93"
+      }
+    },
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",

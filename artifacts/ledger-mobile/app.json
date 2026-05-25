@@ -2,6 +2,7 @@
   "expo": {
     "name": "Ledger",
     "slug": "ledger-mobile",
+    "owner": "elandref",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",

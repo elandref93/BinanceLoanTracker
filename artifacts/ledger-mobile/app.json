@@ -23,6 +23,9 @@
       "supportsTablet": false,
       "bundleIdentifier": "com.ubuntu.life.ledger",
       "buildNumber": "1",
+      "entitlements": {
+        "com.apple.security.application-groups": ["group.com.ledger.shared"]
+      },
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSFaceIDUsageDescription": "Unlock Ledger and your stored Binance API keys with Face ID."
@@ -47,7 +50,8 @@
           "color": "#00F0FF"
         }
       ],
-      "expo-secure-store"
+      "expo-secure-store",
+      "@bacons/apple-targets"
     ],
     "experiments": {
       "typedRoutes": true,

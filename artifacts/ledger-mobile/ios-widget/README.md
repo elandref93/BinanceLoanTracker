@@ -17,54 +17,43 @@ Expo app (JS)          App Group container          Widget extension (Swift)
                          key: "ledger.snapshot.v1"     HomeWidget / LockWidget
 ```
 
-The JS side already calls `writeWidgetSnapshot(buildSnapshot(loans))` on the dashboard after each data refresh. In Expo Go it's a no-op. In a dev / TestFlight build it writes through `react-native-shared-group-preferences` (see install step below).
+The JS side calls `writeWidgetSnapshot(buildSnapshot(loans))` on the dashboard after each data refresh. In Expo Go it's a no-op. In a dev / TestFlight build it writes through `react-native-shared-group-preferences`.
 
-## One-time Xcode integration
+## Build integration (automated)
 
-Do this once, from a Mac with Xcode + an Apple Developer account.
+The widget extension is wired into the iOS build automatically via the [`@bacons/apple-targets`](https://github.com/EvanBacon/expo-apple-targets) config plugin (registered in `app.json` → `plugins`). The config lives in `expo-target.config.js` in this directory.
 
-### 1. Generate the native iOS project
+On every `eas build` (or `expo prebuild`) the plugin:
+
+1. Creates a `LedgerWidget` Widget Extension target in the Xcode project.
+2. Copies every `*.swift` and the `Info.plist` from this directory into the target.
+3. Wires the `LedgerWidget.entitlements` (App Group `group.com.ledger.shared`).
+4. Adds the matching App Group entitlement to the main app target (declared in `app.json` → `ios.entitlements`).
+
+**No manual Xcode work is required.** EAS builds will include the widget out of the box.
+
+## Local device test (optional)
 
 ```bash
 cd artifacts/ledger-mobile
 pnpm exec expo prebuild --platform ios --clean
-```
-
-### 2. Install the shared-prefs bridge (JS → App Group)
-
-```bash
-pnpm --filter @workspace/ledger-mobile add react-native-shared-group-preferences
-cd ios && pod install && cd ..
-```
-
-### 3. Add the widget extension target
-
-1. Open `ios/LedgerMobile.xcworkspace` in Xcode.
-2. File → New → Target → **Widget Extension**. Name it `LedgerWidget`. Uncheck "Include Configuration Intent".
-3. Delete the boilerplate Swift / Info.plist Xcode generated.
-4. Right-click the `LedgerWidget` group → Add Files to "LedgerMobile"… → select every file in this directory (`*.swift`, `Info.plist`, `LedgerWidget.entitlements`). Tick **Copy items if needed** and check the `LedgerWidget` target only.
-5. In the `LedgerWidget` target → Build Settings → "Code Signing Entitlements", set the path to `LedgerWidget/LedgerWidget.entitlements`.
-
-### 4. Create the App Group on both targets
-
-In both the main app target **and** the `LedgerWidget` target:
-
-1. Signing & Capabilities → **+ Capability** → App Groups.
-2. Add group: `group.com.ledger.shared`.
-
-The identifier must match `kAppGroup` in `SharedData.swift` and `APP_GROUP` in `lib/widgetSnapshot.ts`. If you change it, change it in all three places.
-
-### 5. Build to a device
-
-```bash
 pnpm exec expo run:ios --device
 ```
 
-Then long-press the home screen → + → Ledger to add widgets. Lock screen widgets: long-press lock screen → Customize → Lock Screen → tap a widget slot → Ledger.
+Long-press the home screen → + → Ledger to add widgets. Lock screen: long-press lock screen → Customize → tap a widget slot → Ledger.
 
-### 6. Force a widget refresh from JS (optional)
+## App Group identifier
 
-Widgets refresh on iOS's schedule (~15 min) by default. To poke them immediately after `writeWidgetSnapshot`, add `WidgetCenter.shared.reloadAllTimelines()` via a tiny Swift bridge, or use the `expo-widget-kit` community module if you adopt it later.
+`group.com.ledger.shared` must match in three places (kept in sync — change all if you ever rename):
+
+- `app.json` → `ios.entitlements["com.apple.security.application-groups"]`
+- `ios-widget/expo-target.config.js` → `entitlements["com.apple.security.application-groups"]`
+- `ios-widget/SharedData.swift` → `kAppGroup`
+- The JS snapshot writer in `lib/widgetSnapshot.ts` → `APP_GROUP`
+
+## Force a widget refresh from JS (optional)
+
+Widgets refresh on iOS's schedule (~15 min) by default. To poke them immediately after `writeWidgetSnapshot`, add `WidgetCenter.shared.reloadAllTimelines()` via a tiny Swift bridge, or adopt the `expo-widget-kit` community module later.
 
 ## Color & font conventions
 

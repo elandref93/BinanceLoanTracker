@@ -12,6 +12,10 @@
     "eas:build:production": "eas build -p ios --profile production",
     "eas:submit": "eas submit -p ios --latest"
   },
+  "engines": {
+    "node": ">=20",
+    "pnpm": ">=9"
+  },
   "devDependencies": {
     "@babel/core": "^7.25.2",
     "@clerk/expo": "^3.2.16",

@@ -14,7 +14,13 @@
       "backgroundColor": "#06090C"
     },
     "ios": {
-      "supportsTablet": false
+      "supportsTablet": false,
+      "bundleIdentifier": "com.ledger.app",
+      "buildNumber": "1",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSFaceIDUsageDescription": "Unlock Ledger and your stored Binance API keys with Face ID."
+      }
     },
     "android": {},
     "web": {

@@ -158,3 +158,18 @@ overrides:
   # drizzle-kit uses esbuild internally on an older version that's vulnerable, this overrides it
   "@esbuild-kit/esm-loader": "npm:tsx@^4.21.0"
   esbuild: "0.27.3"
+  # ---------------------------------------------------------------------------
+  # Security advisory overrides — keep these scoped to the *exact* vulnerable
+  # version so unaffected paths in the graph (e.g. plist@3.1.1 which already
+  # uses @xmldom/xmldom@0.9.x) are not regressed. Re-evaluate when the
+  # corresponding Expo / Express upstream releases a clean version.
+  # ---------------------------------------------------------------------------
+  # GHSA: @xmldom/xmldom <0.8.13 — XML injection / DoS (5 high alerts).
+  # Pulled in by @expo/plist@0.0.18 → @bacons/xcode (mobile build tooling).
+  "@xmldom/xmldom@0.7.13": "^0.8.13"
+  # GHSA: qs 6.11.1..6.15.1 — DoS via qs.stringify with comma format.
+  # Pulled in by express 5.x.
+  "qs@6.15.1": "^6.15.2"
+  # GHSA: postcss <8.5.10 — XSS via unescaped </style> in stringify output.
+  # Pulled in by @expo/metro-config (mobile build tooling).
+  "postcss@8.4.49": "^8.5.10"

@@ -38,6 +38,15 @@ jobs:
       - name: Install dependencies
         run: pnpm install --no-frozen-lockfile
 
+      # Build workspace lib type declarations first — api-server's typecheck
+      # imports types from @workspace/api-zod and @workspace/db, which live
+      # behind `tsc --build` project references.
+      - name: Build workspace type declarations
+        run: pnpm run typecheck:libs
+
+      - name: Typecheck backend
+        run: pnpm --filter @workspace/api-server run typecheck
+
       - name: Build backend
         run: pnpm --filter @workspace/api-server run build
 

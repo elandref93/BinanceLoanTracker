@@ -6,6 +6,12 @@
   "pnpm": {
     "autoInstallPeers": false
   },
+  "scripts": {
+    "preinstall": "node scripts/ensure-pnpm.mjs",
+    "build": "pnpm run typecheck && pnpm -r --if-present run build",
+    "typecheck:libs": "tsc --build",
+    "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck"
+  },
   "private": true,
   "devDependencies": {
     "prettier": "^3.8.3",

@@ -47,3 +47,11 @@ Thumbs.db
 # Replit
 .cache/
 .local/
+
+# Azure deployment artifacts (generated locally; CI builds its own)
+publish-profile.xml
+artifacts/api-server-deploy.zip
+artifacts/deploy-clean.zip
+artifacts/deploy-kudu-skip.zip
+artifacts/deploy-kudu-skip/
+deploy/

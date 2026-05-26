@@ -70,6 +70,7 @@
     "zod-validation-error": "^3.4.0"
   },
   "dependencies": {
+    "expo-apple-authentication": "^56.0.4",
     "expo-local-authentication": "~17.0.8"
   }
 }

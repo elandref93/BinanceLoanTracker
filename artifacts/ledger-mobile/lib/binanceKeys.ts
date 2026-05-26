@@ -1,6 +1,24 @@
 import * as SecureStore from "expo-secure-store";
+import { useEffect, useState } from "react";
 
 const STORAGE_KEY = "ledger.binance.accounts.v1";
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Tiny synchronous subscriber list so anything that mutates accounts (add /
+// remove) can notify React components instantly. We avoid relying solely on
+// navigator focus events because removing the last account from a deep screen
+// would not necessarily re-focus the parent gate.
+// ─────────────────────────────────────────────────────────────────────────────
+const listeners = new Set<() => void>();
+function notifyAccountsChanged(): void {
+  for (const fn of listeners) fn();
+}
+function subscribeAccountsChanged(fn: () => void): () => void {
+  listeners.add(fn);
+  return () => {
+    listeners.delete(fn);
+  };
+}
 
 export type BinanceAccount = {
   id: string;
@@ -63,12 +81,38 @@ export async function addAccount(input: {
   };
   accounts.push(account);
   await writeAll(accounts);
+  notifyAccountsChanged();
   return account;
 }
 
 export async function removeAccount(id: string): Promise<void> {
   const accounts = await readAll();
   await writeAll(accounts.filter((a) => a.id !== id));
+  notifyAccountsChanged();
+}
+
+/**
+ * React hook that returns the current count of locally-stored Binance
+ * accounts. Returns `null` until the first read completes. Updates reactively
+ * whenever `addAccount` or `removeAccount` is called from anywhere in the app.
+ */
+export function useStoredAccountsCount(): number | null {
+  const [count, setCount] = useState<number | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    const refresh = () => {
+      readAll().then((a) => {
+        if (!cancelled) setCount(a.length);
+      });
+    };
+    refresh();
+    const unsubscribe = subscribeAccountsChanged(refresh);
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, []);
+  return count;
 }
 
 export function validateBinanceKey(apiKey: string): string | null {

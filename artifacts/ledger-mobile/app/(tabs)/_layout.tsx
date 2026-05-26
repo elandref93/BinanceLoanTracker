@@ -5,7 +5,10 @@ import React, { useEffect } from "react";
 import { Platform, StyleSheet, View } from "react-native";
 
 import { useColors } from "@/hooks/useColors";
-import { listAccountsWithSecrets } from "@/lib/binanceKeys";
+import {
+  listAccountsWithSecrets,
+  useStoredAccountsCount,
+} from "@/lib/binanceKeys";
 import {
   setAuthTokenGetter,
   setExtraHeadersGetter,
@@ -50,6 +53,7 @@ export default function TabLayout() {
   const colors = useColors();
   const isWeb = Platform.OS === "web";
   const { isLoaded, isSignedIn, getToken } = useAuth();
+  const accountsCount = useStoredAccountsCount();
 
   useEffect(() => {
     setAuthTokenGetter(() => getToken());
@@ -69,8 +73,9 @@ export default function TabLayout() {
     };
   }, [getToken]);
 
-  if (!isLoaded) return null;
+  if (!isLoaded || accountsCount === null) return null;
   if (!isSignedIn) return <Redirect href="/(auth)/sign-in" />;
+  if (accountsCount === 0) return <Redirect href="/(onboarding)" />;
 
   return (
     <Tabs

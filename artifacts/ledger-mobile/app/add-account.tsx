@@ -1,6 +1,7 @@
+import { useAuth } from "@clerk/expo";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
-import { useRouter } from "expo-router";
+import { Redirect, useRouter } from "expo-router";
 import { useState } from "react";
 import {
   ActivityIndicator,
@@ -27,6 +28,7 @@ export default function AddAccountScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const { isLoaded, isSignedIn } = useAuth();
 
   const [name, setName] = useState("");
   const [apiKey, setApiKey] = useState("");
@@ -73,6 +75,9 @@ export default function AddAccountScreen() {
       { text: "Discard", style: "destructive", onPress: () => router.back() },
     ]);
   };
+
+  if (!isLoaded) return null;
+  if (!isSignedIn) return <Redirect href="/(auth)/sign-in" />;
 
   return (
     <KeyboardAvoidingView

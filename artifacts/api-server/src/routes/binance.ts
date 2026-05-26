@@ -11,7 +11,6 @@ import {
 import {
   BinanceApiError,
   type BinanceClient,
-  createMockBinanceClient,
   createMultiplexBinanceClient,
   createRealBinanceClient,
 } from "../lib/binance";
@@ -23,7 +22,33 @@ const MAX_ACCOUNTS_HEADER_BYTES = 16 * 1024;
 const MAX_ACCOUNTS = 10;
 
 const router: IRouter = Router();
-const mockClient = createMockBinanceClient();
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Empty client — returned when the device has no linked Binance accounts.
+// The mobile app gates onboarding on local account count, so this branch is
+// hit by unsigned smoke tests and previews where "no data" is the truthful
+// answer. No more mock data anywhere in the pipeline.
+// ─────────────────────────────────────────────────────────────────────────────
+const emptyClient: BinanceClient = {
+  async listAccounts() {
+    return [];
+  },
+  async listLoans() {
+    return [];
+  },
+  async getPrices(assets) {
+    return {
+      asOf: new Date().toISOString(),
+      prices: assets.map((asset) => ({ asset, usd: 0 })),
+    };
+  },
+  async listInterest() {
+    return [];
+  },
+  async getRateHistory() {
+    return [];
+  },
+};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Per-request client selection
@@ -34,8 +59,9 @@ const mockClient = createMockBinanceClient();
 // Secrets live only for the lifetime of the request — never logged, never
 // persisted.
 //
-// If the header is missing or unparseable, we fall back to the mock client so
-// development, previews, and unsigned smoke tests keep working.
+// If the header is missing or unparseable, we return empty data — the device
+// is expected to gate onboarding locally and only call these endpoints once
+// it has at least one linked account.
 // ─────────────────────────────────────────────────────────────────────────────
 
 interface DeviceAccount {
@@ -81,7 +107,7 @@ function parseAccountsHeader(req: Request): DeviceAccount[] | null {
 
 function clientFor(req: Request): BinanceClient {
   const accounts = parseAccountsHeader(req);
-  if (!accounts) return mockClient;
+  if (!accounts) return emptyClient;
   return createMultiplexBinanceClient(
     accounts.map((a) => ({
       account: { id: a.id, name: a.name },

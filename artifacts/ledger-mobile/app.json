@@ -30,7 +30,8 @@
       },
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
-        "NSFaceIDUsageDescription": "Unlock Ledger and your stored Binance API keys with Face ID."
+        "NSFaceIDUsageDescription": "Unlock Ledger and your stored Binance API keys with Face ID.",
+        "NSCameraUsageDescription": "Scan a QR code from Binance to import an API key without typing it."
       }
     },
     "android": {},
@@ -54,6 +55,13 @@
       ],
       "expo-secure-store",
       "expo-apple-authentication",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Scan a QR code from Binance to import an API key without typing it.",
+          "recordAudioAndroid": false
+        }
+      ],
       "@bacons/apple-targets"
     ],
     "experiments": {

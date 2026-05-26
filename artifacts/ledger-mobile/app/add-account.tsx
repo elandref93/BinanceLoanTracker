@@ -17,12 +17,14 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { QRScanner } from "@/components/QRScanner";
 import { useColors } from "@/hooks/useColors";
 import {
   addAccount,
   validateBinanceKey,
   validateBinanceSecret,
 } from "@/lib/binanceKeys";
+import { parseBinanceQR } from "@/lib/parseBinanceQR";
 
 export default function AddAccountScreen() {
   const colors = useColors();
@@ -36,6 +38,29 @@ export default function AddAccountScreen() {
   const [revealSecret, setRevealSecret] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [scanning, setScanning] = useState(false);
+  const [scanInfo, setScanInfo] = useState<string | null>(null);
+
+  const onScanned = (raw: string) => {
+    setScanning(false);
+    const { apiKey: k, apiSecret: s } = parseBinanceQR(raw);
+    if (!k && !s) {
+      setError(
+        "That QR code didn't contain a Binance API key. Enter it manually below.",
+      );
+      return;
+    }
+    setError(null);
+    if (k) setApiKey(k);
+    if (s) setApiSecret(s);
+    if (k && s) {
+      setScanInfo("Scanned API key and secret. Review, then Save.");
+    } else if (k) {
+      setScanInfo("Scanned API key. Paste or type the secret to continue.");
+    } else {
+      setScanInfo("Scanned secret. Paste or type the API key to continue.");
+    }
+  };
 
   const onSave = async () => {
     setError(null);
@@ -130,6 +155,34 @@ export default function AddAccountScreen() {
           </Text>
         </View>
 
+        <Pressable
+          onPress={() => {
+            setError(null);
+            setScanInfo(null);
+            setScanning(true);
+          }}
+          style={({ pressed }) => [
+            styles.scanBtn,
+            {
+              backgroundColor: colors.card,
+              borderColor: colors.primary,
+              borderRadius: colors.radius,
+              opacity: pressed ? 0.7 : 1,
+            },
+          ]}
+        >
+          <Feather name="maximize" size={18} color={colors.primary} />
+          <Text style={[styles.scanBtnText, { color: colors.primary }]}>
+            Scan QR code from Binance
+          </Text>
+        </Pressable>
+
+        {scanInfo ? (
+          <Text style={[styles.scanInfo, { color: colors.primary }]}>
+            {scanInfo}
+          </Text>
+        ) : null}
+
         <Field label="Name" hint="A label only you see">
           <TextInput
             value={name}
@@ -221,6 +274,12 @@ export default function AddAccountScreen() {
           only “Read Info”. Restrict to your IP if you can.
         </Text>
       </ScrollView>
+
+      <QRScanner
+        visible={scanning}
+        onClose={() => setScanning(false)}
+        onScanned={onScanned}
+      />
     </KeyboardAvoidingView>
   );
 }
@@ -295,6 +354,20 @@ const styles = StyleSheet.create({
     fontSize: 11,
     lineHeight: 16,
     fontFamily: "Inter_400Regular",
+    textAlign: "center",
+  },
+  scanBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+    paddingVertical: 14,
+    borderWidth: 1,
+  },
+  scanBtnText: { fontSize: 14, fontFamily: "Inter_600SemiBold" },
+  scanInfo: {
+    fontSize: 12,
+    fontFamily: "Inter_500Medium",
     textAlign: "center",
   },
 });

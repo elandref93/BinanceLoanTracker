@@ -5,8 +5,6 @@ import {
   Inter_700Bold,
   useFonts,
 } from "@expo-google-fonts/inter";
-import { ClerkLoaded, ClerkProvider } from "@clerk/expo";
-import { tokenCache } from "@clerk/expo/token-cache";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { setBaseUrl } from "@workspace/api-client-react";
 import { Stack } from "expo-router";
@@ -19,6 +17,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import { AppLockGate } from "@/components/AppLockGate";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { CurrencyProvider } from "@/context/CurrencyContext";
+import { SessionProvider } from "@/context/SessionContext";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -26,9 +25,6 @@ const domain = process.env.EXPO_PUBLIC_DOMAIN;
 if (domain) {
   setBaseUrl(`https://${domain}`);
 }
-
-const publishableKey = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY!;
-const proxyUrl = process.env.EXPO_PUBLIC_CLERK_PROXY_URL || undefined;
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -53,21 +49,16 @@ export default function RootLayout() {
   if (!fontsLoaded && !fontError) return null;
 
   return (
-    <ClerkProvider
-      publishableKey={publishableKey}
-      tokenCache={tokenCache}
-      proxyUrl={proxyUrl}
-    >
-      <ClerkLoaded>
-        <SafeAreaProvider>
-          <ErrorBoundary>
-            <QueryClientProvider client={queryClient}>
-              <GestureHandlerRootView
-                style={{ flex: 1, backgroundColor: "#06090C" }}
-              >
-                <KeyboardProvider>
-                  <CurrencyProvider>
-                    <AppLockGate>
+    <SessionProvider>
+      <SafeAreaProvider>
+        <ErrorBoundary>
+          <QueryClientProvider client={queryClient}>
+            <GestureHandlerRootView
+              style={{ flex: 1, backgroundColor: "#06090C" }}
+            >
+              <KeyboardProvider>
+                <CurrencyProvider>
+                  <AppLockGate>
                     <Stack
                       screenOptions={{
                         headerStyle: { backgroundColor: "#06090C" },
@@ -100,14 +91,13 @@ export default function RootLayout() {
                         }}
                       />
                     </Stack>
-                    </AppLockGate>
-                  </CurrencyProvider>
-                </KeyboardProvider>
-              </GestureHandlerRootView>
-            </QueryClientProvider>
-          </ErrorBoundary>
-        </SafeAreaProvider>
-      </ClerkLoaded>
-    </ClerkProvider>
+                  </AppLockGate>
+                </CurrencyProvider>
+              </KeyboardProvider>
+            </GestureHandlerRootView>
+          </QueryClientProvider>
+        </ErrorBoundary>
+      </SafeAreaProvider>
+    </SessionProvider>
   );
 }

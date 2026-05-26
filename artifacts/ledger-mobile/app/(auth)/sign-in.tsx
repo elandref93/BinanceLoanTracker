@@ -1,15 +1,10 @@
-import { useSSO } from "@clerk/expo";
-import { Feather } from "@expo/vector-icons";
 import * as AppleAuthentication from "expo-apple-authentication";
-import * as AuthSession from "expo-auth-session";
 import * as Haptics from "expo-haptics";
 import { Image } from "expo-image";
-import * as WebBrowser from "expo-web-browser";
 import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Platform,
-  Pressable,
   StyleSheet,
   Text,
   View,
@@ -17,61 +12,34 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useColors } from "@/hooks/useColors";
+import { useSession } from "@/context/SessionContext";
+import { AuthRequestError } from "@/lib/session";
 
-WebBrowser.maybeCompleteAuthSession();
-
-type Provider = "google" | "apple";
-
-function useWarmUpBrowser() {
-  useEffect(() => {
-    if (Platform.OS !== "android") return;
-    void WebBrowser.warmUpAsync();
-    return () => {
-      void WebBrowser.coolDownAsync();
-    };
-  }, []);
-}
-
-// User-cancellation surfaces under several shapes across Apple's native
-// dialog, the in-app browser used by Clerk, and Clerk's own error envelopes.
-// Treat all of them as "user backed out, no-op" rather than an error banner.
+// User-cancellation reaches us either as Apple's native error code or — on
+// older iOS builds and the simulator — as a generic Error with "cancel" in
+// the message. Treat all of them as no-op rather than an error banner.
 function isUserCancel(err: unknown): boolean {
   if (!err || typeof err !== "object") return false;
-  const e = err as { code?: unknown; message?: unknown; errors?: unknown };
+  const e = err as { code?: unknown; message?: unknown };
   if (typeof e.code === "string") {
     if (
       e.code === "ERR_REQUEST_CANCELED" ||
       e.code === "ERR_CANCELED" ||
-      e.code === "access_denied" ||
       e.code === "USER_CANCELED"
     ) {
       return true;
     }
   }
   if (typeof e.message === "string" && /cancel/i.test(e.message)) return true;
-  if (Array.isArray(e.errors)) {
-    for (const inner of e.errors) {
-      if (
-        inner &&
-        typeof inner === "object" &&
-        "code" in inner &&
-        typeof (inner as { code: unknown }).code === "string" &&
-        ((inner as { code: string }).code === "oauth_access_denied" ||
-          (inner as { code: string }).code === "access_denied")
-      ) {
-        return true;
-      }
-    }
-  }
   return false;
 }
 
 export default function SignInScreen() {
-  useWarmUpBrowser();
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { startSSOFlow } = useSSO();
-  const [busy, setBusy] = useState<Provider | null>(null);
+  const { signInWithApple } = useSession();
+
+  const [busy, setBusy] = useState(false);
   const [appleAvailable, setAppleAvailable] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -84,35 +52,32 @@ export default function SignInScreen() {
       .catch(() => setAppleAvailable(false));
   }, []);
 
-  const start = useCallback(
-    async (provider: Provider) => {
-      setBusy(provider);
-      setError(null);
-      if (Platform.OS !== "web") {
-        await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+  const onPress = useCallback(async () => {
+    setBusy(true);
+    setError(null);
+    if (Platform.OS !== "web") {
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    }
+    try {
+      await signInWithApple();
+      // The (auth) layout watches isSignedIn and redirects to /(tabs) once
+      // SessionContext updates — no manual navigation needed here.
+    } catch (err) {
+      if (isUserCancel(err)) {
+        // User backed out; not an error.
+      } else if (err instanceof AuthRequestError) {
+        setError(
+          err.status === 401
+            ? "Sign-in failed: backend rejected the Apple identity. Try again."
+            : `Sign-in failed (${err.status}). Please try again.`,
+        );
+      } else {
+        setError("Sign-in failed. Please try again.");
       }
-      try {
-        // No explicit `scheme` — AuthSession reads it from app.json
-        // (currently `binance-loan-tracker`), so we don't have to keep two
-        // copies of the same string in sync.
-        const { createdSessionId, setActive } = await startSSOFlow({
-          strategy: provider === "apple" ? "oauth_apple" : "oauth_google",
-          redirectUrl: AuthSession.makeRedirectUri(),
-        });
-        if (createdSessionId && setActive) {
-          await setActive({ session: createdSessionId });
-        }
-      } catch (err) {
-        if (!isUserCancel(err)) {
-          console.error(JSON.stringify(err, null, 2));
-          setError("Sign-in failed. Please try again.");
-        }
-      } finally {
-        setBusy(null);
-      }
-    },
-    [startSSOFlow],
-  );
+    } finally {
+      setBusy(false);
+    }
+  }, [signInWithApple]);
 
   return (
     <View
@@ -143,7 +108,7 @@ export default function SignInScreen() {
         ) : null}
 
         {appleAvailable ? (
-          busy === "apple" ? (
+          busy ? (
             <View
               style={[
                 styles.button,
@@ -163,36 +128,17 @@ export default function SignInScreen() {
               }
               cornerRadius={colors.radius}
               style={styles.appleButton}
-              onPress={() => start("apple")}
+              onPress={onPress}
             />
           )
-        ) : null}
-
-        <Pressable
-          onPress={() => start("google")}
-          disabled={busy !== null}
-          style={({ pressed }) => [
-            styles.button,
-            {
-              backgroundColor: colors.primary,
-              borderRadius: colors.radius,
-              opacity: pressed || busy !== null ? 0.7 : 1,
-            },
-          ]}
-        >
-          {busy === "google" ? (
-            <ActivityIndicator color={colors.primaryForeground} />
-          ) : (
-            <>
-              <Feather name="chrome" size={18} color={colors.primaryForeground} />
-              <Text
-                style={[styles.buttonText, { color: colors.primaryForeground }]}
-              >
-                Continue with Google
-              </Text>
-            </>
-          )}
-        </Pressable>
+        ) : (
+          // Surfaces only on simulator / unsupported devices. iOS TestFlight
+          // builds with usesAppleSignIn: true always have Apple available.
+          <Text style={[styles.fine, { color: colors.mutedForeground }]}>
+            Apple Sign In isn't available on this device. Run Ledger on a
+            real iOS device signed into an Apple ID.
+          </Text>
+        )}
 
         <Text style={[styles.fine, { color: colors.mutedForeground }]}>
           Private TestFlight build. API keys are read-only and stay on device.
@@ -228,7 +174,7 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
   },
   // Apple's native button manages its own internal layout; we only control
-  // outer dimensions (must match the Google button's tap target).
+  // outer dimensions (must match the tap target our designs assumed).
   appleButton: {
     height: 52,
   },
@@ -237,7 +183,6 @@ const styles = StyleSheet.create({
     height: 52,
     paddingVertical: 0,
   },
-  buttonText: { fontSize: 15, fontFamily: "Inter_600SemiBold" },
   fine: {
     textAlign: "center",
     fontSize: 11,

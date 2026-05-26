@@ -9,12 +9,12 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { useAuth, useUser } from "@clerk/expo";
 import { useFocusEffect, useRouter } from "expo-router";
 import { ActivityIndicator, Switch } from "react-native";
 import { useCallback, useEffect, useState } from "react";
 
 import { useCurrency } from "@/context/CurrencyContext";
+import { useSession } from "@/context/SessionContext";
 import { useColors } from "@/hooks/useColors";
 import { getAlertsEnabled, setAlertsEnabled } from "@/lib/alerts";
 import {
@@ -119,10 +119,9 @@ export default function SettingsScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { currency, set } = useCurrency();
-  const { signOut, getToken } = useAuth();
-  const { user } = useUser();
+  const { signOut, getToken, user } = useSession();
   const router = useRouter();
-  const email = user?.primaryEmailAddress?.emailAddress ?? null;
+  const email = user?.email ?? null;
   const [accounts, setAccounts] = useState<StoredBinanceAccount[]>([]);
   const [alerts, setAlerts] = useState(false);
   const [rules, setRules] = useState<AlertRule[]>([]);

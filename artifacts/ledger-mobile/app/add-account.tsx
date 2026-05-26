@@ -1,4 +1,3 @@
-import { useAuth } from "@clerk/expo";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { Redirect, useRouter } from "expo-router";
@@ -19,6 +18,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { QRScanner } from "@/components/QRScanner";
 import { useColors } from "@/hooks/useColors";
+import { useSession } from "@/context/SessionContext";
 import {
   addAccount,
   validateBinanceKey,
@@ -30,7 +30,7 @@ export default function AddAccountScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { isLoaded, isSignedIn } = useAuth();
+  const { isLoaded, isSignedIn } = useSession();
 
   const [name, setName] = useState("");
   const [apiKey, setApiKey] = useState("");

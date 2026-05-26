@@ -1,4 +1,3 @@
-import { useAuth } from "@clerk/expo";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { Redirect, useRouter } from "expo-router";
@@ -12,13 +11,14 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useColors } from "@/hooks/useColors";
+import { useSession } from "@/context/SessionContext";
 import { useStoredAccountsCount } from "@/lib/binanceKeys";
 
 export default function OnboardingIntro() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { isLoaded, isSignedIn, signOut } = useAuth();
+  const { isLoaded, isSignedIn, signOut } = useSession();
   const count = useStoredAccountsCount();
 
   if (!isLoaded || count === null) return null;

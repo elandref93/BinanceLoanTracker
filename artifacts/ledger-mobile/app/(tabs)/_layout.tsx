@@ -1,10 +1,10 @@
-import { useAuth } from "@clerk/expo";
 import { Feather } from "@expo/vector-icons";
 import { Redirect, Tabs } from "expo-router";
 import React, { useEffect } from "react";
 import { Platform, StyleSheet, View } from "react-native";
 
 import { useColors } from "@/hooks/useColors";
+import { useSession } from "@/context/SessionContext";
 import {
   listAccountsWithSecrets,
   useStoredAccountsCount,
@@ -18,7 +18,7 @@ import {
 export default function TabLayout() {
   const colors = useColors();
   const isWeb = Platform.OS === "web";
-  const { isLoaded, isSignedIn, getToken } = useAuth();
+  const { isLoaded, isSignedIn, getToken } = useSession();
   const accountsCount = useStoredAccountsCount();
 
   useEffect(() => {

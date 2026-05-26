@@ -62,22 +62,35 @@ Open `artifacts/ledger-mobile/eas.json` and replace the placeholders:
 - `submit.production.ios.ascAppId` — the 10-digit ID from step 2.
 - `submit.production.ios.appleTeamId` — the 10-char team ID from step 2.
 
-## 5. Set EAS secrets (the Clerk publishable key)
+## 5. Set EAS secrets
 
-`EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY` is read at build time and baked into the
-JS bundle. Put it in EAS rather than committing it:
+The mobile app now signs in natively with Sign in with Apple — no Clerk, no
+Google OAuth, no third-party auth dashboard. The only env var the build
+needs is the backend hostname:
 
 ```
 cd artifacts/ledger-mobile
 eas login                 # one-time, asks for your Expo account
 eas init                  # creates the EAS project (links to expo.dev)
-eas env:create --scope project --name EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY \
-  --value 'pk_live_xxx...' --environment production --environment preview
+eas env:create --scope project --name EXPO_PUBLIC_DOMAIN \
+  --value 'binance-loan-tracker-backend.azurewebsites.net' \
+  --environment production --environment preview
 ```
 
-If you don't have a Clerk production key yet, run with the dev key for now
-and swap later — Clerk dev keys work in TestFlight builds (you'll see the
-yellow dev-warning banner on first launch).
+If you previously set `EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY` or
+`EXPO_PUBLIC_CLERK_PROXY_URL` in EAS, delete them — the app no longer reads
+them, and leaving them around will only confuse future debugging:
+
+```
+eas env:delete --scope project --name EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY \
+  --environment production --environment preview
+eas env:delete --scope project --name EXPO_PUBLIC_CLERK_PROXY_URL \
+  --environment production --environment preview
+```
+
+The backend authenticates Apple identity tokens against its `APPLE_BUNDLE_ID`
+env var, which must exactly match the `expo.ios.bundleIdentifier` in
+`app.json`. Currently both are `com.ubuntu.life.ledger`.
 
 ## 6. First build
 
@@ -164,6 +177,13 @@ native config in `app.json`.
 - **App opens to a blank screen** in TestFlight — your `EXPO_PUBLIC_DOMAIN`
   is wrong or the API server isn't deployed. Check the device's Settings →
   Ledger or just check that the URL works in Safari with `/api/healthz`.
-- **Clerk sign-in loops** — TestFlight bundle is using a Clerk dev key but
-  Clerk thinks the bundle id isn't allowed. In the Clerk dashboard, add
-  your bundle id to the allowed list under Native Applications.
+- **Apple Sign In returns 401** — the backend rejected the identity token.
+  Check Azure logs: `az webapp log download --resource-group ubuntu --name
+  binance-loan-tracker-backend`. The api-server logs the specific reason on
+  every Apple Sign In failure (`expired`, `invalid_signature`,
+  `wrong_issuer_or_audience`, `jwks_unavailable`, etc). The most common
+  cause is a mismatch between `expo.ios.bundleIdentifier` in `app.json` and
+  the `APPLE_BUNDLE_ID` env var on Azure — they MUST be identical.
+- **"Apple Sign In isn't available on this device"** — you're on the iOS
+  simulator without an Apple ID, or running web/Android. Use a real iPhone
+  signed into an Apple ID.

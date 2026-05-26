@@ -6,7 +6,9 @@
 
 # ---------- Build stage ----------
 FROM node:24-alpine AS build
-RUN corepack enable && corepack prepare pnpm@9.15.9 --activate
+# corepack reads the pnpm version from the workspace's root package.json
+# (the "packageManager" field) so we don't have to hard-code it here.
+RUN corepack enable
 
 WORKDIR /repo
 

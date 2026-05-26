@@ -48,10 +48,7 @@ Thumbs.db
 .cache/
 .local/
 
-# Azure deployment artifacts (generated locally; CI builds its own)
+# Azure deployment / diagnostics artifacts (downloaded locally; never committed)
+applogs/
+applogs.zip
 publish-profile.xml
-artifacts/api-server-deploy.zip
-artifacts/deploy-clean.zip
-artifacts/deploy-kudu-skip.zip
-artifacts/deploy-kudu-skip/
-deploy/

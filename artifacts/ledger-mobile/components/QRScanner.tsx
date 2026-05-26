@@ -1,5 +1,4 @@
 import { Feather } from "@expo/vector-icons";
-import { CameraView, useCameraPermissions } from "expo-camera";
 import * as Haptics from "expo-haptics";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -17,13 +16,100 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useColors } from "@/hooks/useColors";
 
+// Load expo-camera at runtime, not at module init, so an older dev client
+// or TestFlight build (compiled before expo-camera was added) can still
+// open the add-account screen — it just won't be able to scan.
+type CameraModule = typeof import("expo-camera");
+let cameraModule: CameraModule | null = null;
+let cameraImportError: Error | null = null;
+try {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  cameraModule = require("expo-camera") as CameraModule;
+} catch (err) {
+  cameraImportError = err instanceof Error ? err : new Error(String(err));
+}
+
+export const isCameraAvailable = (): boolean =>
+  cameraModule !== null &&
+  typeof cameraModule.useCameraPermissions === "function" &&
+  typeof cameraModule.CameraView === "function";
+
 type Props = {
   visible: boolean;
   onClose: () => void;
   onScanned: (data: string) => void;
 };
 
-export function QRScanner({ visible, onClose, onScanned }: Props) {
+export function QRScanner(props: Props) {
+  if (!isCameraAvailable()) {
+    return <UnavailableScanner {...props} reason={cameraImportError} />;
+  }
+  return <RealScanner {...props} mod={cameraModule!} />;
+}
+
+function UnavailableScanner({
+  visible,
+  onClose,
+}: Props & { reason: Error | null }) {
+  const colors = useColors();
+  const insets = useSafeAreaInsets();
+  return (
+    <Modal
+      visible={visible}
+      animationType="slide"
+      onRequestClose={onClose}
+      presentationStyle="fullScreen"
+      statusBarTranslucent
+    >
+      <View
+        style={{
+          flex: 1,
+          backgroundColor: colors.background,
+          paddingTop: insets.top + 32,
+          paddingHorizontal: 24,
+          gap: 16,
+          alignItems: "center",
+        }}
+      >
+        <Feather name="camera-off" size={36} color={colors.mutedForeground} />
+        <Text
+          style={[
+            styles.permTitle,
+            { color: colors.foreground, textAlign: "center" },
+          ]}
+        >
+          QR scanning needs a new build
+        </Text>
+        <Text style={[styles.permBody, { color: colors.mutedForeground }]}>
+          The camera module was added after this build was installed. A new
+          TestFlight (or dev client) build is needed before you can scan.
+          For now, paste the API key and secret manually below.
+        </Text>
+        <Pressable
+          onPress={onClose}
+          style={[
+            styles.permBtn,
+            { backgroundColor: colors.primary, borderRadius: colors.radius },
+          ]}
+        >
+          <Text
+            style={[styles.permBtnText, { color: colors.primaryForeground }]}
+          >
+            OK
+          </Text>
+        </Pressable>
+      </View>
+    </Modal>
+  );
+}
+
+function RealScanner({
+  visible,
+  onClose,
+  onScanned,
+  mod,
+}: Props & { mod: CameraModule }) {
+  const { CameraView, useCameraPermissions } = mod;
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const [permission, requestPermission, getPermission] = useCameraPermissions();

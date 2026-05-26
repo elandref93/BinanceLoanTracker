@@ -524,6 +524,214 @@ export function createRealBinanceClient(
     return loans;
   }
 
+  // Margin loans: one entry per borrowed asset. Cross margin uses a SHARED
+  // collateral pool across all borrowed assets, so we attribute the same
+  // pool value to each loan entry and tag the loan id with `cross` so the
+  // UI can dedupe collateral in a future iteration. Isolated margin is
+  // properly per-pair so each entry has its own collateral. Margin LTV is
+  // derived from Binance's `marginLevel` (totalAsset/totalLiability):
+  //   LTV%   = 100 / marginLevel
+  //   Liq    = at marginLevel ≈ 1.1 → LTV ≈ 91%
+  //   Call   = at marginLevel ≈ 1.5 → LTV ≈ 67%
+  // These differ from the Crypto Loans constants (72/78). Per-loan LTVs
+  // are returned alongside global constants so the UI can colour bands
+  // correctly per product.
+  const MARGIN_CALL_LTV = round(100 / 1.5, 2); // ≈ 66.67
+  const MARGIN_LIQ_LTV = round(100 / 1.1, 2); // ≈ 90.91
+
+  async function fetchNextHourlyRates(
+    assets: string[],
+    isIsolated: boolean,
+  ): Promise<Map<string, number>> {
+    if (assets.length === 0) return new Map();
+    try {
+      const raw = await binanceSignedGet<unknown>(
+        creds,
+        "/sapi/v1/margin/next-hourly-interest-rate",
+        {
+          assets: assets.join(","),
+          isIsolated: isIsolated ? "TRUE" : "FALSE",
+        },
+      );
+      const out = new Map<string, number>();
+      for (const r of Array.isArray(raw) ? raw : []) {
+        const row = r as Record<string, unknown>;
+        out.set(
+          str(row["asset"]).toUpperCase(),
+          num(row["nextHourlyInterestRate"]),
+        );
+      }
+      return out;
+    } catch (err) {
+      logger.warn(
+        { err, accountId, isIsolated },
+        "next-hourly margin rate fetch failed",
+      );
+      return new Map();
+    }
+  }
+
+  async function fetchCrossMarginLoans(): Promise<BinanceLoan[]> {
+    let acct: unknown;
+    try {
+      acct = await binanceSignedGet(creds, "/sapi/v1/margin/account");
+    } catch (err) {
+      logger.warn({ err, accountId }, "cross margin fetch failed");
+      return [];
+    }
+    const a = (acct ?? {}) as Record<string, unknown>;
+    const totalAssetBtc = num(a["totalAssetOfBtc"]);
+    const totalLiabBtc = num(a["totalLiabilityOfBtc"]);
+    if (totalLiabBtc <= 0) return [];
+
+    const marginLevel = num(a["marginLevel"]);
+    const ltv = marginLevel > 0 ? round(100 / marginLevel, 2) : 0;
+
+    const userAssets = Array.isArray(a["userAssets"])
+      ? (a["userAssets"] as Array<Record<string, unknown>>)
+      : [];
+    const borrowed = userAssets
+      .map((u) => ({
+        asset: str(u["asset"]).toUpperCase(),
+        borrowed: num(u["borrowed"]),
+        interest: num(u["interest"]),
+      }))
+      .filter((u) => u.borrowed + u.interest > 0);
+    if (borrowed.length === 0) return [];
+
+    const btcUsd = (await fetchUsdPrices(["BTC"])).prices[0]?.usd ?? 0;
+    const collateralUsd = round(totalAssetBtc * btcUsd, 2);
+    const rateMap = await fetchNextHourlyRates(
+      borrowed.map((b) => b.asset),
+      false,
+    );
+    const priceMap = new Map(
+      (await fetchUsdPrices(borrowed.map((b) => b.asset))).prices.map((p) => [
+        p.asset,
+        p.usd,
+      ]),
+    );
+
+    return borrowed.map((b) => {
+      const debt = b.borrowed + b.interest;
+      const debtUsd = round(debt * (priceMap.get(b.asset) ?? 0), 2);
+      const hourly = rateMap.get(b.asset) ?? 0;
+      return {
+        id: `${accountId}_cross_${b.asset}`,
+        accountId,
+        asset: b.asset,
+        debt,
+        debtUsd,
+        collateral: {
+          asset: "POOL",
+          qty: round(totalAssetBtc, 8),
+          valueUsd: collateralUsd,
+        },
+        ltv,
+        marginCallLtv: MARGIN_CALL_LTV,
+        liqLtv: MARGIN_LIQ_LTV,
+        hourlyInterestRate: hourly,
+        apr: round(hourlyToApr(hourly), 3),
+      };
+    });
+  }
+
+  async function fetchIsolatedMarginLoans(): Promise<BinanceLoan[]> {
+    let acct: unknown;
+    try {
+      acct = await binanceSignedGet(creds, "/sapi/v1/margin/isolated/account");
+    } catch (err) {
+      logger.warn({ err, accountId }, "isolated margin fetch failed");
+      return [];
+    }
+    const a = (acct ?? {}) as Record<string, unknown>;
+    const assets = Array.isArray(a["assets"])
+      ? (a["assets"] as Array<Record<string, unknown>>)
+      : [];
+
+    type IsoEntry = {
+      symbol: string;
+      borrowAsset: string;
+      collateralAsset: string;
+      debt: number;
+      collateralQty: number;
+      marginLevel: number;
+    };
+    const entries: IsoEntry[] = [];
+    for (const pair of assets) {
+      const symbol = str(pair["symbol"]);
+      const marginLevel = num(pair["marginLevel"]);
+      const base = (pair["baseAsset"] ?? {}) as Record<string, unknown>;
+      const quote = (pair["quoteAsset"] ?? {}) as Record<string, unknown>;
+      const baseAsset = str(base["asset"]).toUpperCase();
+      const quoteAsset = str(quote["asset"]).toUpperCase();
+      const baseDebt = num(base["borrowed"]) + num(base["interest"]);
+      const quoteDebt = num(quote["borrowed"]) + num(quote["interest"]);
+      // Net (free + locked) on the OTHER side is the collateral for the side
+      // you borrowed. Isolated pairs typically borrow one side at a time.
+      if (baseDebt > 0) {
+        entries.push({
+          symbol,
+          borrowAsset: baseAsset,
+          collateralAsset: quoteAsset,
+          debt: baseDebt,
+          collateralQty:
+            num(quote["free"]) + num(quote["locked"]) + num(quote["netAsset"]) * 0,
+          marginLevel,
+        });
+      }
+      if (quoteDebt > 0) {
+        entries.push({
+          symbol,
+          borrowAsset: quoteAsset,
+          collateralAsset: baseAsset,
+          debt: quoteDebt,
+          collateralQty: num(base["free"]) + num(base["locked"]),
+          marginLevel,
+        });
+      }
+    }
+    if (entries.length === 0) return [];
+
+    const allAssets = Array.from(
+      new Set(entries.flatMap((e) => [e.borrowAsset, e.collateralAsset])),
+    );
+    const priceMap = new Map(
+      (await fetchUsdPrices(allAssets)).prices.map((p) => [p.asset, p.usd]),
+    );
+    const rateMap = await fetchNextHourlyRates(
+      entries.map((e) => e.borrowAsset),
+      true,
+    );
+
+    return entries.map((e) => {
+      const debtUsd = round(e.debt * (priceMap.get(e.borrowAsset) ?? 0), 2);
+      const collateralUsd = round(
+        e.collateralQty * (priceMap.get(e.collateralAsset) ?? 0),
+        2,
+      );
+      const ltv = e.marginLevel > 0 ? round(100 / e.marginLevel, 2) : 0;
+      const hourly = rateMap.get(e.borrowAsset) ?? 0;
+      return {
+        id: `${accountId}_iso_${e.symbol}_${e.borrowAsset}`,
+        accountId,
+        asset: e.borrowAsset,
+        debt: e.debt,
+        debtUsd,
+        collateral: {
+          asset: e.collateralAsset,
+          qty: e.collateralQty,
+          valueUsd: collateralUsd,
+        },
+        ltv,
+        marginCallLtv: MARGIN_CALL_LTV,
+        liqLtv: MARGIN_LIQ_LTV,
+        hourlyInterestRate: hourly,
+        apr: round(hourlyToApr(hourly), 3),
+      };
+    });
+  }
+
   return {
     async listAccounts() {
       // Each credential = one logical account from the device. We don't
@@ -545,7 +753,14 @@ export function createRealBinanceClient(
         loansPromise = Promise.all([
           fetchFlexibleLoans(),
           fetchFixedLoans(),
-        ]).then(([flex, fixed]) => [...flex, ...fixed]);
+          fetchCrossMarginLoans(),
+          fetchIsolatedMarginLoans(),
+        ]).then(([flex, fixed, cross, iso]) => [
+          ...flex,
+          ...fixed,
+          ...cross,
+          ...iso,
+        ]);
       }
       return loansPromise;
     },

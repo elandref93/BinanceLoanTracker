@@ -71,6 +71,17 @@ jobs:
 
       - name: Smoke test
         run: |
-          echo "Waiting 30s for container to start..."
-          sleep 30
-          curl -sSf --max-time 30 "https://${{ env.AZURE_WEBAPP_NAME }}.azurewebsites.net/healthz" || (echo "Healthz failed - check Azure logs" && exit 1)
+          set -euo pipefail
+          url="https://${{ env.AZURE_WEBAPP_NAME }}.azurewebsites.net/api/healthz"
+          echo "Probing $url (up to 5 min)..."
+          for i in $(seq 1 30); do
+            if curl -sSf --max-time 15 "$url" > /tmp/healthz.json; then
+              echo "OK after attempt $i:"
+              cat /tmp/healthz.json
+              exit 0
+            fi
+            echo "  attempt $i failed; sleeping 10s"
+            sleep 10
+          done
+          echo "Healthz never recovered. Recent app logs:"
+          exit 1

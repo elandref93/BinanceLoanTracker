@@ -7,6 +7,12 @@ on:
       - 'artifacts/api-server/**'
       - 'lib/api-zod/**'
       - 'lib/db/**'
+      - 'lib/api-spec/**'
+      - 'scripts/ensure-pnpm.mjs'
+      - 'scripts/package.json'
+      - 'tsconfig.json'
+      - 'tsconfig.base.json'
+      - '.dockerignore'
       - 'pnpm-lock.yaml'
       - 'package.json'
       - 'pnpm-workspace.yaml'
@@ -18,7 +24,61 @@ env:
   NODE_VERSION: '24.x'
 
 jobs:
+  # ---------------------------------------------------------------------------
+  # Docker build guard
+  # ---------------------------------------------------------------------------
+  # The production deploy below ships an esbuild-bundled zip, but the api-server
+  # Dockerfile is also a fully supported deployment path (web app for
+  # containers, ACR, local docker run, future ACA migration). This job exists
+  # so the Dockerfile is exercised on every push: if anyone refactors the
+  # monorepo manifest layout, pnpm overrides, or root scripts in a way that
+  # breaks the multi-stage build, the workflow fails here BEFORE we have a
+  # chance to lose that work to bit-rot.
+  # ---------------------------------------------------------------------------
+  docker-build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build api-server image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: artifacts/api-server/Dockerfile
+          push: false
+          load: true
+          tags: binance-loan-backend:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Smoke test container
+        run: |
+          set -euo pipefail
+          docker run -d --name smoke -p 18080:8080 \
+            -e PORT=8080 \
+            -e CLERK_SECRET_KEY=sk_test_dummy_smoke \
+            binance-loan-backend:ci
+          for i in $(seq 1 15); do
+            if curl -sSf --max-time 5 http://localhost:18080/api/healthz > /tmp/healthz.json; then
+              echo "OK on attempt $i: $(cat /tmp/healthz.json)"
+              docker rm -f smoke > /dev/null
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Container failed to serve healthz. Logs:"
+          docker logs smoke
+          docker rm -f smoke > /dev/null
+          exit 1
+
   build-and-deploy:
+    needs: docker-build
     runs-on: ubuntu-latest
     permissions:
       contents: read

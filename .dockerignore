@@ -1,0 +1,41 @@
+# Build context lives at the repo root (the api-server Dockerfile copies
+# pnpm-workspace.yaml etc. from the workspace root). Keep this file in sync
+# with that assumption — Docker only honours the .dockerignore that sits
+# alongside the build context root.
+
+# ── Node / pnpm install output ────────────────────────────────────────────
+**/node_modules
+**/.pnpm-store
+
+# ── Build artefacts ───────────────────────────────────────────────────────
+**/dist
+**/build
+**/.turbo
+**/.cache
+**/.next
+**/.expo
+**/coverage
+**/.tsbuildinfo
+artifacts/api-server/deploy/
+
+# ── Mobile/Expo dev artefacts (heavy, never needed by the backend image) ──
+artifacts/ledger-mobile/ios/build/
+artifacts/ledger-mobile/android/build/
+artifacts/ledger-mobile/android/.gradle/
+artifacts/ledger-mobile/.expo/
+artifacts/ledger-mobile/.expo-shared/
+
+# ── VCS / IDE / OS noise ──────────────────────────────────────────────────
+.git
+.github
+.vscode
+.idea
+.DS_Store
+Thumbs.db
+
+# ── Local-only secrets / drop-ins ─────────────────────────────────────────
+.env
+.env.*
+!.env.example
+publish-profile.xml
+*.log

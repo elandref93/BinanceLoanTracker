@@ -1,0 +1,3 @@
+{
+  "healthCheckPath": "/api/healthz"
+}

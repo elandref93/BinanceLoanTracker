@@ -1,0 +1,76 @@
+name: Deploy Backend
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'artifacts/api-server/**'
+      - 'lib/api-zod/**'
+      - 'lib/db/**'
+      - 'pnpm-lock.yaml'
+      - 'package.json'
+      - 'pnpm-workspace.yaml'
+      - '.github/workflows/deploy-backend.yml'
+  workflow_dispatch:
+
+env:
+  AZURE_WEBAPP_NAME: binance-loan-tracker-backend
+  NODE_VERSION: '22.x'
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Build backend
+        run: pnpm --filter @workspace/api-server run build
+
+      - name: Stage deploy package
+        run: |
+          mkdir -p deploy
+          cp -r artifacts/api-server/dist deploy/dist
+          cat > deploy/package.json <<'EOF'
+          {
+            "name": "binance-loan-tracker-backend",
+            "version": "0.0.0",
+            "private": true,
+            "type": "module",
+            "scripts": {
+              "start": "node --enable-source-maps ./dist/index.mjs"
+            }
+          }
+          EOF
+          ls -la deploy
+          ls -la deploy/dist
+
+      - name: Deploy to Azure Web App
+        id: deploy
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ env.AZURE_WEBAPP_NAME }}
+          package: deploy
+          publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
+
+      - name: Smoke test
+        run: |
+          echo "Waiting 30s for container to start..."
+          sleep 30
+          curl -sSf --max-time 30 "https://${{ env.AZURE_WEBAPP_NAME }}.azurewebsites.net/healthz" || (echo "Healthz failed - check Azure logs" && exit 1)

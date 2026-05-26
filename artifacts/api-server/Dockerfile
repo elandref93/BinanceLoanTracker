@@ -17,7 +17,7 @@ COPY lib/api-zod/package.json              ./lib/api-zod/
 COPY lib/db/package.json                   ./lib/db/
 
 # Install only what api-server (and its workspace deps) need.
-RUN pnpm install --frozen-lockfile --filter @workspace/api-server...
+RUN pnpm install --no-frozen-lockfile --filter @workspace/api-server...
 
 # Copy sources for api-server and its workspace deps.
 COPY artifacts/api-server/ ./artifacts/api-server/

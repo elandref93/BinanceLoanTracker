@@ -16,6 +16,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
+import { AppLockGate } from "@/components/AppLockGate";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { CurrencyProvider } from "@/context/CurrencyContext";
 
@@ -66,6 +67,7 @@ export default function RootLayout() {
               >
                 <KeyboardProvider>
                   <CurrencyProvider>
+                    <AppLockGate>
                     <Stack
                       screenOptions={{
                         headerStyle: { backgroundColor: "#06090C" },
@@ -98,6 +100,7 @@ export default function RootLayout() {
                         }}
                       />
                     </Stack>
+                    </AppLockGate>
                   </CurrencyProvider>
                 </KeyboardProvider>
               </GestureHandlerRootView>

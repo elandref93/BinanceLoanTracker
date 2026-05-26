@@ -27,6 +27,7 @@ import { fmtMoney, fmtPct } from "@/utils/format";
 import {
   headroomToTarget,
   LIQ_LTV,
+  priceAtLtv,
   priceDropPctTo,
   statusFromLtv,
   statusLabel,
@@ -233,13 +234,18 @@ export default function DashboardScreen() {
       </View>
 
       {closest ? (
-        <View
-          style={[
+        <Pressable
+          onPress={() => {
+            tap();
+            router.push(`/loan/${closest.id}`);
+          }}
+          style={({ pressed }) => [
             styles.distance,
             {
               backgroundColor: colors.card,
               borderColor: colors.border,
               borderRadius: colors.radius,
+              opacity: pressed ? 0.85 : 1,
             },
           ]}
         >
@@ -254,10 +260,15 @@ export default function DashboardScreen() {
           <Text style={[styles.distValue, { color: colors.danger }]}>
             {fmtPct(priceDropPctTo(closest, LIQ_LTV))}
           </Text>
-          <Text style={[styles.distHint, { color: colors.mutedForeground }]}>
-            price drop until liquidation
-          </Text>
-        </View>
+          <View style={styles.distFooter}>
+            <Text style={[styles.distHint, { color: colors.mutedForeground }]}>
+              price drop until liquidation
+            </Text>
+            <Text style={[styles.distHint, { color: colors.mutedForeground }]}>
+              at {fmtMoney(priceAtLtv(closest, LIQ_LTV), currency)}
+            </Text>
+          </View>
+        </Pressable>
       ) : null}
 
       <View style={styles.tileRow}>
@@ -345,6 +356,11 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   distanceHead: { flexDirection: "row", justifyContent: "space-between" },
+  distFooter: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginTop: 4,
+  },
   tileLabel: { fontSize: 10, letterSpacing: 1, fontFamily: "Inter_600SemiBold" },
   distAsset: { fontSize: 11, fontFamily: "Inter_600SemiBold" },
   distValue: {

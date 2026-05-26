@@ -11,7 +11,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useAuth, useUser } from "@clerk/expo";
 import { useFocusEffect, useRouter } from "expo-router";
-import { Switch } from "react-native";
+import { ActivityIndicator, Switch } from "react-native";
 import { useCallback, useEffect, useState } from "react";
 
 import { useCurrency } from "@/context/CurrencyContext";
@@ -23,9 +23,16 @@ import {
 } from "@/lib/alertRules";
 import {
   listAccounts,
+  listAccountsWithSecrets,
   removeAccount,
   type StoredBinanceAccount,
 } from "@/lib/binanceKeys";
+import {
+  isAppLockEnabled,
+  isAppLockSupported,
+  setAppLockEnabled,
+} from "@/lib/appLock";
+import { probeAccount, type ProbeResult } from "@/lib/keyHealth";
 import { fmtAge, fmtPct } from "@/utils/format";
 import { TARGET_LTV } from "@/utils/risk";
 
@@ -112,17 +119,60 @@ export default function SettingsScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { currency, set } = useCurrency();
-  const { signOut } = useAuth();
+  const { signOut, getToken } = useAuth();
   const { user } = useUser();
   const router = useRouter();
   const email = user?.primaryEmailAddress?.emailAddress ?? null;
   const [accounts, setAccounts] = useState<StoredBinanceAccount[]>([]);
   const [alerts, setAlerts] = useState(false);
   const [rules, setRules] = useState<AlertRule[]>([]);
+  const [appLockOn, setAppLockOn] = useState(false);
+  const [appLockSupported, setAppLockSupported] = useState(false);
+  const [probes, setProbes] = useState<
+    Record<string, ProbeResult | "loading" | undefined>
+  >({});
 
   useEffect(() => {
     getAlertsEnabled().then(setAlerts);
+    isAppLockSupported().then(setAppLockSupported);
+    isAppLockEnabled().then(setAppLockOn);
   }, []);
+
+  const onToggleAppLock = async (next: boolean) => {
+    await setAppLockEnabled(next);
+    setAppLockOn(next);
+  };
+
+  const onTestConnection = async (id: string) => {
+    setProbes((p) => ({ ...p, [id]: "loading" }));
+    const all = await listAccountsWithSecrets();
+    const acc = all.find((a) => a.id === id);
+    if (!acc) {
+      setProbes((p) => ({
+        ...p,
+        [id]: {
+          status: "fail",
+          checkedAt: Date.now(),
+          reason: "Account not found on device",
+        },
+      }));
+      return;
+    }
+    const baseUrl = process.env.EXPO_PUBLIC_DOMAIN
+      ? `https://${process.env.EXPO_PUBLIC_DOMAIN}`
+      : "";
+    let token: string | null = null;
+    try {
+      token = await getToken();
+    } catch {
+      // ignore — server will 401 and probeAccount surfaces the reason
+    }
+    const result = await probeAccount(acc, baseUrl, token);
+    setProbes((p) => ({ ...p, [id]: result }));
+    if (result.status === "fail") {
+      Alert.alert("Connection failed", result.reason);
+    }
+  };
 
   const onToggleAlerts = async (next: boolean) => {
     const ok = await setAlertsEnabled(next);
@@ -198,18 +248,75 @@ export default function SettingsScreen() {
             value="Tap below to add"
           />
         ) : (
-          accounts.map((a, i) => (
-            <View key={a.id}>
-              {i > 0 ? (
-                <View style={[styles.divider, { backgroundColor: colors.border }]} />
-              ) : null}
-              <Row
-                label={a.name}
-                value={`${a.apiKeyMasked} · added ${fmtAge(a.createdAt)}`}
-                onPress={() => onRemove(a.id, a.name)}
-              />
-            </View>
-          ))
+          accounts.map((a, i) => {
+            const probe = probes[a.id];
+            const probeObj =
+              probe && probe !== "loading" ? probe : undefined;
+            return (
+              <View key={a.id}>
+                {i > 0 ? (
+                  <View
+                    style={[styles.divider, { backgroundColor: colors.border }]}
+                  />
+                ) : null}
+                <Row
+                  label={a.name}
+                  value={`${a.apiKeyMasked} · added ${fmtAge(a.createdAt)}`}
+                  onPress={() => onRemove(a.id, a.name)}
+                />
+                <Pressable
+                  onPress={() => onTestConnection(a.id)}
+                  disabled={probe === "loading"}
+                  style={({ pressed }) => [
+                    styles.probeRow,
+                    { opacity: pressed || probe === "loading" ? 0.6 : 1 },
+                  ]}
+                >
+                  {probe === "loading" ? (
+                    <ActivityIndicator
+                      color={colors.primary}
+                      size="small"
+                    />
+                  ) : probeObj?.status === "ok" ? (
+                    <Feather name="check-circle" size={12} color={colors.ok} />
+                  ) : probeObj?.status === "fail" ? (
+                    <Feather
+                      name="alert-circle"
+                      size={12}
+                      color={colors.danger}
+                    />
+                  ) : (
+                    <Feather
+                      name="zap"
+                      size={12}
+                      color={colors.mutedForeground}
+                    />
+                  )}
+                  <Text
+                    style={[
+                      styles.probeText,
+                      {
+                        color:
+                          probeObj?.status === "ok"
+                            ? colors.ok
+                            : probeObj?.status === "fail"
+                              ? colors.danger
+                              : colors.mutedForeground,
+                      },
+                    ]}
+                  >
+                    {probe === "loading"
+                      ? "Testing…"
+                      : probeObj?.status === "ok"
+                        ? `Healthy · checked ${fmtAge(new Date(probeObj.checkedAt).toISOString())}`
+                        : probeObj?.status === "fail"
+                          ? `Failed · ${probeObj.reason}`
+                          : "Test connection"}
+                  </Text>
+                </Pressable>
+              </View>
+            );
+          })
         )}
         <View style={[styles.divider, { backgroundColor: colors.border }]} />
         <Row
@@ -286,6 +393,22 @@ export default function SettingsScreen() {
         <Row label="Target LTV (headroom calc)" value={`${TARGET_LTV}%`} />
       </Section>
 
+      {appLockSupported ? (
+        <Section title="Security">
+          <Row
+            label="Require Face ID on open"
+            right={
+              <Switch
+                value={appLockOn}
+                onValueChange={onToggleAppLock}
+                trackColor={{ true: colors.primary, false: colors.border }}
+                thumbColor={colors.background}
+              />
+            }
+          />
+        </Section>
+      ) : null}
+
       <Section title="Account">
         <Row label="Email" value={email ?? ""} />
         <View style={[styles.divider, { backgroundColor: colors.border }]} />
@@ -325,6 +448,18 @@ const styles = StyleSheet.create({
     fontVariant: ["tabular-nums"],
   },
   divider: { height: StyleSheet.hairlineWidth },
+  probeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingBottom: 10,
+    paddingLeft: 2,
+    marginTop: -4,
+  },
+  probeText: {
+    fontSize: 11,
+    fontFamily: "Inter_500Medium",
+  },
   version: {
     textAlign: "center",
     fontSize: 11,

@@ -1,4 +1,5 @@
 import { Feather } from "@expo/vector-icons";
+import * as Linking from "expo-linking";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -262,10 +263,68 @@ export default function LoanDetailScreen() {
         )}
       </Card>
 
-      <Card title="Cost projection">
-        <Row label="Per day" value={fmtMoney(daily, currency)} />
-        <Row label="Per 30 days" value={fmtMoney(daily * 30, currency)} />
-        <Row label="Per 365 days" value={fmtMoney(daily * 365, currency)} />
+      <Card title="Drop simulator">
+        <Text style={[styles.simHint, { color: colors.mutedForeground }]}>
+          If {loan.collateral.asset} falls from{" "}
+          {fmtMoney(loan.collateral.valueUsd / loan.collateral.qty, currency)}…
+        </Text>
+        <View style={styles.simRow}>
+          {[5, 10, 20, 30, 40].map((pct) => {
+            const projectedLtv = loan.ltv / (1 - pct / 100);
+            const projectedStatus = statusFromLtv(projectedLtv);
+            const tone =
+              projectedStatus === "ok"
+                ? colors.ok
+                : projectedStatus === "warn"
+                  ? colors.warn
+                  : colors.danger;
+            const past = projectedLtv >= LIQ_LTV;
+            return (
+              <View
+                key={pct}
+                style={[
+                  styles.simCell,
+                  {
+                    borderColor: colors.border,
+                    borderRadius: 8,
+                  },
+                ]}
+              >
+                <Text
+                  style={[styles.simPct, { color: colors.mutedForeground }]}
+                >
+                  −{pct}%
+                </Text>
+                <Text style={[styles.simLtv, { color: tone }]}>
+                  {past ? "LIQ" : fmtPct(projectedLtv, 0)}
+                </Text>
+              </View>
+            );
+          })}
+        </View>
+        <Text style={[styles.simFoot, { color: colors.mutedForeground }]}>
+          Liquidation at {fmtPct(LIQ_LTV, 0)} LTV
+        </Text>
+      </Card>
+
+      <Card title="Debt growth">
+        <Text style={[styles.simHint, { color: colors.mutedForeground }]}>
+          Interest accrues into the debt — there are no repayments.
+        </Text>
+        <Row label="Today" value={fmtMoney(loan.debtUsd, currency)} />
+        <Row
+          label="In 30 days"
+          value={fmtMoney(loan.debtUsd + daily * 30, currency)}
+        />
+        <Row
+          label="In 90 days"
+          value={fmtMoney(loan.debtUsd + daily * 90, currency)}
+        />
+        <Row
+          label="In 365 days"
+          value={fmtMoney(loan.debtUsd + daily * 365, currency)}
+        />
+        <Row label="Daily interest" value={fmtMoney(daily, currency)} />
         {byLoan ? (
           <Row
             label="Accrued last 30d"
@@ -273,6 +332,28 @@ export default function LoanDetailScreen() {
           />
         ) : null}
       </Card>
+
+      <Pressable
+        onPress={() => {
+          void Linking.openURL(
+            "https://www.binance.com/en/loan/orderRecord/loan/open",
+          );
+        }}
+        style={({ pressed }) => [
+          styles.binanceBtn,
+          {
+            borderColor: colors.border,
+            backgroundColor: colors.card,
+            borderRadius: colors.radius,
+            opacity: pressed ? 0.7 : 1,
+          },
+        ]}
+      >
+        <Feather name="external-link" size={14} color={colors.primary} />
+        <Text style={[styles.binanceBtnText, { color: colors.foreground }]}>
+          Open in Binance
+        </Text>
+      </Pressable>
 
       <Card
         title="Alerts for this loan"
@@ -393,6 +474,44 @@ const styles = StyleSheet.create({
   },
   ruleScope: { fontSize: 11, fontFamily: "Inter_400Regular", marginTop: 2 },
   empty: { fontSize: 12, fontFamily: "Inter_400Regular", paddingVertical: 4 },
+  simHint: { fontSize: 12, fontFamily: "Inter_400Regular", marginBottom: 4 },
+  simRow: { flexDirection: "row", gap: 6 },
+  simCell: {
+    flex: 1,
+    paddingVertical: 10,
+    paddingHorizontal: 4,
+    borderWidth: StyleSheet.hairlineWidth,
+    alignItems: "center",
+    gap: 2,
+  },
+  simPct: {
+    fontSize: 10,
+    letterSpacing: 0.5,
+    fontFamily: "Inter_600SemiBold",
+  },
+  simLtv: {
+    fontSize: 14,
+    fontFamily: "Inter_700Bold",
+    fontVariant: ["tabular-nums"],
+  },
+  simFoot: {
+    fontSize: 10,
+    fontFamily: "Inter_400Regular",
+    marginTop: 4,
+    textAlign: "right",
+  },
+  binanceBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 14,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  binanceBtnText: {
+    fontSize: 13,
+    fontFamily: "Inter_600SemiBold",
+  },
   foot: {
     textAlign: "center",
     fontSize: 11,

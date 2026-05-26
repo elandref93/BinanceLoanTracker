@@ -47,15 +47,14 @@ The api-server needs these at runtime:
 ```bash
 az webapp config appsettings set -g $RG -n $APP --settings \
   WEBSITES_PORT=8080 \
-  DATABASE_URL='postgres://USER:PASS@HOST:5432/DBNAME?sslmode=require' \
-  CLERK_SECRET_KEY='sk_live_...' \
-  CLERK_PUBLISHABLE_KEY='pk_live_...' \
+  APPLE_BUNDLE_ID='com.ubuntu.life.ledger' \
+  SESSION_JWT_SECRET="$(openssl rand -hex 32)" \
   NODE_ENV=production
 ```
 
 - `WEBSITES_PORT=8080` tells Azure which port the container listens on (matches `EXPOSE 8080` in the Dockerfile; the app reads `PORT` which Azure sets to 8080 by default for Linux containers).
-- `DATABASE_URL` must point to a Postgres reachable from Azure. Azure Database for PostgreSQL Flexible Server is the natural fit.
-- Clerk keys come from <https://dashboard.clerk.com> → API Keys.
+- `APPLE_BUNDLE_ID` must exactly match the `bundleIdentifier` in `artifacts/ledger-mobile/app.json`. Apple sets the `aud` claim of every identity token to the requesting app's bundle ID, and the backend rejects any token whose `aud` doesn't match this env.
+- `SESSION_JWT_SECRET` is the HMAC key used to sign session JWTs. Must be at least 32 characters of high-entropy randomness. **Never** commit it; **never** reuse the value from another environment. Rotating it invalidates every in-flight session and forces users to sign in again — which is the right behaviour after a suspected leak.
 
 ## 4. Verify
 
@@ -81,8 +80,8 @@ az webapp restart -g $RG -n $APP
 ```bash
 docker build -t ledger-api -f artifacts/api-server/Dockerfile .
 docker run --rm -p 8080:8080 \
-  -e DATABASE_URL='postgres://...' \
-  -e CLERK_SECRET_KEY='sk_...' \
+  -e APPLE_BUNDLE_ID='com.ubuntu.life.ledger' \
+  -e SESSION_JWT_SECRET="$(openssl rand -hex 32)" \
   ledger-api
-curl http://localhost:8080/healthz
+curl http://localhost:8080/api/healthz
 ```

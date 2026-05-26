@@ -29,10 +29,14 @@ if ($Build) {
 Invoke-DockerQuiet @('rm', '-f', $container)
 
 Write-Host "-> Starting $container on host port $HostPort ..."
+# The smoke test only hits public endpoints (/api/healthz), so the auth env
+# vars need only be PRESENT, not real — the container would still fail to
+# boot if they were missing entirely (cached config validation).
 docker run -d --name $container `
     -p ${HostPort}:8080 `
     -e PORT=8080 `
-    -e CLERK_SECRET_KEY=sk_test_dummy_smoke `
+    -e APPLE_BUNDLE_ID=com.ubuntu.life.ledger `
+    -e SESSION_JWT_SECRET=smoke_test_secret_at_least_32_bytes_xxxxxxx `
     $Image | Out-Null
 if ($LASTEXITCODE -ne 0) { throw "docker run failed (exit $LASTEXITCODE)" }
 

@@ -1,8 +1,8 @@
 # syntax=docker/dockerfile:1.7
 # Multi-stage Dockerfile for the Ledger api-server.
 # The api-server is an esbuild-bundled Express app: everything (workspace libs,
-# express, pino, clerk, drizzle, pg) is inlined into dist/index.mjs at build time,
-# so the runtime image needs only node + the dist/ output. No node_modules at runtime.
+# express, pino, jose) is inlined into dist/index.mjs at build time, so the
+# runtime image needs only node + the dist/ output. No node_modules at runtime.
 
 # ---------- Build stage ----------
 FROM node:24-alpine AS build

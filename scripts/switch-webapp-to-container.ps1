@@ -1,7 +1,8 @@
 # Flips the binance-loan-tracker-backend Web App from the built-in Node
 # runtime (zip deploy) to "Web App for Containers" pulling from ACR.
 #
-# App settings (CLERK_*, NODE_ENV, WEBSITES_PORT, etc.) are preserved by the
+# App settings (APPLE_BUNDLE_ID, SESSION_JWT_SECRET, NODE_ENV, WEBSITES_PORT,
+# etc.) are preserved by the
 # az CLI — only linuxFxVersion + container registry credentials change.
 #
 # Safe to re-run: az webapp config container set is idempotent.

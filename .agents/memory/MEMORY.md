@@ -1,1 +1,2 @@
 - [pnpm packageManager pin vs Replit nix pnpm](pnpm-package-manager-pin.md) — pnpm pinned to an older version than the container ships SIGABRT-loops on every invocation; bump the pin to match.
+- [Expo SDK native-module version mismatch](expo-sdk-native-module-mismatch.md) — installing a native module from a different SDK major than `expo` builds fine but crashes instantly on launch; gate every iOS build on `expo install --check`.

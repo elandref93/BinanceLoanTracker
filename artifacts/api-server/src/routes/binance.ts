@@ -194,11 +194,18 @@ router.get("/interest", async (req, res, next) => {
     const byLoan = await Promise.all(
       loans.map(async (loan) => {
         const loanRows = rows.filter((r) => r.loanId === loan.id);
+        const dailyUsd = round(loan.debt * loan.hourlyInterestRate * 24, 4);
+        // Flexible loans don't post BORROW_DAILY_INTEREST rows (interest folds
+        // into collateral). When we have no rows at all for a loan, fall back
+        // to an estimate at the current rate so the UI shows something
+        // meaningful instead of a flat zero. If rows exist (fixed-term),
+        // always trust them — even if they sum to zero or include rebates.
         const accrued30dUsd = round(
-          loanRows.reduce((s, r) => s + r.amountUsd, 0),
+          loanRows.length > 0
+            ? loanRows.reduce((s, r) => s + r.amountUsd, 0)
+            : dailyUsd * 30,
           2,
         );
-        const dailyUsd = round(loan.debt * loan.hourlyInterestRate * 24, 4);
         const rateHistory = await client.getRateHistory(loan.id, 30);
         const aprs = rateHistory.map((p) => p.apr);
         const avg30dApr = aprs.length

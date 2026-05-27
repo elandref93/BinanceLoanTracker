@@ -424,10 +424,17 @@ export function createRealBinanceClient(
           const row = r as Record<string, unknown>;
           // Binance returns annualized rate per loan coin under `flexibleDailyInterestRate`
           // (daily) or `flexibleHourlyInterestRate` depending on rollout — try both.
+          // Binance has shipped a few different field names for this rate
+          // across API revisions. Try them all and take the first non-zero.
           const hourly =
             num(row["flexibleHourlyInterestRate"]) ||
+            num(row["flexibleInterestRate"]) ||
+            num(row["hourlyInterestRate"]) ||
             num(row["flexibleDailyInterestRate"]) / 24 ||
-            num(row["flexibleYearlyInterestRate"]) / 8760;
+            num(row["dailyInterestRate"]) / 24 ||
+            num(row["flexibleYearlyInterestRate"]) / 8760 ||
+            num(row["flexibleAnnualInterestRate"]) / 8760 ||
+            num(row["annualInterestRate"]) / 8760;
           return [str(row["loanCoin"]).toUpperCase(), hourly];
         }),
       );
@@ -455,7 +462,15 @@ export function createRealBinanceClient(
       const ltv = num(row["currentLTV"]) * 100;
       const marginCallLtv = num(row["marginCallLTV"]) * 100;
       const liqLtv = num(row["liquidationLTV"]) * 100;
-      const hourly = rateMap.get(loanCoin) ?? 0;
+      // Prefer the rate on the order row itself if Binance returns it —
+      // it's the actual rate the loan is being charged. Fall back to the
+      // public rate sheet keyed by loan coin.
+      const orderHourly =
+        num(row["hourlyInterestRate"]) ||
+        num(row["currentHourlyInterestRate"]) ||
+        num(row["dailyInterestRate"]) / 24 ||
+        num(row["annualInterestRate"]) / 8760;
+      const hourly = orderHourly || rateMap.get(loanCoin) || 0;
       const loanCoinUsd = await priceOf(loanCoin);
       const collateralUsd = await priceOf(collateralCoin);
       loans.push({

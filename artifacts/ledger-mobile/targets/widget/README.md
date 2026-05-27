@@ -66,3 +66,13 @@ The widgets mirror the app's dark fintech palette (`SharedData.swift` → `Color
 - OK `#1FB6A6` / Warn `#F5A524` / Danger `#FF4D6D`
 
 Numbers use SF Rounded + `.monospacedDigit()` — closest equivalent to the app's Inter + `tabular-nums`.
+
+## Live Activity (scaffold)
+
+`LedgerLiveActivity.swift` declares an ActivityKit `Widget` with Dynamic
+Island + Lock Screen presentations. It is _not_ started by the app yet —
+the JS bridge in `../../lib/liveActivity.ts` calls a not-yet-built
+`LedgerLiveActivityModule` native module and gracefully no-ops when
+absent. Add the native module (Swift `Activity<LedgerActivityAttributes>
+.request(...)` wrapper) when we want LTV pinned in the Dynamic Island
+during volatile sessions.

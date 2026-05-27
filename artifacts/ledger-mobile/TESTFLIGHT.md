@@ -166,3 +166,56 @@ lock screen → **Customize** → tap a slot → **Ledger**.
 - **"Apple Sign In isn't available on this device"** — you're on the iOS
   simulator without an Apple ID, or running web/Android. Use a real iPhone
   signed into an Apple ID.
+
+---
+
+## 10. Background refresh & alerts (build #19+)
+
+The app registers a `BGAppRefreshTask` (id `com.ubuntu.life.ledger.refresh`,
+declared in `app.json` → `infoPlist.BGTaskSchedulerPermittedIdentifiers`)
+that wakes up every ~15 min in the background, calls `/loans`, refreshes the
+widget snapshot, samples the LTV-history ring buffer, and fires any
+threshold-cross local notifications.
+
+iOS imposes a soft floor on how often this actually runs — typically once
+every 15–60 min depending on usage patterns and battery. There is no remote
+push (APNs) on purpose: for 3 users, local notifications driven by
+background-fetch give the same UX without standing up an Apple push key,
+device-token registry, or a backend pusher.
+
+To verify on device:
+- Toggle Settings → Notifications → Push when LTV alerts trigger.
+- Add an alert rule whose threshold is below your current LTV.
+- Background the app; within a refresh cycle iOS should surface the
+  notification.
+
+## 11. Live Activity (scaffold, build #19)
+
+`targets/widget/LedgerLiveActivity.swift` declares an ActivityKit
+`Widget` (Dynamic Island + Lock Screen layouts). The accompanying JS
+bridge `lib/liveActivity.ts` calls a native module
+(`LedgerLiveActivityModule`) to `start`/`update`/`end` the activity. That
+module is NOT yet shipped — every JS call no-ops cleanly today. Add it
+when we want LTV to be live-pinned during volatile sessions.
+
+Info.plist already declares `NSSupportsLiveActivities=true`, so no extra
+config is needed when the module lands.
+
+## 12. Apple Watch complication (scaffold, build #19)
+
+Two cooperating targets, both wired in via `@bacons/apple-targets`:
+- `targets/watch/` (`type: "watch"`) — minimal SwiftUI root view
+  (`LedgerWatchApp.swift`) showing the aggregate LTV. This is the watch
+  app container; its `@main` is the only entry point in that target.
+- `targets/watch-complication/` (`type: "watch-widget"`) — a WidgetKit
+  bundle (`LedgerComplication`, `accessoryCircular` +
+  `accessoryRectangular`) that reads the same App Group snapshot the
+  iPhone widget reads (`group.com.ledger.shared`,
+  `ledger.snapshot.v1`). Splitting it from the watch app avoids the
+  dual-`@main` compile error that occurs when a SwiftUI App and a
+  WidgetBundle share a target.
+
+The first device build needs a paired Apple Watch on the test iPhone for
+Xcode/EAS to provision the companion app. Without one, the iPhone build
+still succeeds — the watch app just won't install. Bundle ID for the
+companion is `com.ubuntu.life.ledger.watchkitapp`.

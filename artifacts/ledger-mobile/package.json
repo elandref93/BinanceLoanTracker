@@ -70,7 +70,9 @@
   },
   "dependencies": {
     "expo-apple-authentication": "^56.0.4",
+    "expo-background-fetch": "^56.0.14",
     "expo-camera": "^56.0.7",
-    "expo-local-authentication": "~17.0.8"
+    "expo-local-authentication": "~17.0.8",
+    "expo-task-manager": "^56.0.14"
   }
 }

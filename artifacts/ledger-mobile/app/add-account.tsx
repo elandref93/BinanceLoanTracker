@@ -1,6 +1,7 @@
 import { Feather } from "@expo/vector-icons";
-import * as Haptics from "expo-haptics";
 import { Redirect, useRouter } from "expo-router";
+
+import { haptic } from "@/lib/haptics";
 import { useState } from "react";
 import {
   ActivityIndicator,
@@ -77,11 +78,7 @@ export default function AddAccountScreen() {
     setBusy(true);
     try {
       await addAccount({ name: trimmedName, apiKey, apiSecret });
-      if (Platform.OS !== "web") {
-        await Haptics.notificationAsync(
-          Haptics.NotificationFeedbackType.Success,
-        );
-      }
+      haptic.success();
       router.back();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not save");

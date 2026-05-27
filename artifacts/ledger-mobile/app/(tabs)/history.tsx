@@ -1,7 +1,6 @@
 import { useRouter } from "expo-router";
 import { useMemo } from "react";
 import {
-  ActivityIndicator,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -11,9 +10,13 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Rect } from "react-native-svg";
 
+import { Container } from "@/components/Container";
 import { ErrorView } from "@/components/ErrorView";
+import { LtvHistoryChart } from "@/components/LtvHistoryChart";
+import { ScreenLoader } from "@/components/ScreenLoader";
 import { Sparkline } from "@/components/Sparkline";
 import { Tile } from "@/components/Tile";
+import { useTargetLtv } from "@/context/RiskSettingsContext";
 import { useCurrency } from "@/context/CurrencyContext";
 import { useColors } from "@/hooks/useColors";
 import { fmtMoney, fmtPct } from "@/utils/format";
@@ -28,6 +31,7 @@ export default function HistoryScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { currency } = useCurrency();
+  const targetLtv = useTargetLtv();
 
   const interestQ = useListInterest();
   const accountsQ = useListAccounts();
@@ -51,11 +55,7 @@ export default function HistoryScreen() {
   }, [rows]);
 
   if (interestQ.isLoading || accountsQ.isLoading || loansQ.isLoading) {
-    return (
-      <View style={[styles.center, { backgroundColor: colors.background }]}>
-        <ActivityIndicator color={colors.primary} />
-      </View>
-    );
+    return <ScreenLoader hint="Loading history…" />;
   }
 
   if (interestQ.isError || accountsQ.isError || loansQ.isError) {
@@ -72,6 +72,12 @@ export default function HistoryScreen() {
       </View>
     );
   }
+
+  const aggLtv = useMemo(() => {
+    const totalDebt = loans.reduce((s, l) => s + l.debtUsd, 0);
+    const totalCol = loans.reduce((s, l) => s + l.collateral.valueUsd, 0);
+    return totalCol > 0 ? (totalDebt / totalCol) * 100 : 0;
+  }, [loans]);
 
   const max = Math.max(0.0001, ...byDay.map(([, v]) => v));
   const chartW = 320;
@@ -101,6 +107,7 @@ export default function HistoryScreen() {
         gap: 16,
       }}
     >
+      <Container style={{ gap: 16 }}>
       <View>
         <Text style={[styles.title, { color: colors.foreground }]}>
           Interest
@@ -123,6 +130,8 @@ export default function HistoryScreen() {
           style={{ flex: 1 }}
         />
       </View>
+
+      <LtvHistoryChart currentLtv={aggLtv} targetLtv={targetLtv} hours={168} />
 
       <View style={styles.row}>
         <Tile
@@ -298,6 +307,7 @@ export default function HistoryScreen() {
           ))
         )}
       </View>
+      </Container>
     </ScrollView>
   );
 }

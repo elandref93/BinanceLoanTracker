@@ -1,6 +1,7 @@
 import * as AppleAuthentication from "expo-apple-authentication";
-import * as Haptics from "expo-haptics";
 import { Image } from "expo-image";
+
+import { haptic } from "@/lib/haptics";
 import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -55,9 +56,7 @@ export default function SignInScreen() {
   const onPress = useCallback(async () => {
     setBusy(true);
     setError(null);
-    if (Platform.OS !== "web") {
-      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    }
+    haptic.impact();
     try {
       await signInWithApple();
       // The (auth) layout watches isSignedIn and redirects to /(tabs) once

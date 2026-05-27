@@ -13,6 +13,7 @@ import { useFocusEffect, useRouter } from "expo-router";
 import { ActivityIndicator, Switch } from "react-native";
 import { useCallback, useEffect, useState } from "react";
 
+import { Container } from "@/components/Container";
 import { useCurrency } from "@/context/CurrencyContext";
 import {
   MAX_TARGET_LTV,
@@ -276,6 +277,7 @@ export default function SettingsScreen() {
         gap: 20,
       }}
     >
+      <Container style={{ gap: 20 }}>
       <Text style={[styles.title, { color: colors.foreground }]}>Settings</Text>
 
       <Section title="Accounts">
@@ -463,6 +465,7 @@ export default function SettingsScreen() {
       <Text style={[styles.version, { color: colors.mutedForeground }]}>
         Ledger · v1.0.0 · TestFlight
       </Text>
+      </Container>
     </ScrollView>
   );
 }

@@ -19,6 +19,7 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { CurrencyProvider } from "@/context/CurrencyContext";
 import { RiskSettingsProvider } from "@/context/RiskSettingsContext";
 import { SessionProvider } from "@/context/SessionContext";
+import { registerBackgroundRefresh } from "@/lib/backgroundTask";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -46,6 +47,10 @@ export default function RootLayout() {
       SplashScreen.hideAsync();
     }
   }, [fontsLoaded, fontError]);
+
+  useEffect(() => {
+    void registerBackgroundRefresh();
+  }, []);
 
   if (!fontsLoaded && !fontError) return null;
 

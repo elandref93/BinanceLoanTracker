@@ -1,10 +1,7 @@
 import { Feather } from "@expo/vector-icons";
-import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  ActivityIndicator,
-  Platform,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -15,11 +12,16 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { checkAndNotifyLoans } from "@/lib/alerts";
+import { haptic } from "@/lib/haptics";
+import { recordLtvSample } from "@/lib/ltvHistory";
 import { buildSnapshot, writeWidgetSnapshot } from "@/lib/widgetSnapshot";
 import { AccountChip } from "@/components/AccountChip";
+import { Container } from "@/components/Container";
 import { ErrorView } from "@/components/ErrorView";
 import { LoanRow } from "@/components/LoanRow";
+import { LtvHistoryChart } from "@/components/LtvHistoryChart";
 import { Pill } from "@/components/Pill";
+import { ScreenLoader } from "@/components/ScreenLoader";
 import { Tile } from "@/components/Tile";
 import { useCurrency } from "@/context/CurrencyContext";
 import { useTargetLtv } from "@/context/RiskSettingsContext";
@@ -34,11 +36,6 @@ import {
   statusLabel,
 } from "@/utils/risk";
 
-function tap() {
-  if (Platform.OS !== "web") {
-    void Haptics.selectionAsync();
-  }
-}
 import {
   useListAccounts,
   useListLoans,
@@ -93,20 +90,27 @@ export default function DashboardScreen() {
     if (all.length === 0) return;
     void checkAndNotifyLoans(all);
     void writeWidgetSnapshot(buildSnapshot(all, targetLtv));
-  }, [all, targetLtv]);
+    void recordLtvSample(aggLtv);
+  }, [all, targetLtv, aggLtv]);
 
   const refreshing = accountsQ.isFetching || loansQ.isFetching;
+  const wasRefreshing = useRef(false);
+  useEffect(() => {
+    if (wasRefreshing.current && !refreshing) {
+      if (accountsQ.isError || loansQ.isError) haptic.error();
+      else haptic.success();
+    }
+    wasRefreshing.current = refreshing;
+  }, [refreshing, accountsQ.isError, loansQ.isError]);
+
   const onRefresh = () => {
+    haptic.impact();
     accountsQ.refetch();
     loansQ.refetch();
   };
 
   if (accountsQ.isLoading || loansQ.isLoading) {
-    return (
-      <View style={[styles.center, { backgroundColor: colors.background }]}>
-        <ActivityIndicator color={colors.primary} />
-      </View>
-    );
+    return <ScreenLoader hint="Loading your loans…" />;
   }
 
   if (accountsQ.isError || loansQ.isError) {
@@ -137,6 +141,7 @@ export default function DashboardScreen() {
         />
       }
     >
+      <Container style={{ gap: 16 }}>
       <View style={styles.header}>
         <View>
           <Text style={[styles.title, { color: colors.foreground }]}>
@@ -148,7 +153,7 @@ export default function DashboardScreen() {
         </View>
         <Pressable
           onPress={() => {
-            tap();
+            haptic.tap();
             toggle();
           }}
           style={({ pressed }) => [
@@ -178,7 +183,7 @@ export default function DashboardScreen() {
           hint={fmtPct(aggLtv)}
           selected={filter === null}
           onPress={() => {
-            tap();
+            haptic.tap();
             setFilter(null);
           }}
         />
@@ -189,7 +194,7 @@ export default function DashboardScreen() {
             hint={`LTV ${fmtPct(accountLtv.get(a.id) ?? 0)}`}
             selected={filter === a.id}
             onPress={() => {
-              tap();
+              haptic.tap();
               setFilter(a.id);
             }}
           />
@@ -235,10 +240,12 @@ export default function DashboardScreen() {
         </View>
       </View>
 
+      <LtvHistoryChart currentLtv={aggLtv} targetLtv={targetLtv} />
+
       {closest ? (
         <Pressable
           onPress={() => {
-            tap();
+            haptic.tap();
             router.push(`/loan/${closest.id}`);
           }}
           style={({ pressed }) => [
@@ -305,12 +312,18 @@ export default function DashboardScreen() {
             );
           })}
           {loans.length === 0 ? (
-            <Text style={[styles.empty, { color: colors.mutedForeground }]}>
-              No open loans
-            </Text>
+            <View style={[styles.emptyCard, { borderColor: colors.border, borderRadius: colors.radius }]}>
+              <Text style={[styles.emptyTitle, { color: colors.foreground }]}>
+                No open loans
+              </Text>
+              <Text style={[styles.empty, { color: colors.mutedForeground }]}>
+                When you open a loan on Binance it will show up here on next refresh.
+              </Text>
+            </View>
           ) : null}
         </View>
       </View>
+      </Container>
     </ScrollView>
   );
 }
@@ -379,5 +392,7 @@ const styles = StyleSheet.create({
     fontFamily: "Inter_600SemiBold",
     textTransform: "uppercase",
   },
-  empty: { textAlign: "center", paddingVertical: 24, fontFamily: "Inter_400Regular" },
+  empty: { textAlign: "center", fontSize: 12, fontFamily: "Inter_400Regular", marginTop: 6 },
+  emptyCard: { padding: 24, borderWidth: StyleSheet.hairlineWidth, alignItems: "center" },
+  emptyTitle: { fontSize: 14, fontFamily: "Inter_600SemiBold" },
 });

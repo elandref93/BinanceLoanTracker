@@ -9,7 +9,7 @@
       }
     },
     "version": "1.0.0",
-    "orientation": "portrait",
+    "orientation": "default",
     "icon": "./assets/images/icon.png",
     "scheme": "binance-loan-tracker",
     "userInterfaceStyle": "dark",
@@ -20,7 +20,7 @@
       "backgroundColor": "#06090C"
     },
     "ios": {
-      "supportsTablet": false,
+      "supportsTablet": true,
       "bundleIdentifier": "com.ubuntu.life.ledger",
       "appleTeamId": "42G8TCTL98",
       "buildNumber": "1",
@@ -31,7 +31,10 @@
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSFaceIDUsageDescription": "Unlock Ledger and your stored Binance API keys with Face ID.",
-        "NSCameraUsageDescription": "Scan a QR code from Binance to import an API key without typing it."
+        "NSCameraUsageDescription": "Scan a QR code from Binance to import an API key without typing it.",
+        "UIBackgroundModes": ["fetch", "processing"],
+        "NSSupportsLiveActivities": true,
+        "BGTaskSchedulerPermittedIdentifiers": ["com.ubuntu.life.ledger.refresh"]
       }
     },
     "android": {},
@@ -62,6 +65,8 @@
           "recordAudioAndroid": false
         }
       ],
+      "expo-background-fetch",
+      "expo-task-manager",
       "@bacons/apple-targets"
     ],
     "experiments": {

@@ -3,7 +3,6 @@ import * as Linking from "expo-linking";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import {
-  ActivityIndicator,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -11,9 +10,11 @@ import {
   View,
 } from "react-native";
 
+import { Container } from "@/components/Container";
 import { ErrorView } from "@/components/ErrorView";
 import { Pill } from "@/components/Pill";
 import { RiskGauge } from "@/components/RiskGauge";
+import { ScreenLoader } from "@/components/ScreenLoader";
 import { Sparkline } from "@/components/Sparkline";
 import { useCurrency } from "@/context/CurrencyContext";
 import { useColors } from "@/hooks/useColors";
@@ -104,10 +105,10 @@ export default function LoanDetailScreen() {
 
   if (loansQ.isLoading || accountsQ.isLoading) {
     return (
-      <View style={[styles.center, { backgroundColor: colors.background }]}>
+      <>
         <Stack.Screen options={{ title: "Loan" }} />
-        <ActivityIndicator color={colors.primary} />
-      </View>
+        <ScreenLoader hint="Loading loan…" />
+      </>
     );
   }
 
@@ -163,6 +164,7 @@ export default function LoanDetailScreen() {
       <Stack.Screen
         options={{ title: `${loan.collateral.asset} · ${account?.name ?? ""}` }}
       />
+      <Container style={{ gap: 14 }}>
       <View style={styles.head}>
         <Text style={[styles.asset, { color: colors.foreground }]}>
           {loan.collateral.asset}/{loan.asset}
@@ -414,6 +416,7 @@ export default function LoanDetailScreen() {
       <Text style={[styles.foot, { color: colors.mutedForeground }]}>
         Read-only · adjust position in the Binance app
       </Text>
+      </Container>
     </ScrollView>
   );
 }

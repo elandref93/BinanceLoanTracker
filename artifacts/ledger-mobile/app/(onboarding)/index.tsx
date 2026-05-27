@@ -1,13 +1,13 @@
 import { Feather } from "@expo/vector-icons";
-import * as Haptics from "expo-haptics";
 import { Redirect, useRouter } from "expo-router";
 import {
-  Platform,
   Pressable,
   StyleSheet,
   Text,
   View,
 } from "react-native";
+
+import { haptic } from "@/lib/haptics";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useColors } from "@/hooks/useColors";
@@ -30,10 +30,8 @@ export default function OnboardingIntro() {
     router.replace("/(auth)/sign-in");
   };
 
-  const onConnect = async () => {
-    if (Platform.OS !== "web") {
-      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    }
+  const onConnect = () => {
+    haptic.impact();
     router.push("/add-account");
   };
 

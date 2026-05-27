@@ -1,12 +1,10 @@
 import { Feather } from "@expo/vector-icons";
-import * as Haptics from "expo-haptics";
 import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   AppState,
   Linking,
   Modal,
-  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -15,6 +13,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useColors } from "@/hooks/useColors";
+import { haptic } from "@/lib/haptics";
 
 // Load expo-camera at runtime, not at module init, so an older dev client
 // or TestFlight build (compiled before expo-camera was added) can still
@@ -149,9 +148,7 @@ function RealScanner({
   const handleScan = ({ data }: { data: string }) => {
     if (handled.current) return;
     handled.current = true;
-    if (Platform.OS !== "web") {
-      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    }
+    haptic.success();
     onScanned(data);
   };
 

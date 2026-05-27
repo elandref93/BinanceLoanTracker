@@ -146,6 +146,18 @@ lock screen → **Customize** → tap a slot → **Ledger**.
 
 ---
 
+## Backend environment variables
+
+| Var | Required | Purpose |
+|---|---|---|
+| `SESSION_JWT_SECRET` | yes | ≥32-char secret used to sign session JWTs. `openssl rand -hex 32`. |
+| `SESSION_JWT_SECRET_PREVIOUS` | optional | Previous value of the above during rotation. Keep for one token lifetime (30 days) so in-flight sessions don't all log out at once. |
+| `APPLE_BUNDLE_ID` | yes | Must match `app.json` → `ios.bundleIdentifier`. Used as the JWT audience when verifying Apple identity tokens. |
+| `ALLOWED_ORIGINS` | optional | Comma-separated list of browser origins allowed by CORS. Empty/unset = allow all (mobile-only deployments don't need this; set it once the API is also called from a browser). |
+
+`/api/healthz` returns 503 with `{missing:[…]}` if any required var is absent
+or `SESSION_JWT_SECRET` is too short — Azure recycles the instance on a 503.
+
 ## Troubleshooting
 
 - **"Bundle identifier is not available"** — someone else registered it.

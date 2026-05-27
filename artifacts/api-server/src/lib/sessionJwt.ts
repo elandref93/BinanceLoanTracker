@@ -1,25 +1,3 @@
-/**
- * Session JWT — backend-issued bearer token used to authenticate subsequent
- * requests after a successful sign-in.
- *
- * We sign with HS256 using a single shared secret (SESSION_JWT_SECRET) rather
- * than RS256 with a keypair because:
- *   - There's only one party verifying these tokens (this backend).
- *   - There's no need for downstream services to verify them independently.
- *   - HS256 is materially simpler to operate (no JWKS endpoint, no key rotation
- *     ceremony, no PEM handling) and 256-bit HMAC is well past the bar for
- *     session-token authentication.
- *
- * The token's `sub` claim carries the upstream identity provider's stable
- * user identifier (currently Apple's `sub`, which is stable per (user, app)).
- * This keeps auth stateless — the backend doesn't need a users table to
- * recognise repeat callers.
- *
- * Token lifetime: 30 days. Refresh is implicit (the device just re-runs the
- * Apple Sign In flow when the session JWT expires — Apple's native dialog
- * is silent for already-authorised apps).
- */
-
 import { SignJWT, jwtVerify, errors as joseErrors } from "jose";
 
 const ISSUER = "binance-loan-tracker-backend";
@@ -34,6 +12,16 @@ export interface SessionClaims {
 }
 
 let cachedSecret: Uint8Array | null = null;
+let cachedPrevSecret: Uint8Array | null | undefined; // undefined = not yet read
+
+function encode(raw: string, varName: string): Uint8Array {
+  if (raw.length < 32) {
+    throw new Error(
+      `${varName} must be at least 32 characters (256 bits of entropy).`,
+    );
+  }
+  return new TextEncoder().encode(raw);
+}
 
 function getSecret(): Uint8Array {
   if (cachedSecret) return cachedSecret;
@@ -44,13 +32,21 @@ function getSecret(): Uint8Array {
         "Generate one with: openssl rand -hex 32",
     );
   }
-  if (raw.length < 32) {
-    throw new Error(
-      "SESSION_JWT_SECRET must be at least 32 characters (256 bits of entropy).",
-    );
-  }
-  cachedSecret = new TextEncoder().encode(raw);
+  cachedSecret = encode(raw, "SESSION_JWT_SECRET");
   return cachedSecret;
+}
+
+/**
+ * Optional secondary key for rotation. When you rotate `SESSION_JWT_SECRET`,
+ * move the old value to `SESSION_JWT_SECRET_PREVIOUS` so tokens signed by it
+ * keep verifying until they expire naturally. Remove the previous after one
+ * token-lifetime (30 days).
+ */
+function getPreviousSecret(): Uint8Array | null {
+  if (cachedPrevSecret !== undefined) return cachedPrevSecret;
+  const raw = process.env.SESSION_JWT_SECRET_PREVIOUS;
+  cachedPrevSecret = raw ? encode(raw, "SESSION_JWT_SECRET_PREVIOUS") : null;
+  return cachedPrevSecret;
 }
 
 export async function signSession(claims: SessionClaims): Promise<string> {
@@ -79,9 +75,12 @@ export type SessionVerifyResult =
   | { ok: true; claims: SessionClaims }
   | SessionVerifyFailure;
 
-export async function verifySession(token: string): Promise<SessionVerifyResult> {
+async function verifyWith(
+  token: string,
+  secret: Uint8Array,
+): Promise<SessionVerifyResult> {
   try {
-    const { payload } = await jwtVerify(token, getSecret(), {
+    const { payload } = await jwtVerify(token, secret, {
       issuer: ISSUER,
       audience: AUDIENCE,
       algorithms: [ALGORITHM],
@@ -109,4 +108,16 @@ export async function verifySession(token: string): Promise<SessionVerifyResult>
     }
     return { ok: false, reason: "malformed" };
   }
+}
+
+export async function verifySession(token: string): Promise<SessionVerifyResult> {
+  const primary = await verifyWith(token, getSecret());
+  if (primary.ok) return primary;
+  // Only retry against the previous key when the failure could plausibly be a
+  // signature mismatch from key rotation. Expired tokens shouldn't be
+  // resurrected by trying another key.
+  if (primary.reason !== "invalid_signature") return primary;
+  const prev = getPreviousSecret();
+  if (!prev) return primary;
+  return verifyWith(token, prev);
 }

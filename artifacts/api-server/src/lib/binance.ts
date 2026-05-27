@@ -188,6 +188,12 @@ function generateMockInterestRows(): BinanceInterestRow[] {
 }
 
 export function createMockBinanceClient(): BinanceClient {
+  if (process.env.NODE_ENV === "production") {
+    throw new Error(
+      "createMockBinanceClient() is not allowed in production. " +
+        "Use createRealBinanceClient() with valid credentials instead.",
+    );
+  }
   return {
     async listAccounts() {
       return SEED_ACCOUNTS;

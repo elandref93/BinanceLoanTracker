@@ -60,7 +60,11 @@ export async function writeWidgetSnapshot(
   if (!mod?.setItem) return;
   try {
     await mod.setItem(KEY, JSON.stringify(snapshot), APP_GROUP);
-  } catch {
-    // Swallow — widgets will just keep their last value.
+  } catch (err) {
+    // Don't crash the JS thread — widgets will just keep their last value —
+    // but DO log so a broken App Group entitlement is visible in dev/Sentry
+    // instead of silently producing a stuck widget.
+    // eslint-disable-next-line no-console
+    console.warn("[widgetSnapshot] failed to write App Group snapshot", err);
   }
 }

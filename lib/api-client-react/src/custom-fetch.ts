@@ -15,6 +15,18 @@ export type ExtraHeadersGetter = () =>
 const NO_BODY_STATUS = new Set([204, 205, 304]);
 const DEFAULT_JSON_ACCEPT = "application/json, application/problem+json";
 
+// Retry transient upstream/network failures on idempotent verbs only.
+// POST/PUT/PATCH/DELETE are NOT retried — repeating them could create
+// duplicate resources or apply a mutation twice.
+const RETRYABLE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
+const RETRYABLE_STATUSES = new Set([502, 503, 504]);
+const MAX_RETRIES = 2;
+const BASE_BACKOFF_MS = 400;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 // ---------------------------------------------------------------------------
 // Module-level configuration
 // ---------------------------------------------------------------------------
@@ -382,13 +394,45 @@ export async function customFetch<T = unknown>(
   }
 
   const requestInfo = { method, url: resolveUrl(input) };
+  const canRetry = RETRYABLE_METHODS.has(method);
 
-  const response = await fetch(input, { ...init, method, headers });
+  let attempt = 0;
+  for (;;) {
+    let response: Response;
+    try {
+      response = await fetch(input, { ...init, method, headers });
+    } catch (err) {
+      // Network / DNS / TLS failure. Retry idempotent verbs a couple of
+      // times so a flapping Wi-Fi handoff doesn't surface as a hard error.
+      if (canRetry && attempt < MAX_RETRIES) {
+        await sleep(BASE_BACKOFF_MS * 2 ** attempt);
+        attempt += 1;
+        continue;
+      }
+      throw err;
+    }
 
-  if (!response.ok) {
-    const errorData = await parseErrorBody(response, method);
-    throw new ApiError(response, errorData, requestInfo);
+    if (
+      canRetry &&
+      RETRYABLE_STATUSES.has(response.status) &&
+      attempt < MAX_RETRIES
+    ) {
+      // Drain the body so the underlying connection can be reused.
+      try {
+        await response.text();
+      } catch {
+        /* ignore */
+      }
+      await sleep(BASE_BACKOFF_MS * 2 ** attempt);
+      attempt += 1;
+      continue;
+    }
+
+    if (!response.ok) {
+      const errorData = await parseErrorBody(response, method);
+      throw new ApiError(response, errorData, requestInfo);
+    }
+
+    return (await parseSuccessBody(response, responseType, requestInfo)) as T;
   }
-
-  return (await parseSuccessBody(response, responseType, requestInfo)) as T;
 }

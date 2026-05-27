@@ -13,6 +13,13 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { checkAndNotifyLoans } from "@/lib/alerts";
 import { haptic } from "@/lib/haptics";
+import {
+  cacheAgeLabel,
+  readAccountsCache,
+  readLoanCache,
+  writeAccountsCache,
+  writeLoanCache,
+} from "@/lib/loanCache";
 import { recordLtvSample } from "@/lib/ltvHistory";
 import { buildSnapshot, writeWidgetSnapshot } from "@/lib/widgetSnapshot";
 import { AccountChip } from "@/components/AccountChip";
@@ -39,6 +46,8 @@ import {
 import {
   useListAccounts,
   useListLoans,
+  type Loan,
+  type Account,
 } from "@workspace/api-client-react";
 
 export default function DashboardScreen() {
@@ -52,9 +61,47 @@ export default function DashboardScreen() {
   const accountsQ = useListAccounts();
   const loansQ = useListLoans();
 
-  const accounts = accountsQ.data?.accounts ?? [];
-  const all = loansQ.data?.loans ?? [];
+  // Offline cache: hydrate from AsyncStorage on first mount so the screen
+  // can render last-known-good data while the network call is in flight or
+  // failing. Keeps the dashboard usable on flaky connections / when Azure
+  // is down.
+  const [cachedLoans, setCachedLoans] = useState<Loan[] | null>(null);
+  const [cachedAccounts, setCachedAccounts] = useState<Account[] | null>(
+    null,
+  );
+  const [cachedAt, setCachedAt] = useState<string | null>(null);
+  useEffect(() => {
+    void (async () => {
+      const [loanCache, acctCache] = await Promise.all([
+        readLoanCache(),
+        readAccountsCache(),
+      ]);
+      if (loanCache) {
+        setCachedLoans(loanCache.loans);
+        setCachedAt(loanCache.cachedAt);
+      }
+      if (acctCache) setCachedAccounts(acctCache.accounts);
+    })();
+  }, []);
+
+  // Persist on every successful fetch.
+  useEffect(() => {
+    if (loansQ.data?.loans) void writeLoanCache(loansQ.data.loans);
+  }, [loansQ.data]);
+  useEffect(() => {
+    if (accountsQ.data?.accounts) {
+      void writeAccountsCache(accountsQ.data.accounts);
+    }
+  }, [accountsQ.data]);
+
+  const accounts =
+    accountsQ.data?.accounts ?? cachedAccounts ?? [];
+  const all = loansQ.data?.loans ?? cachedLoans ?? [];
   const loans = filter ? all.filter((l) => l.accountId === filter) : all;
+  const showingCached =
+    !loansQ.data &&
+    cachedLoans != null &&
+    (loansQ.isError || loansQ.isLoading);
 
   const accountLtv = useMemo(() => {
     const m = new Map<string, number>();
@@ -86,12 +133,21 @@ export default function DashboardScreen() {
     [loans, targetLtv],
   );
 
+  // Side effects (alerts, widget snapshot, LTV history) MUST run only on a
+  // fresh network success. If we fire them on cached data we:
+  //   • re-publish a widget snapshot stamped `new Date()` over stale numbers,
+  //     so the widget's own staleness label lies;
+  //   • notify on a price that may be hours old;
+  //   • record a stale LTV sample as if it were a current observation.
+  // Gate everything off `loansQ.data` (the live response), not `all` (which
+  // falls back to cache).
+  const freshLoans = loansQ.data?.loans;
   useEffect(() => {
-    if (all.length === 0) return;
-    void checkAndNotifyLoans(all);
-    void writeWidgetSnapshot(buildSnapshot(all, targetLtv));
+    if (!freshLoans || freshLoans.length === 0) return;
+    void checkAndNotifyLoans(freshLoans);
+    void writeWidgetSnapshot(buildSnapshot(freshLoans, targetLtv));
     void recordLtvSample(aggLtv);
-  }, [all, targetLtv, aggLtv]);
+  }, [freshLoans, targetLtv, aggLtv]);
 
   const refreshing = accountsQ.isFetching || loansQ.isFetching;
   const wasRefreshing = useRef(false);
@@ -109,11 +165,14 @@ export default function DashboardScreen() {
     loansQ.refetch();
   };
 
-  if (accountsQ.isLoading || loansQ.isLoading) {
+  // Only show the blocking loader / error screen when we have NO cache to
+  // fall back on. With cache, we render the dashboard normally and surface
+  // the stale state via a banner at the top.
+  if ((accountsQ.isLoading || loansQ.isLoading) && all.length === 0) {
     return <ScreenLoader hint="Loading your loans…" />;
   }
 
-  if (accountsQ.isError || loansQ.isError) {
+  if ((accountsQ.isError || loansQ.isError) && all.length === 0) {
     return (
       <View style={[styles.center, { backgroundColor: colors.background }]}>
         <ErrorView
@@ -142,6 +201,28 @@ export default function DashboardScreen() {
       }
     >
       <Container style={{ gap: 16 }}>
+      {showingCached && cachedAt ? (
+        <View
+          style={{
+            paddingVertical: 8,
+            paddingHorizontal: 12,
+            borderRadius: colors.radius,
+            backgroundColor: colors.card,
+            borderWidth: 1,
+            borderColor: colors.border,
+          }}
+        >
+          <Text
+            style={{
+              color: colors.mutedForeground,
+              fontFamily: "Inter_500Medium",
+              fontSize: 12,
+            }}
+          >
+            Showing offline data ({cacheAgeLabel(cachedAt)}). Pull to refresh.
+          </Text>
+        </View>
+      ) : null}
       <View style={styles.header}>
         <View>
           <Text style={[styles.title, { color: colors.foreground }]}>

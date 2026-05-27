@@ -41,6 +41,9 @@ struct HomeWidgetView: View {
             Text(snapshot.status().label)
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(snapshot.status().color)
+            Text(snapshot.stalenessLabel())
+                .font(.system(size: 9, weight: .medium))
+                .foregroundStyle(snapshot.isStale() ? RiskStatus.warn.color : Color.ledgerMuted)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }

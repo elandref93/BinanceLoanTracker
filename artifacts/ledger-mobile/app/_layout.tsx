@@ -20,6 +20,9 @@ import { CurrencyProvider } from "@/context/CurrencyContext";
 import { RiskSettingsProvider } from "@/context/RiskSettingsContext";
 import { SessionProvider } from "@/context/SessionContext";
 import { registerBackgroundRefresh } from "@/lib/backgroundTask";
+import { initCrashReporting } from "@/lib/crashReporting";
+
+initCrashReporting();
 
 SplashScreen.preventAutoHideAsync();
 

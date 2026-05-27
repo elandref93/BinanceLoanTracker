@@ -50,6 +50,31 @@ struct LoanSnapshot: Codable {
         if aggregateLtv >= effectiveTargetLtv { return .warn }
         return .ok
     }
+
+    /// Seconds since the iPhone app last wrote a snapshot.
+    func ageSeconds() -> TimeInterval {
+        return max(0, Date().timeIntervalSince(updatedAt))
+    }
+
+    /// Background-fetch on iOS targets ~15 min but the OS can stretch it.
+    /// Anything over 60 min is worth surfacing as "stale" in the widget so a
+    /// user doesn't act on a price that's an hour old.
+    func isStale() -> Bool {
+        return ageSeconds() > 60 * 60
+    }
+
+    /// Compact "Updated 12m ago" / "Updated 2h ago" string for the widget.
+    func stalenessLabel() -> String {
+        let s = ageSeconds()
+        if s < 60 { return "Updated just now" }
+        if s < 60 * 60 {
+            return "Updated \(Int(s / 60))m ago"
+        }
+        if s < 60 * 60 * 24 {
+            return "Updated \(Int(s / 3600))h ago"
+        }
+        return "Updated \(Int(s / 86400))d ago"
+    }
 }
 
 enum RiskStatus {

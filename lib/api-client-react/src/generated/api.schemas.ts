@@ -99,6 +99,52 @@ export interface InterestByLoan {
   rateHistory: RatePoint[];
 }
 
+export interface LunoWallet {
+  accountId: string;
+  accountName: string;
+  walletId: string;
+  /** Asset symbol (Luno uses XBT for Bitcoin) */
+  asset: string;
+  balance: number;
+  /** Funds locked in open orders */
+  reserved: number;
+  /** Incoming deposits not yet confirmed */
+  unconfirmed: number;
+}
+
+export interface LunoTransaction {
+  accountId: string;
+  accountName: string;
+  walletId: string;
+  asset: string;
+  rowIndex: number;
+  ts: string;
+  /** Signed delta (positive = inflow, negative = outflow) */
+  amount: number;
+  /** Wallet balance after this transaction */
+  balance: number;
+  description: string;
+}
+
+export interface LunoPendingWithdrawal {
+  accountId: string;
+  accountName: string;
+  withdrawalId: string;
+  status: string;
+  asset: string;
+  amount: number;
+  createdAt: string;
+}
+
+export interface LunoTicker {
+  pair: string;
+  ask: number;
+  bid: number;
+  lastTrade: number;
+  rolling24hVolume: number;
+  asOf: string;
+}
+
 export interface InterestByAsset {
   /** Borrowed asset symbol */
   asset: string;
@@ -142,5 +188,33 @@ export type ListInterest200 = {
   byLoan: InterestByLoan[];
   byAsset: InterestByAsset[];
   rows: InterestRow[];
+};
+
+export type ListLunoWallets200 = {
+  wallets: LunoWallet[];
+};
+
+export type ListLunoTransactionsParams = {
+/**
+ * Filter by asset symbol (e.g. XBT, ZAR)
+ */
+asset?: string;
+/**
+ * @minimum 1
+ * @maximum 200
+ */
+limit?: number;
+};
+
+export type ListLunoTransactions200 = {
+  transactions: LunoTransaction[];
+};
+
+export type ListLunoPending200 = {
+  withdrawals: LunoPendingWithdrawal[];
+};
+
+export type GetLunoTickerParams = {
+pair: string;
 };
 

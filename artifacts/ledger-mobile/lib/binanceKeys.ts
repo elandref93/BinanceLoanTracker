@@ -1,119 +1,76 @@
-import * as SecureStore from "expo-secure-store";
-import { useEffect, useState } from "react";
+// Thin compat shim over the new container-based accountStore. Existing call
+// sites (settings, dashboard, key-health probes, X-Binance-Accounts builder)
+// keep working unchanged — each "account" they see is a binance link
+// flattened out of its container.
+//
+// New code should import from `@/lib/accountStore` directly.
 
-const STORAGE_KEY = "ledger.binance.accounts.v1";
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Tiny synchronous subscriber list so anything that mutates accounts (add /
-// remove) can notify React components instantly. We avoid relying solely on
-// navigator focus events because removing the last account from a deep screen
-// would not necessarily re-focus the parent gate.
-// ─────────────────────────────────────────────────────────────────────────────
-const listeners = new Set<() => void>();
-function notifyAccountsChanged(): void {
-  for (const fn of listeners) fn();
-}
-function subscribeAccountsChanged(fn: () => void): () => void {
-  listeners.add(fn);
-  return () => {
-    listeners.delete(fn);
-  };
-}
+import {
+  getBinanceLinks,
+  removeLink,
+  listContainersWithSecrets,
+  useStoredAccountsCount as useContainerCount,
+} from "@/lib/accountStore";
 
 export type BinanceAccount = {
+  /** link id (per-link, NOT container id). */
   id: string;
+  /** Display name — container.name (· link.label if present). */
   name: string;
   apiKey: string;
   apiSecret: string;
   createdAt: string;
+  /** id of the container this link belongs to. */
+  containerId: string;
 };
 
 export type StoredBinanceAccount = Omit<BinanceAccount, "apiSecret"> & {
   apiKeyMasked: string;
 };
 
-async function readAll(): Promise<BinanceAccount[]> {
-  try {
-    const raw = await SecureStore.getItemAsync(STORAGE_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? (parsed as BinanceAccount[]) : [];
-  } catch {
-    return [];
-  }
-}
-
-async function writeAll(accounts: BinanceAccount[]): Promise<void> {
-  await SecureStore.setItemAsync(STORAGE_KEY, JSON.stringify(accounts));
-}
-
 function maskKey(key: string): string {
   if (key.length <= 8) return "•".repeat(key.length);
   return `${key.slice(0, 4)}…${key.slice(-4)}`;
 }
 
-/** All accounts including secrets — only call from local-trust paths (auth headers, etc.). */
 export async function listAccountsWithSecrets(): Promise<BinanceAccount[]> {
-  return readAll();
+  const links = await getBinanceLinks();
+  const containers = await listContainersWithSecrets();
+  return links.map((l) => {
+    const c = containers.find((x) => x.id === l.containerId);
+    const link = c?.links.find((y) => y.id === l.id);
+    return {
+      id: l.id,
+      name: l.name,
+      apiKey: l.apiKey,
+      apiSecret: l.apiSecret,
+      createdAt: link?.createdAt ?? new Date().toISOString(),
+      containerId: l.containerId,
+    };
+  });
 }
 
 export async function listAccounts(): Promise<StoredBinanceAccount[]> {
-  const accounts = await readAll();
-  return accounts.map(({ apiSecret: _s, apiKey, ...rest }) => ({
+  const accounts = await listAccountsWithSecrets();
+  return accounts.map(({ apiSecret: _s, ...rest }) => ({
     ...rest,
-    apiKey,
-    apiKeyMasked: maskKey(apiKey),
+    apiKeyMasked: maskKey(rest.apiKey),
   }));
 }
 
-export async function addAccount(input: {
-  name: string;
-  apiKey: string;
-  apiSecret: string;
-}): Promise<BinanceAccount> {
-  const accounts = await readAll();
-  const account: BinanceAccount = {
-    id: `acct_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-    name: input.name.trim(),
-    apiKey: input.apiKey.trim(),
-    apiSecret: input.apiSecret.trim(),
-    createdAt: new Date().toISOString(),
-  };
-  accounts.push(account);
-  await writeAll(accounts);
-  notifyAccountsChanged();
-  return account;
-}
-
-export async function removeAccount(id: string): Promise<void> {
-  const accounts = await readAll();
-  await writeAll(accounts.filter((a) => a.id !== id));
-  notifyAccountsChanged();
-}
-
 /**
- * React hook that returns the current count of locally-stored Binance
- * accounts. Returns `null` until the first read completes. Updates reactively
- * whenever `addAccount` or `removeAccount` is called from anywhere in the app.
+ * Removes the binance link with this id. If the parent container is left with
+ * zero links the container itself is preserved (user can add another link
+ * later). Use `removeContainer` from accountStore to nuke the whole container.
  */
-export function useStoredAccountsCount(): number | null {
-  const [count, setCount] = useState<number | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    const refresh = () => {
-      readAll().then((a) => {
-        if (!cancelled) setCount(a.length);
-      });
-    };
-    refresh();
-    const unsubscribe = subscribeAccountsChanged(refresh);
-    return () => {
-      cancelled = true;
-      unsubscribe();
-    };
-  }, []);
-  return count;
+export async function removeAccount(linkId: string): Promise<void> {
+  const accounts = await listAccountsWithSecrets();
+  const acc = accounts.find((a) => a.id === linkId);
+  if (!acc) return;
+  await removeLink(acc.containerId, linkId);
 }
+
+export const useStoredAccountsCount = useContainerCount;
 
 export function validateBinanceKey(apiKey: string): string | null {
   const trimmed = apiKey.trim();

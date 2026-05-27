@@ -28,11 +28,14 @@ import {
   type AlertRule,
 } from "@/lib/alertRules";
 import {
-  listAccounts,
   listAccountsWithSecrets,
-  removeAccount,
-  type StoredBinanceAccount,
 } from "@/lib/binanceKeys";
+import {
+  listContainers,
+  removeContainer,
+  removeLink,
+  type StoredContainer,
+} from "@/lib/accountStore";
 import {
   isAppLockEnabled,
   isAppLockSupported,
@@ -161,7 +164,7 @@ export default function SettingsScreen() {
   const { signOut, getToken, user } = useSession();
   const router = useRouter();
   const email = user?.email ?? null;
-  const [accounts, setAccounts] = useState<StoredBinanceAccount[]>([]);
+  const [containers, setContainers] = useState<StoredContainer[]>([]);
   const [alerts, setAlerts] = useState(false);
   const [rules, setRules] = useState<AlertRule[]>([]);
   const [appLockOn, setAppLockOn] = useState(false);
@@ -227,8 +230,8 @@ export default function SettingsScreen() {
   useFocusEffect(
     useCallback(() => {
       let active = true;
-      listAccounts().then((a) => {
-        if (active) setAccounts(a);
+      listContainers().then((c) => {
+        if (active) setContainers(c);
       });
       listAlertRules().then((r) => {
         if (active) setRules(r);
@@ -239,18 +242,46 @@ export default function SettingsScreen() {
     }, []),
   );
 
-  const onRemove = (id: string, name: string) => {
-    Alert.alert(`Remove "${name}"?`, "The key will be deleted from this device.", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Remove",
-        style: "destructive",
-        onPress: async () => {
-          await removeAccount(id);
-          setAccounts(await listAccounts());
+  const refreshContainers = async () => setContainers(await listContainers());
+
+  const onRemoveLink = (
+    containerId: string,
+    linkId: string,
+    label: string,
+  ) => {
+    Alert.alert(
+      `Remove "${label}"?`,
+      "This exchange key will be deleted from this device.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Remove",
+          style: "destructive",
+          onPress: async () => {
+            await removeLink(containerId, linkId);
+            await refreshContainers();
+          },
         },
-      },
-    ]);
+      ],
+    );
+  };
+
+  const onRemoveContainer = (id: string, name: string) => {
+    Alert.alert(
+      `Remove "${name}"?`,
+      "The account and all its exchange links will be removed from this device.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Remove",
+          style: "destructive",
+          onPress: async () => {
+            await removeContainer(id);
+            await refreshContainers();
+          },
+        },
+      ],
+    );
   };
 
   const onSignOut = () => {
@@ -280,90 +311,150 @@ export default function SettingsScreen() {
       <Container style={{ gap: 20 }}>
       <Text style={[styles.title, { color: colors.foreground }]}>Settings</Text>
 
-      <Section title="Accounts">
-        {accounts.length === 0 ? (
+      {containers.length === 0 ? (
+        <Section title="Accounts">
+          <Row label="No accounts connected" value="Tap below to add" />
+          <View style={[styles.divider, { backgroundColor: colors.border }]} />
           <Row
-            label="No accounts connected"
-            value="Tap below to add"
+            label="Add exchange"
+            right={<Feather name="plus" size={18} color={colors.primary} />}
+            onPress={() => router.push("/add-account")}
           />
-        ) : (
-          accounts.map((a, i) => {
-            const probe = probes[a.id];
-            const probeObj =
-              probe && probe !== "loading" ? probe : undefined;
-            return (
-              <View key={a.id}>
-                {i > 0 ? (
-                  <View
-                    style={[styles.divider, { backgroundColor: colors.border }]}
-                  />
-                ) : null}
-                <Row
-                  label={a.name}
-                  value={`${a.apiKeyMasked} · added ${fmtAge(a.createdAt)}`}
-                  onPress={() => onRemove(a.id, a.name)}
-                />
-                <Pressable
-                  onPress={() => onTestConnection(a.id)}
-                  disabled={probe === "loading"}
-                  style={({ pressed }) => [
-                    styles.probeRow,
-                    { opacity: pressed || probe === "loading" ? 0.6 : 1 },
-                  ]}
-                >
-                  {probe === "loading" ? (
-                    <ActivityIndicator
-                      color={colors.primary}
-                      size="small"
+        </Section>
+      ) : (
+        containers.map((c) => (
+          <Section key={c.id} title={c.name}>
+            {c.links.length === 0 ? (
+              <Row label="No exchanges linked yet" />
+            ) : (
+              c.links.map((link, i) => {
+                const probe = probes[link.id];
+                const probeObj =
+                  probe && probe !== "loading" ? probe : undefined;
+                const linkTitle = link.label
+                  ? `${link.exchange === "binance" ? "Binance" : "Luno"} · ${link.label}`
+                  : link.exchange === "binance"
+                    ? "Binance"
+                    : "Luno";
+                return (
+                  <View key={link.id}>
+                    {i > 0 ? (
+                      <View
+                        style={[
+                          styles.divider,
+                          { backgroundColor: colors.border },
+                        ]}
+                      />
+                    ) : null}
+                    <Row
+                      label={linkTitle}
+                      value={`${link.apiKeyMasked} · added ${fmtAge(link.createdAt)}`}
+                      onPress={() => onRemoveLink(c.id, link.id, linkTitle)}
                     />
-                  ) : probeObj?.status === "ok" ? (
-                    <Feather name="check-circle" size={12} color={colors.ok} />
-                  ) : probeObj?.status === "fail" ? (
-                    <Feather
-                      name="alert-circle"
-                      size={12}
-                      color={colors.danger}
-                    />
-                  ) : (
-                    <Feather
-                      name="zap"
-                      size={12}
-                      color={colors.mutedForeground}
-                    />
-                  )}
-                  <Text
-                    style={[
-                      styles.probeText,
-                      {
-                        color:
-                          probeObj?.status === "ok"
-                            ? colors.ok
-                            : probeObj?.status === "fail"
-                              ? colors.danger
-                              : colors.mutedForeground,
-                      },
-                    ]}
-                  >
-                    {probe === "loading"
-                      ? "Testing…"
-                      : probeObj?.status === "ok"
-                        ? `Healthy · checked ${fmtAge(new Date(probeObj.checkedAt).toISOString())}`
-                        : probeObj?.status === "fail"
-                          ? `Failed · ${probeObj.reason}`
-                          : "Test connection"}
-                  </Text>
-                </Pressable>
-              </View>
-            );
-          })
-        )}
-        <View style={[styles.divider, { backgroundColor: colors.border }]} />
-        <Row
-          label="Add Binance account"
-          right={<Feather name="plus" size={18} color={colors.primary} />}
-          onPress={() => router.push("/add-account")}
-        />
-      </Section>
+                    {/* Probe is binance-only — Luno health is implicit via the Crypto tab loads. */}
+                    {link.exchange === "binance" ? (
+                      <Pressable
+                        onPress={() => onTestConnection(link.id)}
+                        disabled={probe === "loading"}
+                        style={({ pressed }) => [
+                          styles.probeRow,
+                          {
+                            opacity:
+                              pressed || probe === "loading" ? 0.6 : 1,
+                          },
+                        ]}
+                      >
+                        {probe === "loading" ? (
+                          <ActivityIndicator
+                            color={colors.primary}
+                            size="small"
+                          />
+                        ) : probeObj?.status === "ok" ? (
+                          <Feather
+                            name="check-circle"
+                            size={12}
+                            color={colors.ok}
+                          />
+                        ) : probeObj?.status === "fail" ? (
+                          <Feather
+                            name="alert-circle"
+                            size={12}
+                            color={colors.danger}
+                          />
+                        ) : (
+                          <Feather
+                            name="zap"
+                            size={12}
+                            color={colors.mutedForeground}
+                          />
+                        )}
+                        <Text
+                          style={[
+                            styles.probeText,
+                            {
+                              color:
+                                probeObj?.status === "ok"
+                                  ? colors.ok
+                                  : probeObj?.status === "fail"
+                                    ? colors.danger
+                                    : colors.mutedForeground,
+                            },
+                          ]}
+                        >
+                          {probe === "loading"
+                            ? "Testing…"
+                            : probeObj?.status === "ok"
+                              ? `Healthy · checked ${fmtAge(new Date(probeObj.checkedAt).toISOString())}`
+                              : probeObj?.status === "fail"
+                                ? `Failed · ${probeObj.reason}`
+                                : "Test connection"}
+                        </Text>
+                      </Pressable>
+                    ) : null}
+                  </View>
+                );
+              })
+            )}
+            <View style={[styles.divider, { backgroundColor: colors.border }]} />
+            <Row
+              label="Add Binance link"
+              right={<Feather name="plus" size={18} color={colors.primary} />}
+              onPress={() =>
+                router.push({
+                  pathname: "/add-account",
+                  params: { exchange: "binance", containerId: c.id },
+                })
+              }
+            />
+            <View style={[styles.divider, { backgroundColor: colors.border }]} />
+            <Row
+              label="Add Luno link"
+              right={<Feather name="plus" size={18} color={colors.primary} />}
+              onPress={() =>
+                router.push({
+                  pathname: "/add-account",
+                  params: { exchange: "luno", containerId: c.id },
+                })
+              }
+            />
+            <View style={[styles.divider, { backgroundColor: colors.border }]} />
+            <Row
+              label="Remove account"
+              destructive
+              onPress={() => onRemoveContainer(c.id, c.name)}
+            />
+          </Section>
+        ))
+      )}
+      {containers.length > 0 ? (
+        <Section title="New account">
+          <Row
+            label="Add another account"
+            right={<Feather name="plus" size={18} color={colors.primary} />}
+            onPress={() => router.push("/add-account")}
+          />
+        </Section>
+      ) : null}
 
       <Section title="Currency">
         <Row

@@ -6,14 +6,35 @@ import { Platform, StyleSheet, View } from "react-native";
 import { useColors } from "@/hooks/useColors";
 import { useSession } from "@/context/SessionContext";
 import {
-  listAccountsWithSecrets,
+  getBinanceLinks,
+  getLunoLinks,
   useStoredAccountsCount,
-} from "@/lib/binanceKeys";
+} from "@/lib/accountStore";
 import { toBase64 } from "@/lib/encoding";
 import {
   setAuthTokenGetter,
   setExtraHeadersGetter,
 } from "@workspace/api-client-react";
+
+function payloadFor(
+  links: Array<{
+    id: string;
+    name: string;
+    apiKey: string;
+    apiSecret: string;
+  }>,
+): string {
+  return toBase64(
+    JSON.stringify(
+      links.map((l) => ({
+        id: l.id,
+        name: l.name,
+        apiKey: l.apiKey,
+        apiSecret: l.apiSecret,
+      })),
+    ),
+  );
+}
 
 export default function TabLayout() {
   const colors = useColors();
@@ -24,15 +45,14 @@ export default function TabLayout() {
   useEffect(() => {
     setAuthTokenGetter(() => getToken());
     setExtraHeadersGetter(async () => {
-      const accounts = await listAccountsWithSecrets();
-      if (accounts.length === 0) return null;
-      const payload = accounts.map((a) => ({
-        id: a.id,
-        name: a.name,
-        apiKey: a.apiKey,
-        apiSecret: a.apiSecret,
-      }));
-      return { "X-Binance-Accounts": toBase64(JSON.stringify(payload)) };
+      const [binance, luno] = await Promise.all([
+        getBinanceLinks(),
+        getLunoLinks(),
+      ]);
+      const headers: Record<string, string> = {};
+      if (binance.length > 0) headers["X-Binance-Accounts"] = payloadFor(binance);
+      if (luno.length > 0) headers["X-Luno-Accounts"] = payloadFor(luno);
+      return Object.keys(headers).length > 0 ? headers : null;
     });
     return () => {
       setExtraHeadersGetter(null);
@@ -76,6 +96,15 @@ export default function TabLayout() {
           title: "Home",
           tabBarIcon: ({ color }) => (
             <Feather name="home" size={22} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="crypto"
+        options={{
+          title: "Crypto",
+          tabBarIcon: ({ color }) => (
+            <Feather name="trending-up" size={22} color={color} />
           ),
         }}
       />

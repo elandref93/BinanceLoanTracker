@@ -47,6 +47,8 @@ import {
 import {
   useListAccounts,
   useListLoans,
+  useListLunoWallets,
+  useGetLunoTicker,
   type Loan,
   type Account,
 } from "@workspace/api-client-react";
@@ -385,6 +387,9 @@ export default function DashboardScreen() {
         />
       </View>
 
+      <LunoReadyToDeployTile currency={currency} />
+
+
       <View style={styles.section}>
         <Text style={[styles.sectionTitle, { color: colors.foreground }]}>
           Loans
@@ -415,6 +420,79 @@ export default function DashboardScreen() {
       </View>
       </Container>
     </ScrollView>
+  );
+}
+
+// Inline tile that aggregates BTC sitting on any linked Luno account and
+// quotes it against the live XBTZAR price. Hidden entirely when there's no
+// Luno data or no meaningful BTC balance — keeps the dashboard quiet for
+// Binance-only users.
+function LunoReadyToDeployTile({
+  currency: _currency,
+}: {
+  currency: "USD" | "ZAR";
+}) {
+  const colors = useColors();
+  const router = useRouter();
+  const walletsQ = useListLunoWallets();
+  const tickerQ = useGetLunoTicker({ pair: "XBTZAR" });
+  const wallets = walletsQ.data?.wallets ?? [];
+  if (wallets.length === 0) return null;
+  const btc = wallets
+    .filter((w) => w.asset.toUpperCase() === "XBT")
+    .reduce((s, w) => s + w.balance, 0);
+  if (btc < 0.0001) return null;
+  const xbtZar = tickerQ.data?.lastTrade ?? 0;
+  const zar = btc * xbtZar;
+  return (
+    <Pressable
+      onPress={() => {
+        haptic.tap();
+        router.push("/(tabs)/crypto");
+      }}
+      style={({ pressed }) => [
+        {
+          padding: 14,
+          borderWidth: StyleSheet.hairlineWidth,
+          borderColor: colors.primary,
+          backgroundColor: colors.card,
+          borderRadius: colors.radius,
+          flexDirection: "row",
+          alignItems: "center",
+          gap: 12,
+          opacity: pressed ? 0.85 : 1,
+        },
+      ]}
+    >
+      <Feather name="arrow-right-circle" size={18} color={colors.primary} />
+      <View style={{ flex: 1 }}>
+        <Text
+          style={{
+            fontSize: 10,
+            letterSpacing: 1,
+            fontFamily: "Inter_600SemiBold",
+            color: colors.mutedForeground,
+          }}
+        >
+          LUNO · READY TO DEPLOY
+        </Text>
+        <Text
+          style={{
+            fontSize: 16,
+            fontFamily: "Inter_700Bold",
+            fontVariant: ["tabular-nums"],
+            color: colors.foreground,
+            marginTop: 2,
+          }}
+        >
+          {btc.toFixed(8)} BTC
+          {xbtZar > 0
+            ? `  ·  ≈ ${fmtMoney(zar, "ZAR", { compact: true })}`
+            : ""}
+        </Text>
+      </View>
+      <Feather name="chevron-right" size={16} color={colors.mutedForeground} />
+    </Pressable>
   );
 }
 

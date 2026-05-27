@@ -12,6 +12,8 @@ tags:
     description: Health operations
   - name: binance
     description: Binance loan tracker (read-only)
+  - name: luno
+    description: Luno wallet + transaction reads (read-only)
 paths:
   /healthz:
     get:
@@ -138,6 +140,91 @@ paths:
                     items:
                       $ref: "#/components/schemas/InterestRow"
                 required: [totalUsd, weightedApr, projected30dUsd, byLoan, byAsset, rows]
+
+  /luno/wallets:
+    get:
+      operationId: listLunoWallets
+      tags: [luno]
+      summary: List Luno wallets (balances) across all linked Luno accounts
+      responses:
+        "200":
+          description: Wallets list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  wallets:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/LunoWallet"
+                required: [wallets]
+
+  /luno/transactions:
+    get:
+      operationId: listLunoTransactions
+      tags: [luno]
+      summary: Recent Luno wallet transactions
+      parameters:
+        - in: query
+          name: asset
+          required: false
+          description: Filter by asset symbol (e.g. XBT, ZAR)
+          schema: { type: string }
+        - in: query
+          name: limit
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 200 }
+      responses:
+        "200":
+          description: Transactions list (newest first)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  transactions:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/LunoTransaction"
+                required: [transactions]
+
+  /luno/pending:
+    get:
+      operationId: listLunoPending
+      tags: [luno]
+      summary: In-flight Luno withdrawals (PENDING or PROCESSING)
+      responses:
+        "200":
+          description: Pending withdrawals
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  withdrawals:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/LunoPendingWithdrawal"
+                required: [withdrawals]
+
+  /luno/ticker:
+    get:
+      operationId: getLunoTicker
+      tags: [luno]
+      summary: Live ticker for a Luno pair (e.g. XBTZAR)
+      parameters:
+        - in: query
+          name: pair
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Ticker
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LunoTicker"
 
 components:
   schemas:
@@ -292,6 +379,88 @@ components:
         - lifetimeInterestUsd
         - loanAgeDays
         - rateHistory
+
+    LunoWallet:
+      type: object
+      properties:
+        accountId: { type: string }
+        accountName: { type: string }
+        walletId: { type: string }
+        asset:
+          type: string
+          description: Asset symbol (Luno uses XBT for Bitcoin)
+        balance: { type: number }
+        reserved:
+          type: number
+          description: Funds locked in open orders
+        unconfirmed:
+          type: number
+          description: Incoming deposits not yet confirmed
+      required:
+        - accountId
+        - accountName
+        - walletId
+        - asset
+        - balance
+        - reserved
+        - unconfirmed
+
+    LunoTransaction:
+      type: object
+      properties:
+        accountId: { type: string }
+        accountName: { type: string }
+        walletId: { type: string }
+        asset: { type: string }
+        rowIndex: { type: integer }
+        ts: { type: string, format: date-time }
+        amount:
+          type: number
+          description: Signed delta (positive = inflow, negative = outflow)
+        balance:
+          type: number
+          description: Wallet balance after this transaction
+        description: { type: string }
+      required:
+        - accountId
+        - accountName
+        - walletId
+        - asset
+        - rowIndex
+        - ts
+        - amount
+        - balance
+        - description
+
+    LunoPendingWithdrawal:
+      type: object
+      properties:
+        accountId: { type: string }
+        accountName: { type: string }
+        withdrawalId: { type: string }
+        status: { type: string }
+        asset: { type: string }
+        amount: { type: number }
+        createdAt: { type: string, format: date-time }
+      required:
+        - accountId
+        - accountName
+        - withdrawalId
+        - status
+        - asset
+        - amount
+        - createdAt
+
+    LunoTicker:
+      type: object
+      properties:
+        pair: { type: string }
+        ask: { type: number }
+        bid: { type: number }
+        lastTrade: { type: number }
+        rolling24hVolume: { type: number }
+        asOf: { type: string, format: date-time }
+      required: [pair, ask, bid, lastTrade, rolling24hVolume, asOf]
 
     InterestByAsset:
       type: object

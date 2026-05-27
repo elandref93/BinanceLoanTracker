@@ -16,6 +16,7 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
+  GetLunoTickerParams,
   GetPrices200,
   GetPricesParams,
   HealthStatus,
@@ -23,7 +24,12 @@ import type {
   ListInterest200,
   ListInterestParams,
   ListLoansParams,
-  LoansResponse
+  ListLunoPending200,
+  ListLunoTransactions200,
+  ListLunoTransactionsParams,
+  ListLunoWallets200,
+  LoansResponse,
+  LunoTicker
 } from './api.schemas';
 
 import { customFetch } from '../custom-fetch';
@@ -433,6 +439,328 @@ export function useListInterest<TData = Awaited<ReturnType<typeof listInterest>>
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListInterestQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getListLunoWalletsUrl = () => {
+
+
+
+
+  return `/api/luno/wallets`
+}
+
+/**
+ * @summary List Luno wallets (balances) across all linked Luno accounts
+ */
+export const listLunoWallets = async ( options?: RequestInit): Promise<ListLunoWallets200> => {
+
+  return customFetch<ListLunoWallets200>(getListLunoWalletsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListLunoWalletsQueryKey = () => {
+    return [
+    `/api/luno/wallets`
+    ] as const;
+    }
+
+
+export const getListLunoWalletsQueryOptions = <TData = Awaited<ReturnType<typeof listLunoWallets>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listLunoWallets>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListLunoWalletsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listLunoWallets>>> = ({ signal }) => listLunoWallets({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listLunoWallets>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListLunoWalletsQueryResult = NonNullable<Awaited<ReturnType<typeof listLunoWallets>>>
+export type ListLunoWalletsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List Luno wallets (balances) across all linked Luno accounts
+ */
+
+export function useListLunoWallets<TData = Awaited<ReturnType<typeof listLunoWallets>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listLunoWallets>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListLunoWalletsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getListLunoTransactionsUrl = (params?: ListLunoTransactionsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/luno/transactions?${stringifiedParams}` : `/api/luno/transactions`
+}
+
+/**
+ * @summary Recent Luno wallet transactions
+ */
+export const listLunoTransactions = async (params?: ListLunoTransactionsParams, options?: RequestInit): Promise<ListLunoTransactions200> => {
+
+  return customFetch<ListLunoTransactions200>(getListLunoTransactionsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListLunoTransactionsQueryKey = (params?: ListLunoTransactionsParams,) => {
+    return [
+    `/api/luno/transactions`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListLunoTransactionsQueryOptions = <TData = Awaited<ReturnType<typeof listLunoTransactions>>, TError = ErrorType<unknown>>(params?: ListLunoTransactionsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listLunoTransactions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListLunoTransactionsQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listLunoTransactions>>> = ({ signal }) => listLunoTransactions(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listLunoTransactions>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListLunoTransactionsQueryResult = NonNullable<Awaited<ReturnType<typeof listLunoTransactions>>>
+export type ListLunoTransactionsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Recent Luno wallet transactions
+ */
+
+export function useListLunoTransactions<TData = Awaited<ReturnType<typeof listLunoTransactions>>, TError = ErrorType<unknown>>(
+ params?: ListLunoTransactionsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listLunoTransactions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListLunoTransactionsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getListLunoPendingUrl = () => {
+
+
+
+
+  return `/api/luno/pending`
+}
+
+/**
+ * @summary In-flight Luno withdrawals (PENDING or PROCESSING)
+ */
+export const listLunoPending = async ( options?: RequestInit): Promise<ListLunoPending200> => {
+
+  return customFetch<ListLunoPending200>(getListLunoPendingUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListLunoPendingQueryKey = () => {
+    return [
+    `/api/luno/pending`
+    ] as const;
+    }
+
+
+export const getListLunoPendingQueryOptions = <TData = Awaited<ReturnType<typeof listLunoPending>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listLunoPending>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListLunoPendingQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listLunoPending>>> = ({ signal }) => listLunoPending({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listLunoPending>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListLunoPendingQueryResult = NonNullable<Awaited<ReturnType<typeof listLunoPending>>>
+export type ListLunoPendingQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary In-flight Luno withdrawals (PENDING or PROCESSING)
+ */
+
+export function useListLunoPending<TData = Awaited<ReturnType<typeof listLunoPending>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listLunoPending>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListLunoPendingQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getGetLunoTickerUrl = (params: GetLunoTickerParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/luno/ticker?${stringifiedParams}` : `/api/luno/ticker`
+}
+
+/**
+ * @summary Live ticker for a Luno pair (e.g. XBTZAR)
+ */
+export const getLunoTicker = async (params: GetLunoTickerParams, options?: RequestInit): Promise<LunoTicker> => {
+
+  return customFetch<LunoTicker>(getGetLunoTickerUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetLunoTickerQueryKey = (params?: GetLunoTickerParams,) => {
+    return [
+    `/api/luno/ticker`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetLunoTickerQueryOptions = <TData = Awaited<ReturnType<typeof getLunoTicker>>, TError = ErrorType<unknown>>(params: GetLunoTickerParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getLunoTicker>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetLunoTickerQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getLunoTicker>>> = ({ signal }) => getLunoTicker(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getLunoTicker>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetLunoTickerQueryResult = NonNullable<Awaited<ReturnType<typeof getLunoTicker>>>
+export type GetLunoTickerQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Live ticker for a Luno pair (e.g. XBTZAR)
+ */
+
+export function useGetLunoTicker<TData = Awaited<ReturnType<typeof getLunoTicker>>, TError = ErrorType<unknown>>(
+ params: GetLunoTickerParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getLunoTicker>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetLunoTickerQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

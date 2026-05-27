@@ -10,6 +10,7 @@ import { logger } from "../lib/logger";
 import healthRouter from "./health";
 import authRouter from "./auth";
 import binanceRouter from "./binance";
+import lunoRouter from "./luno";
 
 // Augment Express's Request type so route handlers downstream of requireAuth
 // can read req.userId without casts.
@@ -70,5 +71,6 @@ async function requireAuth(
 }
 
 router.use(requireAuth, binanceRouter);
+router.use("/luno", requireAuth, lunoRouter);
 
 export default router;

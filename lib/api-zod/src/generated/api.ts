@@ -129,3 +129,79 @@ export const ListInterestResponse = zod.object({
 })
 
 
+/**
+ * @summary List Luno wallets (balances) across all linked Luno accounts
+ */
+export const ListLunoWalletsResponse = zod.object({
+  "wallets": zod.array(zod.object({
+  "accountId": zod.string(),
+  "accountName": zod.string(),
+  "walletId": zod.string(),
+  "asset": zod.string().describe('Asset symbol (Luno uses XBT for Bitcoin)'),
+  "balance": zod.number(),
+  "reserved": zod.number().describe('Funds locked in open orders'),
+  "unconfirmed": zod.number().describe('Incoming deposits not yet confirmed')
+}))
+})
+
+
+/**
+ * @summary Recent Luno wallet transactions
+ */
+export const listLunoTransactionsQueryLimitMax = 200;
+
+
+
+export const ListLunoTransactionsQueryParams = zod.object({
+  "asset": zod.coerce.string().optional().describe('Filter by asset symbol (e.g. XBT, ZAR)'),
+  "limit": zod.coerce.number().min(1).max(listLunoTransactionsQueryLimitMax).optional()
+})
+
+export const ListLunoTransactionsResponse = zod.object({
+  "transactions": zod.array(zod.object({
+  "accountId": zod.string(),
+  "accountName": zod.string(),
+  "walletId": zod.string(),
+  "asset": zod.string(),
+  "rowIndex": zod.number(),
+  "ts": zod.coerce.date(),
+  "amount": zod.number().describe('Signed delta (positive = inflow, negative = outflow)'),
+  "balance": zod.number().describe('Wallet balance after this transaction'),
+  "description": zod.string()
+}))
+})
+
+
+/**
+ * @summary In-flight Luno withdrawals (PENDING or PROCESSING)
+ */
+export const ListLunoPendingResponse = zod.object({
+  "withdrawals": zod.array(zod.object({
+  "accountId": zod.string(),
+  "accountName": zod.string(),
+  "withdrawalId": zod.string(),
+  "status": zod.string(),
+  "asset": zod.string(),
+  "amount": zod.number(),
+  "createdAt": zod.coerce.date()
+}))
+})
+
+
+/**
+ * @summary Live ticker for a Luno pair (e.g. XBTZAR)
+ */
+export const GetLunoTickerQueryParams = zod.object({
+  "pair": zod.coerce.string()
+})
+
+export const GetLunoTickerResponse = zod.object({
+  "pair": zod.string(),
+  "ask": zod.number(),
+  "bid": zod.number(),
+  "lastTrade": zod.number(),
+  "rolling24hVolume": zod.number(),
+  "asOf": zod.coerce.date()
+})
+
+

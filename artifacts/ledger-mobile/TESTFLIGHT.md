@@ -146,6 +146,65 @@ lock screen → **Customize** → tap a slot → **Ledger**.
 
 ---
 
+## Triggering a build from Replit (no Mac needed)
+
+Once Apple credentials are registered on EAS servers (one-time setup
+below), every subsequent build can be kicked off directly from this Repl.
+You don't need to touch a Mac.
+
+### One-time: register credentials on EAS
+
+EAS refuses to do anything with Apple credentials in non-interactive mode
+unless they're already stored and validated server-side. Do this once from
+the Replit **Shell** tab (NOT a workflow — it needs to prompt you):
+
+```bash
+cd artifacts/ledger-mobile
+pnpm exec eas credentials -p ios
+```
+
+Choose **preview** → **Distribution Certificate** → either "Use existing"
+(upload an existing `.p12` if you have one) or "Generate new" (EAS makes one
+for you). Then **Provisioning Profile** → "Generate new". Quit with `q`.
+Apple will prompt for your Apple ID + 2FA code.
+
+You only have to do this once per cert/profile. After it's stored on EAS,
+the workflow button below works forever.
+
+**One-click:** open the workflows panel and click ▶ on
+**TestFlight Build (iOS)**. It runs `pnpm tf:build` and exits when the build
+is queued. Apple processing then takes ~15–25 min, after which the build
+appears in TestFlight automatically (`--auto-submit`).
+
+**From the shell:**
+
+```bash
+# fire and forget — exits as soon as the build is queued
+pnpm --filter @workspace/ledger-mobile run tf:build
+
+# OR wait for the build to finish before exiting (good for CI / debugging)
+pnpm --filter @workspace/ledger-mobile run tf:build:wait
+```
+
+Both use `--profile preview --non-interactive --auto-submit`. The preview
+profile has `autoIncrement: true`, so the build number bumps itself — you
+never have to edit `app.json`.
+
+**Required secret:** `EXPO_TOKEN` (already set in this Repl). It must be a
+token with build/submit scope from <https://expo.dev/accounts/.../settings/access-tokens>.
+
+**To check status:** `pnpm exec eas build:list --limit 5` or open
+<https://expo.dev/accounts/elandref/projects/ledger/builds>.
+
+## Live preview URL (Expo Go on your iPhone)
+
+The `artifacts/ledger-mobile: expo` workflow prints a URL like
+`exp://<hash>.expo.janeway.replit.dev` when it starts. Open the **Camera**
+app on your iPhone, point it at the QR code in the workflow log (or paste
+the URL into Expo Go → Enter URL manually). This gives you live JS reload
+without a build — useful for everything except the Swift widgets, Live
+Activity, and Watch app, which require a real native build.
+
 ## Backend environment variables
 
 | Var | Required | Purpose |

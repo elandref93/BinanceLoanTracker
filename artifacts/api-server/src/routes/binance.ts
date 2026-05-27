@@ -179,7 +179,6 @@ router.get("/interest", async (req, res, next) => {
       client.listLoans(accountId),
     ]);
 
-    const totalUsd = rows.reduce((s, r) => s + r.amountUsd, 0);
     const totalDebt = loans.reduce((s, l) => s + l.debtUsd, 0);
     // Instantaneous debt-weighted APR (forward-looking, matches byAsset.weightedApr)
     const weightedApr =
@@ -241,6 +240,14 @@ router.get("/interest", async (req, res, next) => {
           rateHistory,
         };
       }),
+    );
+
+    // Aggregate "Charged · 30d" from per-loan accrued30dUsd so flexible loans
+    // (which post no income rows) contribute their ladder-derived numbers
+    // instead of zero.
+    const totalUsd = round(
+      byLoan.reduce((s, b) => s + b.accrued30dUsd, 0),
+      2,
     );
 
     const byAssetMap = new Map<

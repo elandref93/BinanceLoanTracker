@@ -67,7 +67,13 @@
       ],
       "expo-background-fetch",
       "expo-task-manager",
-      "@bacons/apple-targets"
+      "@bacons/apple-targets",
+      [
+        "./plugins/withAppleTargetDistributionSigning",
+        {
+          "targetNames": ["LedgerWidget"]
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

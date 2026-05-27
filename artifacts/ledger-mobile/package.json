@@ -11,8 +11,8 @@
     "eas:build:preview": "eas build -p ios --profile preview",
     "eas:build:production": "eas build -p ios --profile production",
     "eas:submit": "eas submit -p ios --latest",
-    "tf:build": "eas build -p ios --profile preview --non-interactive --auto-submit --no-wait",
-    "tf:build:wait": "eas build -p ios --profile preview --non-interactive --auto-submit"
+    "tf:build": "eas build -p ios --profile production --non-interactive --auto-submit --no-wait",
+    "tf:build:wait": "eas build -p ios --profile production --non-interactive --auto-submit"
   },
   "engines": {
     "node": ">=20",

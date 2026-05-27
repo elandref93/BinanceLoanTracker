@@ -163,10 +163,14 @@ cd artifacts/ledger-mobile
 pnpm exec eas credentials -p ios
 ```
 
-Choose **preview** → **Distribution Certificate** → either "Use existing"
-(upload an existing `.p12` if you have one) or "Generate new" (EAS makes one
-for you). Then **Provisioning Profile** → "Generate new". Quit with `q`.
-Apple will prompt for your Apple ID + 2FA code.
+Choose **production** → **Distribution Certificate** → "Use an existing one
+for your project" (reuses the cert already on your account). Then
+**Provisioning Profile** → "Generate new". Quit with `q`. Apple will prompt
+for your Apple ID + 2FA code.
+
+The `production` profile uses App Store distribution, which is what
+TestFlight actually needs. (The `preview` profile builds an Ad Hoc IPA for
+direct install via Expo's CDN — not TestFlight.)
 
 You only have to do this once per cert/profile. After it's stored on EAS,
 the workflow button below works forever.
@@ -186,9 +190,9 @@ pnpm --filter @workspace/ledger-mobile run tf:build
 pnpm --filter @workspace/ledger-mobile run tf:build:wait
 ```
 
-Both use `--profile preview --non-interactive --auto-submit`. The preview
-profile has `autoIncrement: true`, so the build number bumps itself — you
-never have to edit `app.json`.
+Both use `--profile production --non-interactive --auto-submit`. The
+production profile has `autoIncrement: true`, so the build number bumps
+itself — you never have to edit `app.json`.
 
 **Required secret:** `EXPO_TOKEN` (already set in this Repl). It must be a
 token with build/submit scope from <https://expo.dev/accounts/.../settings/access-tokens>.

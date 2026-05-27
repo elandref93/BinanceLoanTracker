@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import { useColors } from "@/hooks/useColors";
 import { useCurrency } from "@/context/CurrencyContext";
+import { useTargetLtv } from "@/context/RiskSettingsContext";
 import { fmtMoney, fmtPct } from "@/utils/format";
 import { headroomToTarget, statusFromLtv } from "@/utils/risk";
 import type { Loan } from "@workspace/api-client-react";
@@ -16,14 +17,15 @@ interface Props {
 export function LoanRow({ loan, accountName, onPress }: Props) {
   const colors = useColors();
   const { currency } = useCurrency();
-  const status = statusFromLtv(loan.ltv);
+  const targetLtv = useTargetLtv();
+  const status = statusFromLtv(loan.ltv, targetLtv);
   const tone =
     status === "ok"
       ? colors.ok
       : status === "warn"
         ? colors.warn
         : colors.danger;
-  const headroom = headroomToTarget(loan);
+  const headroom = headroomToTarget(loan, targetLtv);
   return (
     <Pressable
       onPress={onPress}
@@ -74,7 +76,7 @@ export function LoanRow({ loan, accountName, onPress }: Props) {
       </View>
       <Text style={[styles.hint, { color: colors.mutedForeground }]}>
         {headroom > 0
-          ? `+${fmtMoney(headroom, currency, { compact: true })} to reach 65%`
+          ? `+${fmtMoney(headroom, currency, { compact: true })} to reach ${targetLtv}%`
           : `Headroom ${fmtMoney(-headroom, currency, { compact: true })}`}
       </Text>
     </Pressable>

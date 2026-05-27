@@ -22,6 +22,7 @@ import { LoanRow } from "@/components/LoanRow";
 import { Pill } from "@/components/Pill";
 import { Tile } from "@/components/Tile";
 import { useCurrency } from "@/context/CurrencyContext";
+import { useTargetLtv } from "@/context/RiskSettingsContext";
 import { useColors } from "@/hooks/useColors";
 import { fmtMoney, fmtPct } from "@/utils/format";
 import {
@@ -48,6 +49,7 @@ export default function DashboardScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { currency, toggle } = useCurrency();
+  const targetLtv = useTargetLtv();
   const [filter, setFilter] = useState<string | null>(null);
 
   const accountsQ = useListAccounts();
@@ -71,7 +73,7 @@ export default function DashboardScreen() {
   const totalDebtUsd = loans.reduce((s, l) => s + l.debtUsd, 0);
   const totalColUsd = loans.reduce((s, l) => s + l.collateral.valueUsd, 0);
   const aggLtv = totalColUsd > 0 ? (totalDebtUsd / totalColUsd) * 100 : 0;
-  const status = statusFromLtv(aggLtv);
+  const status = statusFromLtv(aggLtv, targetLtv);
 
   const closest = useMemo(() => {
     if (loans.length === 0) return null;
@@ -81,10 +83,10 @@ export default function DashboardScreen() {
   const totalHeadroomToTarget = useMemo(
     () =>
       loans.reduce((s, l) => {
-        const h = headroomToTarget(l);
+        const h = headroomToTarget(l, targetLtv);
         return s + (h > 0 ? h : 0);
       }, 0),
-    [loans],
+    [loans, targetLtv],
   );
 
   useEffect(() => {
@@ -278,7 +280,7 @@ export default function DashboardScreen() {
           style={{ flex: 1 }}
         />
         <Tile
-          label="To reach 65%"
+          label={`To reach ${targetLtv}%`}
           value={fmtMoney(totalHeadroomToTarget, currency, { compact: true })}
           hint={totalHeadroomToTarget > 0 ? "add collateral" : "at target"}
           tone={totalHeadroomToTarget > 0 ? "warn" : "ok"}

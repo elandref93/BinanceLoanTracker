@@ -14,6 +14,11 @@ import { ActivityIndicator, Switch } from "react-native";
 import { useCallback, useEffect, useState } from "react";
 
 import { useCurrency } from "@/context/CurrencyContext";
+import {
+  MAX_TARGET_LTV,
+  MIN_TARGET_LTV,
+  useRiskSettings,
+} from "@/context/RiskSettingsContext";
 import { useSession } from "@/context/SessionContext";
 import { useColors } from "@/hooks/useColors";
 import { getAlertsEnabled, setAlertsEnabled } from "@/lib/alerts";
@@ -34,7 +39,6 @@ import {
 } from "@/lib/appLock";
 import { probeAccount, type ProbeResult } from "@/lib/keyHealth";
 import { fmtAge, fmtPct } from "@/utils/format";
-import { TARGET_LTV } from "@/utils/risk";
 
 function Section({
   title,
@@ -89,7 +93,9 @@ function Row({
       >
         {label}
       </Text>
-      {right ?? (
+      {right !== undefined ? (
+        right
+      ) : (
         <View style={styles.rowRight}>
           {value ? (
             <Text style={[styles.rowValue, { color: colors.mutedForeground }]}>
@@ -119,6 +125,38 @@ export default function SettingsScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { currency, set } = useCurrency();
+  const { targetLtv, setTargetLtv } = useRiskSettings();
+
+  const onEditTargetLtv = () => {
+    Alert.prompt(
+      "Target LTV",
+      `Used for headroom calculations. Allowed range: ${MIN_TARGET_LTV}–${MAX_TARGET_LTV}%.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Save",
+          onPress: (text?: string) => {
+            const n = Number((text ?? "").trim().replace("%", ""));
+            if (!Number.isFinite(n)) {
+              Alert.alert("Invalid value", "Enter a number between 30 and 77.");
+              return;
+            }
+            if (n < MIN_TARGET_LTV || n > MAX_TARGET_LTV) {
+              Alert.alert(
+                "Out of range",
+                `Target LTV must be between ${MIN_TARGET_LTV} and ${MAX_TARGET_LTV}.`,
+              );
+              return;
+            }
+            setTargetLtv(n);
+          },
+        },
+      ],
+      "plain-text",
+      String(targetLtv),
+      "number-pad",
+    );
+  };
   const { signOut, getToken, user } = useSession();
   const router = useRouter();
   const email = user?.email ?? null;
@@ -329,9 +367,11 @@ export default function SettingsScreen() {
         <Row
           label="USD"
           right={
-            currency === "USD" ? (
-              <Feather name="check" size={18} color={colors.primary} />
-            ) : null
+            <Feather
+              name="check"
+              size={18}
+              color={currency === "USD" ? colors.primary : "transparent"}
+            />
           }
           onPress={() => set("USD")}
         />
@@ -339,9 +379,11 @@ export default function SettingsScreen() {
         <Row
           label="ZAR"
           right={
-            currency === "ZAR" ? (
-              <Feather name="check" size={18} color={colors.primary} />
-            ) : null
+            <Feather
+              name="check"
+              size={18}
+              color={currency === "ZAR" ? colors.primary : "transparent"}
+            />
           }
           onPress={() => set("ZAR")}
         />
@@ -389,7 +431,11 @@ export default function SettingsScreen() {
       </Section>
 
       <Section title="Reference">
-        <Row label="Target LTV (headroom calc)" value={`${TARGET_LTV}%`} />
+        <Row
+          label="Target LTV (headroom calc)"
+          value={`${targetLtv}%`}
+          onPress={onEditTargetLtv}
+        />
       </Section>
 
       {appLockSupported ? (

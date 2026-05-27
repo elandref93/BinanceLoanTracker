@@ -2,7 +2,8 @@ import { StyleSheet, Text, View } from "react-native";
 import Svg, { Circle, G, Line } from "react-native-svg";
 
 import { useColors } from "@/hooks/useColors";
-import { LIQ_LTV, statusFromLtv, TARGET_LTV, WARNING_LTV } from "@/utils/risk";
+import { useTargetLtv } from "@/context/RiskSettingsContext";
+import { LIQ_LTV, statusFromLtv, WARNING_LTV } from "@/utils/risk";
 
 interface Props {
   ltv: number;
@@ -11,7 +12,8 @@ interface Props {
 
 export function RiskGauge({ ltv, size = 220 }: Props) {
   const colors = useColors();
-  const status = statusFromLtv(ltv);
+  const targetLtv = useTargetLtv();
+  const status = statusFromLtv(ltv, targetLtv);
   const tone =
     status === "ok"
       ? colors.ok
@@ -68,7 +70,7 @@ export function RiskGauge({ ltv, size = 220 }: Props) {
             strokeDashoffset={offset}
           />
         </G>
-        <Tick frac={TARGET_LTV / LIQ_LTV} color={colors.mutedForeground} />
+        <Tick frac={targetLtv / LIQ_LTV} color={colors.mutedForeground} />
         <Tick frac={WARNING_LTV / LIQ_LTV} color={colors.warn} />
       </Svg>
       <View style={styles.center} pointerEvents="none">
@@ -77,7 +79,7 @@ export function RiskGauge({ ltv, size = 220 }: Props) {
         </Text>
         <Text style={[styles.value, { color: tone }]}>{ltv.toFixed(1)}%</Text>
         <Text style={[styles.sub, { color: colors.mutedForeground }]}>
-          target {TARGET_LTV} · liq {LIQ_LTV}
+          target {targetLtv} · liq {LIQ_LTV}
         </Text>
       </View>
     </View>

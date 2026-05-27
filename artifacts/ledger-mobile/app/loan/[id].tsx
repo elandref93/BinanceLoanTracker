@@ -23,6 +23,7 @@ import {
   ruleAppliesTo,
   type AlertRule,
 } from "@/lib/alertRules";
+import { useTargetLtv } from "@/context/RiskSettingsContext";
 import { fmtMoney, fmtPct, fmtQty } from "@/utils/format";
 import {
   headroomToTarget,
@@ -87,6 +88,7 @@ function Card({
 
 export default function LoanDetailScreen() {
   const colors = useColors();
+  const targetLtv = useTargetLtv();
   const router = useRouter();
   const { currency } = useCurrency();
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -134,8 +136,8 @@ export default function LoanDetailScreen() {
     );
   }
   const account = accountsQ.data?.accounts.find((a) => a.id === loan.accountId);
-  const status = statusFromLtv(loan.ltv);
-  const headroom = headroomToTarget(loan);
+  const status = statusFromLtv(loan.ltv, targetLtv);
+  const headroom = headroomToTarget(loan, targetLtv);
   const warnPrice = priceAtLtv(loan, WARNING_LTV);
   const liqPrice = priceAtLtv(loan, LIQ_LTV);
   const warnDrop = priceDropPctTo(loan, WARNING_LTV);
@@ -271,7 +273,7 @@ export default function LoanDetailScreen() {
         <View style={styles.simRow}>
           {[5, 10, 20, 30, 40].map((pct) => {
             const projectedLtv = loan.ltv / (1 - pct / 100);
-            const projectedStatus = statusFromLtv(projectedLtv);
+            const projectedStatus = statusFromLtv(projectedLtv, targetLtv);
             const tone =
               projectedStatus === "ok"
                 ? colors.ok

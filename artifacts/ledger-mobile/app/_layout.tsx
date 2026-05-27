@@ -17,6 +17,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import { AppLockGate } from "@/components/AppLockGate";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { CurrencyProvider } from "@/context/CurrencyContext";
+import { RiskSettingsProvider } from "@/context/RiskSettingsContext";
 import { SessionProvider } from "@/context/SessionContext";
 
 SplashScreen.preventAutoHideAsync();
@@ -58,7 +59,8 @@ export default function RootLayout() {
             >
               <KeyboardProvider>
                 <CurrencyProvider>
-                  <AppLockGate>
+                  <RiskSettingsProvider>
+                    <AppLockGate>
                     <Stack
                       screenOptions={{
                         headerStyle: { backgroundColor: "#06090C" },
@@ -92,6 +94,7 @@ export default function RootLayout() {
                       />
                     </Stack>
                   </AppLockGate>
+                  </RiskSettingsProvider>
                 </CurrencyProvider>
               </KeyboardProvider>
             </GestureHandlerRootView>

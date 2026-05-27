@@ -47,8 +47,8 @@ Long-press the home screen → + → Ledger to add widgets. Lock screen: long-pr
 `group.com.ledger.shared` must match in three places (kept in sync — change all if you ever rename):
 
 - `app.json` → `ios.entitlements["com.apple.security.application-groups"]`
-- `ios-widget/expo-target.config.js` → `entitlements["com.apple.security.application-groups"]`
-- `ios-widget/SharedData.swift` → `kAppGroup`
+- `targets/widget/expo-target.config.js` → `entitlements["com.apple.security.application-groups"]`
+- `targets/widget/SharedData.swift` → `kAppGroup`
 - The JS snapshot writer in `lib/widgetSnapshot.ts` → `APP_GROUP`
 
 ## Force a widget refresh from JS (optional)

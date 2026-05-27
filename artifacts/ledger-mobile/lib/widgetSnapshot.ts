@@ -39,7 +39,7 @@ export function buildSnapshot(
 
 /**
  * Persists `snapshot` into the shared App Group so the WidgetKit extension
- * (see `ios-widget/`) can read it via UserDefaults(suiteName:).
+ * (see `targets/widget/`) can read it via UserDefaults(suiteName:).
  *
  * Implementation note: Expo Go has no access to app groups, so this is a
  * no-op there. In a dev build / TestFlight build it uses the native

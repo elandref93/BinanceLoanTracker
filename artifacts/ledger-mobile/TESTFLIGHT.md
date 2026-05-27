@@ -126,25 +126,23 @@ The `production` profile has `autoIncrement: true` so the build number bumps
 itself. For `preview` you can either bump `app.json` → `ios.buildNumber`
 manually or switch to remote version source (`eas build:version:set`).
 
-## 9. Widget extension (separate, optional)
+## 9. Widget extension (automatic)
 
-The widget Swift sources in `ios-widget/` are NOT included in the EAS build
-yet — Expo can't add a Widget Extension target through config alone. To ship
-them:
+The home + lock screen widgets live in `targets/widget/` and are wired into
+every EAS build automatically by the `@bacons/apple-targets` config plugin
+(registered in `app.json` → `plugins`). The plugin creates a `LedgerWidget`
+Widget Extension target during `expo prebuild`, copies in the Swift sources,
+and mirrors the App Group entitlement (`group.com.ledger.shared`) onto both
+the main app and the widget target.
 
-1. `npx expo prebuild --platform ios` (creates a real `ios/` Xcode project).
-2. Open `ios/Ledger.xcworkspace` in Xcode.
-3. **File → New → Target → Widget Extension**, name it `LedgerWidget`.
-4. Drag the files from `ios-widget/` into the new target.
-5. Set the App Group (`group.com.ledger.app` or whatever your bundle id
-   prefix is) on both the main app and widget targets so they can share the
-   SecureStore snapshot.
-6. Build once locally to validate, then `eas build` will pick up the
-   committed `ios/` folder.
+The widget extension's bundle ID is `com.ubuntu.life.ledger.widget`
+(pinned in `targets/widget/expo-target.config.js`). The first build will
+ask EAS to register that App ID and a matching provisioning profile — that
+takes ~30 seconds and happens automatically.
 
-After prebuilding once, you're in the "Bare workflow" — keep the `ios/`
-folder committed and only run `expo prebuild --clean` when you change
-native config in `app.json`.
+After installing the TestFlight build: long-press home screen → **+** →
+search **Ledger** to add the home widget. For the lock screen, long-press
+lock screen → **Customize** → tap a slot → **Ledger**.
 
 ---
 

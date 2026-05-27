@@ -2,7 +2,8 @@
 module.exports = {
   type: "watch-widget",
   name: "LedgerWatchComplication",
-  bundleIdentifier: ".watchkitapp.complication",
+  // Full ID (not a main-app suffix): Apple rejects ".watchkitapp.complication".
+  bundleIdentifier: "com.ubuntu.life.ledger.watchwidget",
   icon: "../../assets/images/icon.png",
   deploymentTarget: "10.0",
   colors: {

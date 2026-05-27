@@ -1,7 +1,7 @@
 import { NativeModules, Platform } from "react-native";
 
 import type { Loan } from "@workspace/api-client-react";
-import { LIQ_LTV, priceDropPctTo } from "@/utils/risk";
+import { DEFAULT_TARGET_LTV, LIQ_LTV, priceDropPctTo } from "@/utils/risk";
 
 const APP_GROUP = "group.com.ledger.shared";
 const KEY = "ledger.snapshot.v1";
@@ -13,10 +13,14 @@ export type LoanSnapshot = {
   closestAsset: string | null;
   closestLtv: number | null;
   priceDropPctToLiq: number | null;
+  targetLtv: number;
   updatedAt: string;
 };
 
-export function buildSnapshot(loans: Loan[]): LoanSnapshot {
+export function buildSnapshot(
+  loans: Loan[],
+  targetLtv: number = DEFAULT_TARGET_LTV,
+): LoanSnapshot {
   const totalDebt = loans.reduce((s, l) => s + l.debtUsd, 0);
   const totalCol = loans.reduce((s, l) => s + l.collateral.valueUsd, 0);
   const agg = totalCol > 0 ? (totalDebt / totalCol) * 100 : 0;
@@ -28,6 +32,7 @@ export function buildSnapshot(loans: Loan[]): LoanSnapshot {
     closestAsset: worst?.collateral.asset ?? null,
     closestLtv: worst?.ltv ?? null,
     priceDropPctToLiq: worst ? priceDropPctTo(worst, LIQ_LTV) : null,
+    targetLtv,
     updatedAt: new Date().toISOString(),
   };
 }

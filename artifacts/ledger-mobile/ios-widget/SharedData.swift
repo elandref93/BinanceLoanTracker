@@ -14,7 +14,14 @@ struct LoanSnapshot: Codable {
     let closestAsset: String?        // collateral symbol of the worst loan
     let closestLtv: Double?          // its LTV
     let priceDropPctToLiq: Double?   // % drop in collateral price until 78%
+    let targetLtv: Double?           // user-configured headroom target; nil = use default
     let updatedAt: Date
+
+    /// User-configured target LTV with a sane fallback for snapshots written
+    /// before the field existed.
+    var effectiveTargetLtv: Double {
+        return targetLtv ?? 65
+    }
 
     static let placeholder = LoanSnapshot(
         aggregateLtv: 64.2,
@@ -23,6 +30,7 @@ struct LoanSnapshot: Codable {
         closestAsset: "BTC",
         closestLtv: 71.4,
         priceDropPctToLiq: 8.1,
+        targetLtv: 65,
         updatedAt: Date()
     )
 
@@ -39,7 +47,7 @@ struct LoanSnapshot: Codable {
 
     func status() -> RiskStatus {
         if aggregateLtv >= 72 { return .danger }
-        if aggregateLtv >= 65 { return .warn }
+        if aggregateLtv >= effectiveTargetLtv { return .warn }
         return .ok
     }
 }

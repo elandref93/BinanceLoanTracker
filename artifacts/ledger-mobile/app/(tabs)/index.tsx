@@ -92,8 +92,8 @@ export default function DashboardScreen() {
   useEffect(() => {
     if (all.length === 0) return;
     void checkAndNotifyLoans(all);
-    void writeWidgetSnapshot(buildSnapshot(all));
-  }, [all]);
+    void writeWidgetSnapshot(buildSnapshot(all, targetLtv));
+  }, [all, targetLtv]);
 
   const refreshing = accountsQ.isFetching || loansQ.isFetching;
   const onRefresh = () => {

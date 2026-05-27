@@ -8,7 +8,7 @@ import React, {
   useState,
 } from "react";
 
-import { DEFAULT_TARGET_LTV, LIQ_LTV } from "@/utils/risk";
+import { DEFAULT_TARGET_LTV, WARNING_LTV } from "@/utils/risk";
 
 interface RiskSettingsCtx {
   targetLtv: number;
@@ -19,7 +19,9 @@ const Ctx = createContext<RiskSettingsCtx | null>(null);
 const KEY = "ledger.targetLtv";
 
 export const MIN_TARGET_LTV = 30;
-export const MAX_TARGET_LTV = LIQ_LTV - 1;
+// Cap the user-configurable target below Binance's margin-call threshold so
+// the "target" can never be set into the danger zone.
+export const MAX_TARGET_LTV = WARNING_LTV - 1;
 
 export function RiskSettingsProvider({ children }: { children: React.ReactNode }) {
   const [targetLtv, setLocal] = useState<number>(DEFAULT_TARGET_LTV);

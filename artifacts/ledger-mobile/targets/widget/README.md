@@ -4,7 +4,7 @@ Two widgets, both reading the same shared snapshot the app writes after every lo
 
 - **Home screen** (`HomeWidget.swift`) — small + medium families
   - Small: aggregate LTV + status label
-  - Medium: aggregate LTV alongside the loan closest to liquidation and the % collateral price drop until 78%
+  - Medium: aggregate LTV alongside the loan closest to liquidation and the % collateral price drop until 91% (Binance liquidation LTV)
 - **Lock screen** (`LockWidget.swift`) — circular, rectangular, inline accessory families
 
 ## Architecture

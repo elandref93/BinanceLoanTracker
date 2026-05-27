@@ -3,8 +3,16 @@ import type { Loan } from "@workspace/api-client-react";
 export const DEFAULT_TARGET_LTV = 65;
 /** @deprecated Prefer `useTargetLtv()` from `@/context/RiskSettingsContext`. */
 export const TARGET_LTV = DEFAULT_TARGET_LTV;
-export const WARNING_LTV = 72;
-export const LIQ_LTV = 78;
+// Binance Flexible Rate Loan thresholds for major collateral (BTC/ETH/BNB):
+//   Initial LTV     78%  — you can open a loan up to this LTV
+//   Margin call     85%  — Binance starts notifying / freezing actions
+//   Liquidation     91%  — Binance liquidates collateral
+// These vary slightly by collateral asset; 91% matches what Binance displays
+// for BTC-collateralised USDC loans (cross-checked against the Binance app).
+// If we ever support exotic collateral with different tiers, move this into a
+// per-asset table keyed on collateral.asset.
+export const WARNING_LTV = 85;
+export const LIQ_LTV = 91;
 
 export type Status = "ok" | "warn" | "danger";
 

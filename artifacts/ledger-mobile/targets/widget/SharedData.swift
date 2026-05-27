@@ -13,7 +13,7 @@ struct LoanSnapshot: Codable {
     let totalCollateralUsd: Double
     let closestAsset: String?        // collateral symbol of the worst loan
     let closestLtv: Double?          // its LTV
-    let priceDropPctToLiq: Double?   // % drop in collateral price until 78%
+    let priceDropPctToLiq: Double?   // % drop in collateral price until 91% (Binance liquidation)
     let targetLtv: Double?           // user-configured headroom target; nil = use default
     let updatedAt: Date
 

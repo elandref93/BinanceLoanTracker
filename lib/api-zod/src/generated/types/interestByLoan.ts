@@ -20,5 +20,9 @@ export interface InterestByLoan {
   accrued30dUsd: number;
   projected30dUsd: number;
   dailyUsd: number;
+  /** Realised interest paid since the loan was opened, in USD. Derived from borrow/repay history (flexible) or summed daily interest deductions (fixed-term). 0 when unknown. */
+  lifetimeInterestUsd: number;
+  /** Days since the earliest borrow on this loan. 0 when unknown. */
+  loanAgeDays: number;
   rateHistory: RatePoint[];
 }

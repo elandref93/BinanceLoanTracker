@@ -64,6 +64,14 @@ export interface BinanceClient {
     to?: Date;
   }): Promise<BinanceInterestRow[]>;
   getRateHistory(loanId: string, days: number): Promise<BinanceRatePoint[]>;
+  /**
+   * Real lifetime interest paid for a loan, derived from borrow/repay history
+   * (flexible) or summed interest deductions (fixed-term). Returns 0/0 when
+   * unknown so the route layer can fall back gracefully.
+   */
+  getLifetimeInterestUsd(
+    loanId: string,
+  ): Promise<{ lifetimeInterestUsd: number; loanAgeDays: number }>;
 }
 
 function hourlyToApr(hourly: number): number {
@@ -223,6 +231,17 @@ export function createMockBinanceClient(): BinanceClient {
       const loan = SEED_LOANS.find((l) => l.id === loanId);
       if (!loan) return [];
       return generateMockRateHistory(loan, days);
+    },
+    async getLifetimeInterestUsd(loanId) {
+      const loan = SEED_LOANS.find((l) => l.id === loanId);
+      if (!loan) return { lifetimeInterestUsd: 0, loanAgeDays: 0 };
+      // Synthetic: pretend loan has been open ~45 days at its current rate.
+      const loanAgeDays = 45;
+      const dailyUsd = loan.debt * loan.hourlyInterestRate * 24;
+      return {
+        lifetimeInterestUsd: round(dailyUsd * loanAgeDays, 2),
+        loanAgeDays,
+      };
     },
   };
 }
@@ -828,6 +847,98 @@ export function createRealBinanceClient(
       }
       return rows;
     },
+    async getLifetimeInterestUsd(loanId) {
+      const loans = await this.listLoans();
+      const loan = loans.find((l) => l.id === loanId);
+      if (!loan) return { lifetimeInterestUsd: 0, loanAgeDays: 0 };
+
+      // ── Flexible: derive realised interest from borrow/repay history ────
+      if (loanId.includes("_flex_")) {
+        const [borrowsRaw, repaysRaw] = await Promise.all([
+          binanceSignedGet(creds, "/sapi/v2/loan/flexible/borrow/history", {
+            loanCoin: loan.asset,
+            size: 100,
+          }).catch((err) => {
+            logger.warn({ err, loanId }, "flexible borrow history failed");
+            return null;
+          }),
+          binanceSignedGet(creds, "/sapi/v2/loan/flexible/repay/history", {
+            loanCoin: loan.asset,
+            size: 100,
+          }).catch((err) => {
+            logger.warn({ err, loanId }, "flexible repay history failed");
+            return null;
+          }),
+        ]);
+        const matches = (r: Record<string, unknown>) =>
+          str(r["loanCoin"]).toUpperCase() === loan.asset &&
+          str(r["collateralCoin"]).toUpperCase() === loan.collateral.asset;
+        const borrows = rowsArray(borrowsRaw).filter((r) =>
+          matches(r as Record<string, unknown>),
+        );
+        const repays = rowsArray(repaysRaw).filter((r) =>
+          matches(r as Record<string, unknown>),
+        );
+        if (borrows.length === 0) {
+          return { lifetimeInterestUsd: 0, loanAgeDays: 0 };
+        }
+        const sumBorrow = borrows.reduce<number>(
+          (s, r) =>
+            s + num((r as Record<string, unknown>)["initialLoanAmount"]),
+          0,
+        );
+        const sumRepay = repays.reduce<number>(
+          (s, r) => s + num((r as Record<string, unknown>)["repayAmount"]),
+          0,
+        );
+        // currentDebt = remainingPrincipal + accruedInterestNotYetPaid
+        // interestLifetime = currentDebt + totalRepaid - totalBorrowed
+        // (any repaid amount above borrowed principal must be interest)
+        const lifetimeLoanCoin = Math.max(
+          0,
+          loan.debt + sumRepay - sumBorrow,
+        );
+        const { prices } = await fetchUsdPrices([loan.asset]);
+        const usd = prices[0]?.usd ?? 0;
+        const earliestBorrowTs = borrows.reduce<number>((min, r) => {
+          const t = num((r as Record<string, unknown>)["borrowTime"]);
+          return t > 0 && t < min ? t : min;
+        }, Date.now());
+        const loanAgeDays = Math.max(
+          1,
+          Math.floor((Date.now() - earliestBorrowTs) / 86_400_000),
+        );
+        return {
+          lifetimeInterestUsd: round(lifetimeLoanCoin * usd, 2),
+          loanAgeDays,
+        };
+      }
+
+      // ── Fixed-term: sum all BORROW_DAILY_INTEREST rows for this loan ────
+      if (loanId.includes("_fixed_")) {
+        const allRows = await this.listInterest({ accountId: loan.accountId });
+        const matched = allRows.filter((r) => r.loanId === loanId);
+        if (matched.length === 0) {
+          return { lifetimeInterestUsd: 0, loanAgeDays: 0 };
+        }
+        const earliest = Math.min(
+          ...matched.map((r) => new Date(r.ts).getTime()),
+        );
+        return {
+          lifetimeInterestUsd: round(
+            matched.reduce((s, r) => s + r.amountUsd, 0),
+            2,
+          ),
+          loanAgeDays: Math.max(
+            1,
+            Math.floor((Date.now() - earliest) / 86_400_000),
+          ),
+        };
+      }
+
+      // Margin loans: not derivable from public history endpoints.
+      return { lifetimeInterestUsd: 0, loanAgeDays: 0 };
+    },
     async getRateHistory(_loanId, days) {
       // Binance doesn't expose a per-loan historical APR series. We return
       // a flat line at the current rate so the UI sparkline still renders.
@@ -923,6 +1034,19 @@ export function createMultiplexBinanceClient(
           "rate history failed",
         );
         return [];
+      }
+    },
+    async getLifetimeInterestUsd(loanId) {
+      const owner = members.find((m) => loanId.startsWith(`${m.account.id}_`));
+      if (!owner) return { lifetimeInterestUsd: 0, loanAgeDays: 0 };
+      try {
+        return await owner.client.getLifetimeInterestUsd(loanId);
+      } catch (err) {
+        logger.warn(
+          { err, loanId, accountId: owner.account.id },
+          "lifetime interest failed",
+        );
+        return { lifetimeInterestUsd: 0, loanAgeDays: 0 };
       }
     },
   };

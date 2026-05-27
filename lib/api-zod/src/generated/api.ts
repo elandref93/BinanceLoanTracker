@@ -104,6 +104,8 @@ export const ListInterestResponse = zod.object({
   "accrued30dUsd": zod.number(),
   "projected30dUsd": zod.number(),
   "dailyUsd": zod.number(),
+  "lifetimeInterestUsd": zod.number().describe('Realised interest paid since the loan was opened, in USD. Derived from borrow\/repay history (flexible) or summed daily interest deductions (fixed-term). 0 when unknown.'),
+  "loanAgeDays": zod.number().describe('Days since the earliest borrow on this loan. 0 when unknown.'),
   "rateHistory": zod.array(zod.object({
   "ts": zod.coerce.date(),
   "apr": zod.number().describe('APR % at that timestamp')

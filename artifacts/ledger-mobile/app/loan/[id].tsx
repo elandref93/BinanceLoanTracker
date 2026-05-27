@@ -335,6 +335,16 @@ export default function LoanDetailScreen() {
             value={fmtMoney(byLoan.accrued30dUsd, currency)}
           />
         ) : null}
+        {byLoan && byLoan.lifetimeInterestUsd > 0 ? (
+          <Row
+            label={
+              byLoan.loanAgeDays > 0
+                ? `Interest paid · ${byLoan.loanAgeDays}d`
+                : "Interest paid"
+            }
+            value={fmtMoney(byLoan.lifetimeInterestUsd, currency)}
+          />
+        ) : null}
       </Card>
 
       <Pressable

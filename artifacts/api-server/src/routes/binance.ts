@@ -48,6 +48,9 @@ const emptyClient: BinanceClient = {
   async getRateHistory() {
     return [];
   },
+  async getLifetimeInterestUsd() {
+    return { lifetimeInterestUsd: 0, loanAgeDays: 0 };
+  },
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -195,17 +198,27 @@ router.get("/interest", async (req, res, next) => {
       loans.map(async (loan) => {
         const loanRows = rows.filter((r) => r.loanId === loan.id);
         const dailyUsd = round(loan.debt * loan.hourlyInterestRate * 24, 4);
-        // Flexible loans don't post BORROW_DAILY_INTEREST rows (interest folds
-        // into collateral). When we have no rows at all for a loan, fall back
-        // to an estimate at the current rate so the UI shows something
-        // meaningful instead of a flat zero. If rows exist (fixed-term),
-        // always trust them — even if they sum to zero or include rebates.
-        const accrued30dUsd = round(
-          loanRows.length > 0
-            ? loanRows.reduce((s, r) => s + r.amountUsd, 0)
-            : dailyUsd * 30,
-          2,
-        );
+        const { lifetimeInterestUsd, loanAgeDays } =
+          await client.getLifetimeInterestUsd(loan.id);
+        // Accuracy ladder for "Last 30d":
+        //   1. Realised income rows when present (fixed-term).
+        //   2. Lifetime-derived avg × 30 when we know loan age (≥1d of history).
+        //   3. Live daily rate × 30 estimate as last-resort fallback.
+        let accrued30dUsd: number;
+        if (loanRows.length > 0) {
+          accrued30dUsd = round(
+            loanRows.reduce((s, r) => s + r.amountUsd, 0),
+            2,
+          );
+        } else if (loanAgeDays > 0 && lifetimeInterestUsd > 0) {
+          // If loan younger than 30d, lifetime IS the last-30d figure.
+          accrued30dUsd =
+            loanAgeDays <= 30
+              ? round(lifetimeInterestUsd, 2)
+              : round((lifetimeInterestUsd / loanAgeDays) * 30, 2);
+        } else {
+          accrued30dUsd = round(dailyUsd * 30, 2);
+        }
         const rateHistory = await client.getRateHistory(loan.id, 30);
         const aprs = rateHistory.map((p) => p.apr);
         const avg30dApr = aprs.length
@@ -223,6 +236,8 @@ router.get("/interest", async (req, res, next) => {
           accrued30dUsd,
           projected30dUsd: round(dailyUsd * 30, 2),
           dailyUsd,
+          lifetimeInterestUsd: round(lifetimeInterestUsd, 2),
+          loanAgeDays,
           rateHistory,
         };
       }),

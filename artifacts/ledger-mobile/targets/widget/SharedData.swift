@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 import WidgetKit
 
 /// Must match the App Group identifier configured on both the main app

@@ -1,0 +1,184 @@
+Creating Gymfile
+Gymfile created
+Successfully loaded '/Users/expo/workingdir/build/artifacts/ledger-mobile/ios/Gymfile' 📄
++---------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+|                                                                  Detected Values from './Gymfile'                                                                   |
++-----------------------+---------------------------------------------------------------------------------------------------------------------------------------------+
+| suppress_xcode_output | true                                                                                                                                        |
+| clean                 | false                                                                                                                                       |
+| scheme                | Ledger                                                                                                                                      |
+| configuration         | Release                                                                                                                                     |
+| export_options        |                                                                                                                                             |
+| export_xcargs         | OTHER_CODE_SIGN_FLAGS="--keychain /var/folders/5_/4knlryn57n39p2c_jw8567z00000gn/T/eas-build-fe4c0446-0d84-402d-96d3-b2a4dfc00902.keychain" |
+| disable_xcpretty      | true                                                                                                                                        |
+| buildlog_path         | /Users/expo/workingdir/logs                                                                                                                 |
+| derived_data_path     | ./build                                                                                                                                     |
+| result_bundle         | true                                                                                                                                        |
+| result_bundle_path    | /var/folders/5_/4knlryn57n39p2c_jw8567z00000gn/T/result-bundle-1779887097306.xcresult                                                       |
+| output_directory      | ./build                                                                                                                                     |
++-----------------------+---------------------------------------------------------------------------------------------------------------------------------------------+
+Resolving Swift Package Manager dependencies...
+$ xcodebuild -resolvePackageDependencies -workspace ./Ledger.xcworkspace -scheme Ledger -configuration Release -derivedDataPath ./build
+▸ Command line invocation:
+▸     /Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild -resolvePackageDependencies -workspace ./Ledger.xcworkspace -scheme Ledger -configuration Release -derivedDataPath ./build
+▸ resolved source packages:
+$ xcodebuild -showBuildSettings -workspace ./Ledger.xcworkspace -scheme Ledger -configuration Release -derivedDataPath ./build 2>&1
+Detected provisioning profile mapping: {:"com.ubuntu.life.ledger"=>"b209af49-92dd-4e89-a9f5-8d8f8275d2e4", :"com.ubuntu.life.ledger.watchkitapp"=>"8a63a84a-5026-4d85-919c-ff3d65baa897", :"com.ubuntu.life.ledger.widget"=>"5964fcbc-35d2-4231-91b6-6ad984d6db66", :"com.ubuntu.life.ledger.watchwidget"=>"5d8ee0d3-a4e0-4bfb-88c1-58d5a7ed7786"}
+
++----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+|                                                                                               Summary for gym 2.228.0                                                                                                |
++------------------------------------------------------------------------+---------------------------------------------------------------------------------------------------------------------------------------------+
+| workspace                                                              | ./Ledger.xcworkspace                                                                                                                        |
+| scheme                                                                 | Ledger                                                                                                                                      |
+| clean                                                                  | false                                                                                                                                       |
+| output_directory                                                       | ./build                                                                                                                                     |
+| output_name                                                            | Ledger                                                                                                                                      |
+| configuration                                                          | Release                                                                                                                                     |
+| silent                                                                 | false                                                                                                                                       |
+| skip_package_ipa                                                       | false                                                                                                                                       |
+| skip_package_pkg                                                       | false                                                                                                                                       |
+| export_options.method                                                  | app-store                                                                                                                                   |
+| export_options.provisioningProfiles.com.ubuntu.life.ledger             | b209af49-92dd-4e89-a9f5-8d8f8275d2e4                                                                                                        |
+| export_options.provisioningProfiles.com.ubuntu.life.ledger.watchkitapp | 8a63a84a-5026-4d85-919c-ff3d65baa897                                                                                                        |
+| export_options.provisioningProfiles.com.ubuntu.life.ledger.widget      | 5964fcbc-35d2-4231-91b6-6ad984d6db66                                                                                                        |
+| export_options.provisioningProfiles.com.ubuntu.life.ledger.watchwidget | 5d8ee0d3-a4e0-4bfb-88c1-58d5a7ed7786                                                                                                        |
+| export_xcargs                                                          | OTHER_CODE_SIGN_FLAGS="--keychain /var/folders/5_/4knlryn57n39p2c_jw8567z00000gn/T/eas-build-fe4c0446-0d84-402d-96d3-b2a4dfc00902.keychain" |
+| build_path                                                             | /Users/expo/Library/Developer/Xcode/Archives/2026-05-27                                                                                     |
+| derived_data_path                                                      | ./build                                                                                                                                     |
+| result_bundle                                                          | true                                                                                                                                        |
+| result_bundle_path                                                     | /var/folders/5_/4knlryn57n39p2c_jw8567z00000gn/T/result-bundle-1779887097306.xcresult                                                       |
+| buildlog_path                                                          | /Users/expo/workingdir/logs                                                                                                                 |
+| destination                                                            | generic/platform=iOS                                                                                                                        |
+| suppress_xcode_output                                                  | true                                                                                                                                        |
+| xcodebuild_formatter                                                   | xcpretty                                                                                                                                    |
+| build_timing_summary                                                   | false                                                                                                                                       |
+| disable_xcpretty                                                       | true                                                                                                                                        |
+| skip_profile_detection                                                 | false                                                                                                                                       |
+| xcodebuild_command                                                     | xcodebuild                                                                                                                                  |
+| skip_package_dependencies_resolution                                   | false                                                                                                                                       |
+| disable_package_automatic_updates                                      | false                                                                                                                                       |
+| use_system_scm                                                         | false                                                                                                                                       |
+| xcode_path                                                             | /Applications/Xcode.app                                                                                                                     |
++------------------------------------------------------------------------+---------------------------------------------------------------------------------------------------------------------------------------------+
+$ set -o pipefail && xcodebuild -workspace ./Ledger.xcworkspace -scheme Ledger -configuration Release -derivedDataPath ./build -destination 'generic/platform=iOS' -archivePath /Users/expo/Library/Developer/Xcode/Archives/2026-05-27/Ledger\ 2026-05-27\ 06.05.02.xcarchive -resultBundlePath '/var/folders/5_/4knlryn57n39p2c_jw8567z00000gn/T/result-bundle-1779887097306.xcresult' archive | tee /Users/expo/workingdir/logs/Ledger-Ledger.log > /dev/null
+› Executing react-native Pods/ReactNativeDependencies » [CP-User] [RNDeps] Replace React Native Dependencies for the right configuration, if needed
+› Executing react-native Pods/hermes-engine » [CP-User] [Hermes] Replace Hermes for the right configuration, if needed
+› Executing react-native Pods/hermes-engine » [CP] Copy XCFrameworks
+› Preparing expo-image Pods/SDWebImage-SDWebImage » ResourceBundle-SDWebImage-SDWebImage-Info.plist
+› Copying   expo-image ios/build/Build/Intermediates.noindex/ArchiveIntermediates/Ledger/IntermediateBuildFilesPath/UninstalledProducts/iphoneos/SDWebImage.bundle/PrivacyInfo.xcprivacy ➜ ../../../Users/expo/workingdir/build/artifacts/ledger-mobile/ios/Pods/SDWebImage/WebImage/PrivacyInfo.xcprivacy
+› Preparing Pods/React-cxxreact-React-cxxreact_privacy » ResourceBundle-React-cxxreact_privacy-React-cxxreact-Info.plist
+› Copying   ios/build/Build/Intermediates.noindex/ArchiveIntermediates/Ledger/IntermediateBuildFilesPath/UninstalledProducts/iphoneos/React-cxxreact_privacy.bundle/PrivacyInfo.xcprivacy ➜ ../../../Users/expo/workingdir/build/node_modules/.pnpm/react-native@0.81.5_@babel+core@7.29.0_@types+react@19.1.17_react@19.1.0/node_modules/react-native/ReactCommon/cxxreact/PrivacyInfo.xcprivacy
+› Creating  expo-image Pods/SDWebImage-SDWebImage » SDWebImage.bundle
+› Preparing Pods/React-Core-React-Core_privacy » ResourceBundle-React-Core_privacy-React-Core-Info.plist
+› Copying   ios/build/Build/Intermediates.noindex/ArchiveIntermediates/Ledger/IntermediateBuildFilesPath/UninstalledProducts/iphoneos/React-Core_privacy.bundle/PrivacyInfo.xcprivacy ➜ ../../../Users/expo/workingdir/build/node_modules/.pnpm/react-native@0.81.5_@babel+core@7.29.0_@types+react@19.1.17_react@19.1.0/node_modules/react-native/React/Resources/PrivacyInfo.xcprivacy
+› Creating  Pods/React-cxxreact-React-cxxreact_privacy » React-cxxreact_privacy.bundle
+› Preparing Pods/RNSVG-RNSVGFilters » ResourceBundle-RNSVGFilters-RNSVG-Info.plist
+› Copying   ios/build/Build/Intermediates.noindex/ArchiveIntermediates/Ledger/IntermediateBuildFilesPath/UninstalledProducts/iphoneos/RNSVGFilters.bundle/RNSVGCompositeXor.iphoneos.metallib ➜ ../../../Users/expo/workingdir/build/node_modules/.pnpm/react-native-svg@15.12.1_react-native@0.81.5_@babel+core@7.29.0_@types+react@19.1.17_react@19.1.0__react@19.1.0/node_modules/react-native-svg/apple/Filters/MetalCI/RNSVGCompositeXor.iphoneos.metallib
+› Copying   ios/build/Build/Intermediates.noindex/ArchiveIntermediates/Ledger/IntermediateBuildFilesPath/UninstalledProducts/iphoneos/RNSVGFilters.bundle/RNSVGArithmeticFilter.iphoneos.metallib ➜ ../../../Users/expo/workingdir/build/node_modules/.pnpm/react-native-svg@15.12.1_react-native@0.81.5_@babel+core@7.29.0_@types+react@19.1.17_react@19.1.0__react@19.1.0/node_modules/react-native-svg/apple/Filters/MetalCI/RNSVGArithmeticFilter.iphoneos.metallib
+› Creating  Pods/React-Core-React-Core_privacy » React-Core_privacy.bundle
+› Preparing Pods/RNCAsyncStorage-RNCAsyncStorage_resources » ResourceBundle-RNCAsyncStorage_resources-RNCAsyncStorage-Info.plist
+› Copying   ios/build/Build/Intermediates.noindex/ArchiveIntermediates/Ledger/IntermediateBuildFilesPath/UninstalledProducts/iphoneos/RNCAsyncStorage_resources.bundle/PrivacyInfo.xcprivacy ➜ ../../../Users/expo/workingdir/build/node_modules/.pnpm/@react-native-async-storage+async-storage@2.2.0_react-native@0.81.5_@babel+core@7.29.0_@types_epvr6wryoua45drs32ffpgw5pm/node_modules/@react-native-async-storage/async-storage/ios/PrivacyInfo.xcprivacy
+› Creating  Pods/RNSVG-RNSVGFilters » RNSVGFilters.bundle
+› Copying   ios/build/Build/Intermediates.noindex/ArchiveIntermediates/Ledger/IntermediateBuildFilesPath/UninstalledProducts/iphoneos/LedgerWidget.appex/README.md ➜ ../../../Users/expo/workingdir/build/artifacts/ledger-mobile/targets/widget/README.md
+› Creating  Pods/RNCAsyncStorage-RNCAsyncStorage_resources » RNCAsyncStorage_resources.bundle
+› Executing react-native Pods/ReactNativeDependencies » [CP] Copy XCFrameworks
+
+❌  (targets/widget/HomeWidget.swift:10:44)
+
+   8 |         StaticConfiguration(kind: kind, provider: SnapshotProvider()) { entry in
+   9 |             HomeWidgetView(snapshot: entry.snapshot)
+> 10 |                 .containerBackground(Color.ledgerBg, for: .widget)
+     |                                            ^ type 'Color' has no member 'ledgerBg'
+  11 |         }
+  12 |         .configurationDisplayName("Ledger LTV")
+  13 |         .description("Aggregate LTV and the loan closest to liquidation.")
+
+
+❌  (targets/widget/HomeWidget.swift:35:40)
+
+  33 |                 .font(.system(size: 9, weight: .semibold))
+  34 |                 .tracking(1.5)
+> 35 |                 .foregroundStyle(Color.ledgerMuted)
+     |                                        ^ type 'Color' has no member 'ledgerMuted'
+  36 |             Text(String(format: "%.1f%%", snapshot.aggregateLtv))
+  37 |                 .font(.system(size: 36, weight: .bold, design: .rounded))
+  38 |                 .monospacedDigit()
+
+
+❌  (targets/widget/HomeWidget.swift:57:44)
+
+  55 |                     .font(.system(size: 9, weight: .semibold))
+  56 |                     .tracking(1.5)
+> 57 |                     .foregroundStyle(Color.ledgerMuted)
+     |                                            ^ type 'Color' has no member 'ledgerMuted'
+  58 |                 Text(String(format: "%.1f%%", snapshot.aggregateLtv))
+  59 |                     .font(.system(size: 40, weight: .bold, design: .rounded))
+  60 |                     .monospacedDigit()
+
+
+❌  (targets/widget/LockWidget.swift:36:31)
+
+  34 |         ZStack {
+  35 |             Circle()
+> 36 |                 .stroke(Color.ledgerMuted.opacity(0.4), lineWidth: 3)
+     |                               ^ type 'Color' has no member 'ledgerMuted'
+  37 |             Circle()
+  38 |                 .trim(from: 0, to: min(snapshot.aggregateLtv / 78.0, 1.0))
+  39 |                 .stroke(
+
+
+❌  (targets/widget/SharedData.swift:83:16)
+
+  81 |     case ok, warn, danger
+  82 | 
+> 83 |     var color: Color {
+     |                ^ cannot find type 'Color' in scope
+  84 |         switch self {
+  85 |         case .ok: return Color(red: 0.12, green: 0.71, blue: 0.65)        // #1FB6A6
+  86 |         case .warn: return Color(red: 0.96, green: 0.65, blue: 0.14)      // #F5A524
+
+
+❌  (targets/widget/SharedData.swift:100:11)
+
+   98 | }
+   99 | 
+> 100 | extension Color {
+      |           ^ cannot find type 'Color' in scope
+  101 |     static let ledgerBg = Color(red: 0.024, green: 0.035, blue: 0.047)    // #06090C
+  102 |     static let ledgerCard = Color(red: 0.055, green: 0.078, blue: 0.102)  // #0E141A
+  103 |     static let ledgerFg = Color(red: 0.902, green: 0.945, blue: 0.969)    // #E6F1F7
+
+    Run script build phase '[CP-User] [Hermes] Replace Hermes for the right configuration, if needed' will be run during every build because it does not specify any outputs. To address this issue, either add output dependencies to the script phase, or configure it to run in every build by unchecking "Based on dependency analysis" in the script phase. (in target 'hermes-engine' from project 'Pods')
+▸ ** ARCHIVE FAILED **
+▸ The following build commands failed:
+▸ 	SwiftCompile normal arm64 Compiling\ HomeWidget.swift,\ LedgerLiveActivity.swift,\ LedgerWidgetBundle.swift,\ LockWidget.swift,\ SharedData.swift,\ GeneratedAssetSymbols.swift /Users/expo/workingdir/build/artifacts/ledger-mobile/targets/widget/HomeWidget.swift /Users/expo/workingdir/build/artifacts/ledger-mobile/targets/widget/LedgerLiveActivity.swift /Users/expo/workingdir/build/artifacts/ledger-mobile/targets/widget/LedgerWidgetBundle.swift /Users/expo/workingdir/build/artifacts/ledger-mobile/targets/widget/LockWidget.swift /Users/expo/workingdir/build/artifacts/ledger-mobile/targets/widget/SharedData.swift /Users/expo/workingdir/build/artifacts/ledger-mobile/ios/build/Build/Intermediates.noindex/ArchiveIntermediates/Ledger/IntermediateBuildFilesPath/Ledger.build/Release-iphoneos/LedgerWidget.build/DerivedSources/GeneratedAssetSymbols.swift (in target 'LedgerWidget' from project 'Ledger')
+▸ 	CompileSwift normal arm64 (in target 'LedgerWidget' from project 'Ledger')
+▸ 	Archiving workspace Ledger with scheme Ledger
+▸ (3 failures)
+Exit status: 65
+
++---------------------------------------+
+|           Build environment           |
++-------------+-------------------------+
+| xcode_path  | /Applications/Xcode.app |
+| gym_version | 2.228.0                 |
+| sdk         | iPhoneOS26.0.sdk        |
++-------------+-------------------------+
+Looks like fastlane ran into a build/archive error with your project
+It's hard to tell what's causing the error, so we wrote some guides on how
+to troubleshoot build and signing issues: https://docs.fastlane.tools/codesigning/getting-started/
+Before submitting an issue on GitHub, please follow the guide above and make
+sure your project is set up correctly.
+fastlane uses `xcodebuild` commands to generate your binary, you can see the
+the full commands printed out in yellow in the above log.
+Make sure to inspect the output above, as usually you'll find more error information there
+
+[!] Error building the application - see the log above
+Error: The "Run fastlane" step failed because of an error in the Xcode build process. We automatically detected following errors in your Xcode build logs:
+- type 'Color' has no member 'ledgerBg'
+- type 'Color' has no member 'ledgerMuted'
+- type 'Color' has no member 'ledgerMuted'
+- type 'Color' has no member 'ledgerMuted'
+- cannot find type 'Color' in scope
+- cannot find type 'Color' in scope
+Refer to "Xcode Logs" below for additional, more detailed logs.

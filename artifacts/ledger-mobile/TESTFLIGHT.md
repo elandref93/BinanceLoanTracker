@@ -53,40 +53,21 @@ They MUST match exactly.
 
 ## 4. Fill in eas.json
 
-Open `artifacts/ledger-mobile/eas.json` and replace the placeholders:
+Open `artifacts/ledger-mobile/eas.json` and confirm the values:
 
-- `EXPO_PUBLIC_DOMAIN` (in every build profile) — the public hostname of
-  the deployed Replit API server, e.g. `ledger-api.your-name.replit.app`.
-  This is what the mobile app calls for `/api/loans` etc.
+- `EXPO_PUBLIC_DOMAIN` is pinned in every build profile to
+  `binance-loan-tracker-backend.azurewebsites.net` — the Azure-hosted API
+  server. The mobile app calls this for `/api/loans` etc. Change it only if
+  the backend moves.
 - `submit.production.ios.appleId` — the email of your Apple Developer account.
 - `submit.production.ios.ascAppId` — the 10-digit ID from step 2.
 - `submit.production.ios.appleTeamId` — the 10-char team ID from step 2.
 
-## 5. Set EAS secrets
+## 5. EAS env vars
 
-The mobile app now signs in natively with Sign in with Apple — no Clerk, no
-Google OAuth, no third-party auth dashboard. The only env var the build
-needs is the backend hostname:
-
-```
-cd artifacts/ledger-mobile
-eas login                 # one-time, asks for your Expo account
-eas init                  # creates the EAS project (links to expo.dev)
-eas env:create --scope project --name EXPO_PUBLIC_DOMAIN \
-  --value 'binance-loan-tracker-backend.azurewebsites.net' \
-  --environment production --environment preview
-```
-
-If you previously set `EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY` or
-`EXPO_PUBLIC_CLERK_PROXY_URL` in EAS, delete them — the app no longer reads
-them, and leaving them around will only confuse future debugging:
-
-```
-eas env:delete --scope project --name EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY \
-  --environment production --environment preview
-eas env:delete --scope project --name EXPO_PUBLIC_CLERK_PROXY_URL \
-  --environment production --environment preview
-```
+The mobile app signs in natively with Sign in with Apple — no third-party
+auth dashboard. `EXPO_PUBLIC_DOMAIN` is baked into `eas.json` per profile,
+so no `eas env:create` is required for builds to find the backend.
 
 The backend authenticates Apple identity tokens against its `APPLE_BUNDLE_ID`
 env var, which must exactly match the `expo.ios.bundleIdentifier` in

@@ -14,7 +14,8 @@
         "resourceClass": "m-medium"
       },
       "env": {
-        "EXPO_USE_METRO_WORKSPACE_ROOT": "1"
+        "EXPO_USE_METRO_WORKSPACE_ROOT": "1",
+        "EXPO_PUBLIC_DOMAIN": "binance-loan-tracker-backend.azurewebsites.net"
       }
     },
     "preview": {
@@ -25,7 +26,8 @@
         "resourceClass": "m-medium"
       },
       "env": {
-        "EXPO_USE_METRO_WORKSPACE_ROOT": "1"
+        "EXPO_USE_METRO_WORKSPACE_ROOT": "1",
+        "EXPO_PUBLIC_DOMAIN": "binance-loan-tracker-backend.azurewebsites.net"
       }
     },
     "production": {
@@ -36,7 +38,8 @@
         "resourceClass": "m-medium"
       },
       "env": {
-        "EXPO_USE_METRO_WORKSPACE_ROOT": "1"
+        "EXPO_USE_METRO_WORKSPACE_ROOT": "1",
+        "EXPO_PUBLIC_DOMAIN": "binance-loan-tracker-backend.azurewebsites.net"
       }
     }
   },

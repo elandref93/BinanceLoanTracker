@@ -93,7 +93,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   );
 }
 
-/** Hook used in place of Clerk's `useAuth()` and `useUser()`. */
+/** Access the current session (token + user) and auth actions. */
 export function useSession(): SessionContextValue {
   const ctx = useContext(SessionContext);
   if (!ctx) {

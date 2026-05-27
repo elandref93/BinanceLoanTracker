@@ -4,7 +4,9 @@ module.exports = {
   name: "LedgerWatchComplication",
   // Full ID (not a main-app suffix): Apple rejects ".watchkitapp.complication".
   bundleIdentifier: "com.ubuntu.life.ledger.watchwidget",
-  icon: "../../assets/images/icon.png",
+  // Widget extensions inherit their AppIcon from the host app — supplying one
+  // here makes apple-targets emit an empty AppIcon.appiconset which Xcode
+  // rejects with "AppIcon did not have any applicable content".
   deploymentTarget: "10.0",
   colors: {
     $accent: "#00F0FF",

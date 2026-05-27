@@ -36,6 +36,12 @@ import {
   WARNING_LTV,
 } from "@/utils/risk";
 import {
+  aprSeriesFor,
+  aprStatsFor,
+  getSnapshotsSince,
+  type LoanSnapshot,
+} from "@/lib/loanSnapshots";
+import {
   useListAccounts,
   useListInterest,
   useListLoans,
@@ -103,6 +109,11 @@ export default function LoanDetailScreen() {
   };
   useEffect(refreshRules, []);
 
+  const [snapshots, setSnapshots] = useState<LoanSnapshot[]>([]);
+  useEffect(() => {
+    void getSnapshotsSince(30).then(setSnapshots);
+  }, [interestQ.dataUpdatedAt]);
+
   if (loansQ.isLoading || accountsQ.isLoading) {
     return (
       <>
@@ -147,12 +158,22 @@ export default function LoanDetailScreen() {
   const daily = hourly * 24;
 
   const byLoan = interestQ.data?.byLoan.find((b) => b.loanId === loan.id);
-  const rateHistory = byLoan?.rateHistory ?? [];
-  const sparkValues = rateHistory.map((p) => p.apr);
+  // Prefer locally-recorded snapshots for 30d APR stats + sparkline. Binance
+  // exposes no historical-rate endpoint, so the server's avg/min/max collapse
+  // to today's APR (flat line). With ≥2 local snapshots we can show real
+  // movement; otherwise we fall back to the (flat) server values.
+  const localStats = aprStatsFor(snapshots, loan.id, 30);
+  const localSeries = aprSeriesFor(snapshots, loan.id, 30);
+  const avg30 = localStats?.avg ?? byLoan?.avg30dApr ?? loan.apr;
+  const min30 = localStats?.min ?? byLoan?.min30dApr ?? loan.apr;
+  const max30 = localStats?.max ?? byLoan?.max30dApr ?? loan.apr;
+  const sparkValues =
+    localSeries.length >= 2
+      ? localSeries
+      : (byLoan?.rateHistory.map((p) => p.apr) ?? []);
   const aprDelta =
-    byLoan && byLoan.avg30dApr > 0
-      ? ((byLoan.currentApr - byLoan.avg30dApr) / byLoan.avg30dApr) * 100
-      : 0;
+    avg30 > 0 ? ((loan.apr - avg30) / avg30) * 100 : 0;
+  const hasRealHistory = localStats !== null;
 
   const relevantRules = rules.filter((r) => ruleAppliesTo(r, loan.id));
 
@@ -235,13 +256,13 @@ export default function LoanDetailScreen() {
             APR
           </Text>
         </View>
-        {sparkValues.length >= 2 ? (
+        {hasRealHistory && sparkValues.length >= 2 ? (
           <View style={{ marginVertical: 4 }}>
             <Sparkline
               values={sparkValues}
               width={300}
               height={48}
-              reference={byLoan?.avg30dApr}
+              reference={avg30}
             />
             <View style={styles.sparkAxis}>
               <Text style={[styles.sparkAxisText, { color: colors.mutedForeground }]}>
@@ -253,18 +274,20 @@ export default function LoanDetailScreen() {
             </View>
           </View>
         ) : null}
-        {byLoan ? (
+        {hasRealHistory ? (
           <>
-            <Row label="30d average" value={fmtPct(byLoan.avg30dApr, 2)} />
+            <Row label="30d average" value={fmtPct(avg30, 2)} />
             <Row
               label="30d range"
-              value={`${fmtPct(byLoan.min30dApr, 2)} – ${fmtPct(byLoan.max30dApr, 2)}`}
+              value={`${fmtPct(min30, 2)} – ${fmtPct(max30, 2)}`}
             />
-            <Row label="Hourly rate" value={`${(loan.hourlyInterestRate * 100).toFixed(5)}%`} />
           </>
         ) : (
-          <Row label="Hourly rate" value={`${(loan.hourlyInterestRate * 100).toFixed(5)}%`} />
+          <Text style={[styles.simHint, { color: colors.mutedForeground }]}>
+            Building rate history locally — 30d stats appear after a few refreshes.
+          </Text>
         )}
+        <Row label="Hourly rate" value={`${(loan.hourlyInterestRate * 100).toFixed(5)}%`} />
       </Card>
 
       <Card title="Drop simulator">

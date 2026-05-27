@@ -21,6 +21,7 @@ import {
   writeLoanCache,
 } from "@/lib/loanCache";
 import { recordLtvSample } from "@/lib/ltvHistory";
+import { recordLoanSnapshots } from "@/lib/loanSnapshots";
 import { buildSnapshot, writeWidgetSnapshot } from "@/lib/widgetSnapshot";
 import { AccountChip } from "@/components/AccountChip";
 import { Container } from "@/components/Container";
@@ -147,6 +148,14 @@ export default function DashboardScreen() {
     void checkAndNotifyLoans(freshLoans);
     void writeWidgetSnapshot(buildSnapshot(freshLoans, targetLtv));
     void recordLtvSample(aggLtv);
+    void recordLoanSnapshots(
+      freshLoans.map((l) => ({
+        id: l.id,
+        apr: l.apr,
+        ltv: l.ltv,
+        debtUsd: l.debtUsd,
+      })),
+    );
   }, [freshLoans, targetLtv, aggLtv]);
 
   const refreshing = accountsQ.isFetching || loansQ.isFetching;

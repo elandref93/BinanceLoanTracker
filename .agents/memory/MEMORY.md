@@ -1,2 +1,3 @@
 - [pnpm packageManager pin vs Replit nix pnpm](pnpm-package-manager-pin.md) — pnpm pinned to an older version than the container ships SIGABRT-loops on every invocation; bump the pin to match.
+- [Binance historical-rate gap](binance-historical-rate-gap.md) — no historical-APR endpoint and no per-day interest rows for flexible loans; derive history from client-side snapshots and surface "building locally" to users.
 - [Expo SDK native-module version mismatch](expo-sdk-native-module-mismatch.md) — installing a native module from a different SDK major than `expo` builds fine but crashes instantly on launch; gate every iOS build on `expo install --check`.

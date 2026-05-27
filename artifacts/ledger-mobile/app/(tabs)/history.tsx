@@ -1,5 +1,5 @@
 import { useRouter } from "expo-router";
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Pressable,
   ScrollView,
@@ -20,6 +20,13 @@ import { useTargetLtv } from "@/context/RiskSettingsContext";
 import { useCurrency } from "@/context/CurrencyContext";
 import { useColors } from "@/hooks/useColors";
 import { fmtMoney, fmtPct } from "@/utils/format";
+import {
+  aprSeriesFor,
+  aprStatsFor,
+  dailyChargeBuckets,
+  getSnapshotsSince,
+  type LoanSnapshot,
+} from "@/lib/loanSnapshots";
 import {
   useListAccounts,
   useListInterest,
@@ -43,16 +50,29 @@ export default function HistoryScreen() {
   const accounts = accountsQ.data?.accounts ?? [];
   const loans = loansQ.data?.loans ?? [];
 
+  const [snapshots, setSnapshots] = useState<LoanSnapshot[]>([]);
+  useEffect(() => {
+    void getSnapshotsSince(30).then(setSnapshots);
+  }, [interestQ.dataUpdatedAt]);
+
+  // Bar chart: prefer real income rows (fixed-term loans post BORROW_DAILY_
+  // INTEREST). For flexible loans, Binance posts no per-day rows so the chart
+  // would be flat-zero — fall back to debt × apr integrated over local
+  // snapshots, which gives a real shape once a few days of history exist.
   const byDay = useMemo(() => {
-    const m = new Map<string, number>();
+    const fromRows = new Map<string, number>();
     for (const r of rows) {
       const day = r.ts.slice(0, 10);
-      m.set(day, (m.get(day) ?? 0) + r.amountUsd);
+      fromRows.set(day, (fromRows.get(day) ?? 0) + r.amountUsd);
     }
-    return Array.from(m.entries())
-      .sort((a, b) => a[0].localeCompare(b[0]))
-      .slice(-14);
-  }, [rows]);
+    if (fromRows.size > 0) {
+      return Array.from(fromRows.entries())
+        .sort((a, b) => a[0].localeCompare(b[0]))
+        .slice(-14);
+    }
+    return dailyChargeBuckets(snapshots, 14);
+  }, [rows, snapshots]);
+  const chartHasRealData = rows.length > 0 || snapshots.length >= 2;
 
   if (interestQ.isLoading || accountsQ.isLoading || loansQ.isLoading) {
     return <ScreenLoader hint="Loading history…" />;
@@ -90,9 +110,23 @@ export default function HistoryScreen() {
     return a?.name ?? "—";
   };
 
-  const sortedByLoan = [...byLoan].sort(
-    (a, b) => b.projected30dUsd - a.projected30dUsd,
-  );
+  const sortedByLoan = [...byLoan]
+    .map((b) => {
+      const local = aprStatsFor(snapshots, b.loanId, 30);
+      const series = aprSeriesFor(snapshots, b.loanId, 30);
+      return {
+        ...b,
+        avg30dApr: local?.avg ?? b.avg30dApr,
+        min30dApr: local?.min ?? b.min30dApr,
+        max30dApr: local?.max ?? b.max30dApr,
+        rateHistory:
+          series.length >= 2
+            ? series.map((apr, i) => ({ t: i, apr }))
+            : b.rateHistory,
+        hasRealHistory: local !== null,
+      };
+    })
+    .sort((a, b) => b.projected30dUsd - a.projected30dUsd);
   const sortedByAsset = [...byAsset].sort(
     (a, b) => b.projected30dUsd - a.projected30dUsd,
   );
@@ -160,25 +194,31 @@ export default function HistoryScreen() {
         <Text style={[styles.cardLabel, { color: colors.mutedForeground }]}>
           DAILY CHARGE · LAST 14 DAYS
         </Text>
-        <Svg width={chartW} height={chartH}>
-          {byDay.map(([day, v], i) => {
-            const h = (v / max) * (chartH - 16);
-            const x = i * (barW + 4);
-            const y = chartH - h;
-            return (
-              <Rect
-                key={day}
-                x={x}
-                y={y}
-                width={barW}
-                height={h}
-                rx={2}
-                fill={colors.primary}
-                opacity={0.85}
-              />
-            );
-          })}
-        </Svg>
+        {chartHasRealData ? (
+          <Svg width={chartW} height={chartH}>
+            {byDay.map(([day, v], i) => {
+              const h = (v / max) * (chartH - 16);
+              const x = i * (barW + 4);
+              const y = chartH - h;
+              return (
+                <Rect
+                  key={day}
+                  x={x}
+                  y={y}
+                  width={barW}
+                  height={h}
+                  rx={2}
+                  fill={colors.primary}
+                  opacity={0.85}
+                />
+              );
+            })}
+          </Svg>
+        ) : (
+          <Text style={[styles.empty, { color: colors.mutedForeground }]}>
+            Building daily-charge history locally — bars appear after a few refreshes.
+          </Text>
+        )}
       </View>
 
       <View
@@ -251,7 +291,7 @@ export default function HistoryScreen() {
                     </Text>
                   </View>
                 </View>
-                {aprs.length >= 2 ? (
+                {b.hasRealHistory && aprs.length >= 2 ? (
                   <View style={{ marginTop: 6 }}>
                     <Sparkline
                       values={aprs}

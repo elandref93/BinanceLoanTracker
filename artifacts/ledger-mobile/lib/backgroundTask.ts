@@ -5,6 +5,7 @@ import { Platform } from "react-native";
 import { loadStoredSession } from "@/lib/session";
 import { checkAndNotifyLoans } from "@/lib/alerts";
 import { recordLtvSample } from "@/lib/ltvHistory";
+import { recordLoanSnapshots } from "@/lib/loanSnapshots";
 import { buildSnapshot, writeWidgetSnapshot } from "@/lib/widgetSnapshot";
 import { DEFAULT_TARGET_LTV } from "@/utils/risk";
 
@@ -15,6 +16,8 @@ export const BACKGROUND_REFRESH_TASK = "com.ubuntu.life.ledger.refresh";
 const MIN_INTERVAL_SECONDS = 15 * 60;
 
 type LoanLite = {
+  id: string;
+  apr: number;
   ltv: number;
   debtUsd: number;
   collateral: { valueUsd: number; asset: string };
@@ -39,6 +42,14 @@ async function runRefresh(): Promise<BackgroundFetch.BackgroundFetchResult> {
     const totalCol = loans.reduce((s, l) => s + l.collateral.valueUsd, 0);
     const agg = totalCol > 0 ? (totalDebt / totalCol) * 100 : 0;
     await recordLtvSample(agg);
+    await recordLoanSnapshots(
+      loans.map((l) => ({
+        id: l.id,
+        apr: l.apr,
+        ltv: l.ltv,
+        debtUsd: l.debtUsd,
+      })),
+    );
     // The full Loan type is wider; the snapshot/alert helpers only use the
     // fields present here. Cast through unknown to placate the structural
     // check — bg-fetch keeps the JS bundle as cold-start small as possible.

@@ -76,6 +76,14 @@ export async function readAccountsCache(): Promise<CachedAccounts | null> {
   }
 }
 
+/**
+ * Wipe both cached blobs. Used by the Settings → Clear local cache
+ * action. Safe to call any time — the app will re-fetch on next mount.
+ */
+export async function clearLoanCache(): Promise<void> {
+  await AsyncStorage.multiRemove([LOANS_KEY, ACCOUNTS_KEY]);
+}
+
 /** Compact "cached 2m ago" / "cached 3h ago" label for stale banners. */
 export function cacheAgeLabel(cachedAt: string): string {
   const ms = Date.now() - new Date(cachedAt).getTime();

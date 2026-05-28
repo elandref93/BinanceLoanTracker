@@ -43,6 +43,11 @@ import {
   setAppLockEnabled,
 } from "@/lib/appLock";
 import { probeAccount, type ProbeResult } from "@/lib/keyHealth";
+import {
+  clearLocalCache,
+  estimateCacheBytes,
+  fmtBytes,
+} from "@/lib/storage";
 import { fmtAge, fmtPct } from "@/utils/format";
 
 function Section({
@@ -173,12 +178,47 @@ export default function SettingsScreen() {
   const [probes, setProbes] = useState<
     Record<string, ProbeResult | "loading" | undefined>
   >({});
+  const [cacheBytes, setCacheBytes] = useState<number | null>(null);
+  const [clearingCache, setClearingCache] = useState(false);
+
+  const refreshCacheSize = useCallback(() => {
+    estimateCacheBytes().then(setCacheBytes);
+  }, []);
 
   useEffect(() => {
     getAlertsEnabled().then(setAlerts);
     isAppLockSupported().then(setAppLockSupported);
     isAppLockEnabled().then(setAppLockOn);
-  }, []);
+    refreshCacheSize();
+  }, [refreshCacheSize]);
+
+  const onClearCache = () => {
+    Alert.alert(
+      "Clear local cache?",
+      "Wipes cached loan/account snapshots and the LTV + portfolio history charts on this device. Your exchange keys, alert rules, and sign-in stay put. Fresh data will reload on the next refresh.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Clear",
+          style: "destructive",
+          onPress: async () => {
+            haptic.heavy();
+            setClearingCache(true);
+            try {
+              await clearLocalCache();
+              refreshCacheSize();
+              Alert.alert(
+                "Cleared",
+                "Local cache and history have been wiped. Pull-to-refresh on any tab to repopulate.",
+              );
+            } finally {
+              setClearingCache(false);
+            }
+          },
+        },
+      ],
+    );
+  };
 
   const onToggleAppLock = async (next: boolean) => {
     await setAppLockEnabled(next);
@@ -562,6 +602,15 @@ export default function SettingsScreen() {
           />
         </Section>
       ) : null}
+
+      <Section title="Storage">
+        <Row
+          label={clearingCache ? "Clearing…" : "Clear local cache"}
+          value={cacheBytes != null ? fmtBytes(cacheBytes) : undefined}
+          destructive
+          onPress={clearingCache ? undefined : onClearCache}
+        />
+      </Section>
 
       <Section title="Account">
         <Row label="Email" value={email ?? ""} />

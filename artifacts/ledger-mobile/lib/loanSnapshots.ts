@@ -11,7 +11,7 @@ export type LoanSnapshot = {
   /** Epoch ms. */
   t: number;
   loanId: string;
-  /** Fractional APR (e.g. 0.0791 for 7.91%). */
+  /** APR as a percent number (e.g. 7.91 for 7.91% APR). */
   apr: number;
   /** LTV percent (e.g. 53.2). */
   ltv: number;

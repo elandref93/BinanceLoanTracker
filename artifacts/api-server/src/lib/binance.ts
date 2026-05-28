@@ -83,6 +83,61 @@ function round(n: number, dp: number): number {
   return Math.round(n * f) / f;
 }
 
+const HOURS_PER_YEAR = 24 * 365; // 8760
+
+/**
+ * Pull the loan interest rate from a Binance response row whose field names
+ * vary by endpoint / API revision, and normalise to **hourly decimal** (e.g.
+ * 0.0000057 ≈ 5% APR).
+ *
+ * Binance has shipped at least three different rate units under similar
+ * field names — annual decimal (e.g. `flexibleInterestRate: "0.0502878"`
+ * for 5.02878% APR), daily decimal, and hourly decimal. Picking the wrong
+ * unit by 8760× produces the 44,052%-APR display bug we saw on TestFlight.
+ *
+ * Strategy: read each candidate, normalise to hourly using its **name**
+ * semantics, then accept the first candidate whose implied APR is sane
+ * (< 200%). Anything bigger is almost certainly the wrong unit.
+ *
+ * Set `context` for clearer warning logs when nothing parses.
+ */
+function pickHourlyRate(
+  row: Record<string, unknown>,
+  context: string,
+): number {
+  const MAX_PLAUSIBLE_APR_FRACTION = 2.0; // 200% APR cap
+  const candidates: Array<{ label: string; hourly: number }> = [
+    // Hourly fields — use directly.
+    { label: "flexibleHourlyInterestRate", hourly: num(row["flexibleHourlyInterestRate"]) },
+    { label: "currentHourlyInterestRate", hourly: num(row["currentHourlyInterestRate"]) },
+    { label: "hourlyInterestRate", hourly: num(row["hourlyInterestRate"]) },
+    // Daily fields — divide by 24.
+    { label: "flexibleDailyInterestRate", hourly: num(row["flexibleDailyInterestRate"]) / 24 },
+    { label: "dailyInterestRate", hourly: num(row["dailyInterestRate"]) / 24 },
+    // Annual fields — divide by 8760. `flexibleInterestRate` belongs HERE:
+    // Binance returns it as an annual decimal, not hourly, despite the
+    // ambiguous name.
+    { label: "flexibleInterestRate", hourly: num(row["flexibleInterestRate"]) / HOURS_PER_YEAR },
+    { label: "flexibleAnnualInterestRate", hourly: num(row["flexibleAnnualInterestRate"]) / HOURS_PER_YEAR },
+    { label: "flexibleYearlyInterestRate", hourly: num(row["flexibleYearlyInterestRate"]) / HOURS_PER_YEAR },
+    { label: "annualInterestRate", hourly: num(row["annualInterestRate"]) / HOURS_PER_YEAR },
+    { label: "yearlyInterestRate", hourly: num(row["yearlyInterestRate"]) / HOURS_PER_YEAR },
+  ];
+  for (const c of candidates) {
+    if (c.hourly <= 0) continue;
+    const aprFraction = c.hourly * HOURS_PER_YEAR;
+    if (aprFraction > MAX_PLAUSIBLE_APR_FRACTION) {
+      logger.warn(
+        { context, field: c.label, hourly: c.hourly, impliedApr: aprFraction },
+        "binance rate candidate exceeds plausible APR cap — skipping",
+      );
+      continue;
+    }
+    return c.hourly;
+  }
+  return 0;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // MOCK CLIENT — returns deterministic seed data so the app and previews work
 // without Binance keys (used in dev, smoke tests, and any request the device
@@ -441,20 +496,8 @@ export function createRealBinanceClient(
       rateMap = new Map(
         rowsArray(rates).map((r) => {
           const row = r as Record<string, unknown>;
-          // Binance returns annualized rate per loan coin under `flexibleDailyInterestRate`
-          // (daily) or `flexibleHourlyInterestRate` depending on rollout — try both.
-          // Binance has shipped a few different field names for this rate
-          // across API revisions. Try them all and take the first non-zero.
-          const hourly =
-            num(row["flexibleHourlyInterestRate"]) ||
-            num(row["flexibleInterestRate"]) ||
-            num(row["hourlyInterestRate"]) ||
-            num(row["flexibleDailyInterestRate"]) / 24 ||
-            num(row["dailyInterestRate"]) / 24 ||
-            num(row["flexibleYearlyInterestRate"]) / 8760 ||
-            num(row["flexibleAnnualInterestRate"]) / 8760 ||
-            num(row["annualInterestRate"]) / 8760;
-          return [str(row["loanCoin"]).toUpperCase(), hourly];
+          const coin = str(row["loanCoin"]).toUpperCase();
+          return [coin, pickHourlyRate(row, `flexible-loanable:${coin}`)];
         }),
       );
     } catch (err) {
@@ -483,12 +526,12 @@ export function createRealBinanceClient(
       const liqLtv = num(row["liquidationLTV"]) * 100;
       // Prefer the rate on the order row itself if Binance returns it —
       // it's the actual rate the loan is being charged. Fall back to the
-      // public rate sheet keyed by loan coin.
-      const orderHourly =
-        num(row["hourlyInterestRate"]) ||
-        num(row["currentHourlyInterestRate"]) ||
-        num(row["dailyInterestRate"]) / 24 ||
-        num(row["annualInterestRate"]) / 8760;
+      // public rate sheet keyed by loan coin. `pickHourlyRate` enforces
+      // unit semantics and rejects anything implying APR > 200%.
+      const orderHourly = pickHourlyRate(
+        row,
+        `flexible-order:${loanCoin}/${collateralCoin}`,
+      );
       const hourly = orderHourly || rateMap.get(loanCoin) || 0;
       const loanCoinUsd = await priceOf(loanCoin);
       const collateralUsd = await priceOf(collateralCoin);
@@ -539,8 +582,13 @@ export function createRealBinanceClient(
       const debt = num(row["totalDebt"]);
       const collateralAmount = num(row["collateralAmount"]);
       const ltv = num(row["currentLTV"]) * 100;
-      // Fixed-term hourlyInterestRate is returned on the order itself.
-      const hourly = num(row["hourlyInterestRate"]);
+      // Fixed-term rate is returned on the order itself. Use the
+      // semantics-aware picker so an annual-rate field labelled
+      // ambiguously doesn't get treated as hourly.
+      const hourly = pickHourlyRate(
+        row,
+        `fixed-order:${orderId || `${loanCoin}/${collateralCoin}`}`,
+      );
       const loanCoinUsd = await priceOf(loanCoin);
       const collateralUsd = await priceOf(collateralCoin);
       loans.push({

@@ -6,3 +6,4 @@
 - [Luno pair coverage is region-shaped](luno-pair-coverage.md) — ZAR is direct, USD must route via USDC pairs (inverse for ZAR→USD).
 - [Orval-generated query options need a cast for partial `enabled`](orval-query-options-cast.md) — strict UseQueryOptions shape rejects `{enabled}` alone.
 - [expo-haptics background safety](expo-haptics-background-safety.md) — don't gate haptics on AppState in shared fg/bg code paths; the wrapper already handles it.
+- [Binance loan rate units](binance-loan-rate-units.md) — Binance loan/margin rate fields don't reliably name their unit; pick by semantics and reject any candidate whose implied APR > 200%.

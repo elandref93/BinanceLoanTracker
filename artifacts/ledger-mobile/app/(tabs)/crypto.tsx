@@ -9,6 +9,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { AssetIcon } from "@/components/AssetIcon";
 import { Container } from "@/components/Container";
 import { ErrorView } from "@/components/ErrorView";
 import { ScreenLoader } from "@/components/ScreenLoader";
@@ -429,16 +430,7 @@ function WalletRow({ w }: { w: LunoWallet }) {
   const colors = useColors();
   return (
     <View style={styles.txRow}>
-      <View
-        style={[
-          styles.assetBadge,
-          { backgroundColor: colors.background, borderColor: colors.border },
-        ]}
-      >
-        <Text style={[styles.assetBadgeText, { color: colors.foreground }]}>
-          {displayAsset(w.asset)}
-        </Text>
-      </View>
+      <AssetIcon asset={w.asset} size={32} />
       <View style={{ flex: 1 }}>
         <Text style={[styles.txTitle, { color: colors.foreground }]}>
           {fmtCrypto(w.balance, w.asset)}
@@ -584,19 +576,6 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   divider: { height: StyleSheet.hairlineWidth },
-  assetBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 4,
-    borderWidth: StyleSheet.hairlineWidth,
-    minWidth: 44,
-    alignItems: "center",
-  },
-  assetBadgeText: {
-    fontSize: 10,
-    fontFamily: "Inter_700Bold",
-    letterSpacing: 0.5,
-  },
   empty: {
     fontSize: 12,
     fontFamily: "Inter_400Regular",

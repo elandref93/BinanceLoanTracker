@@ -5,3 +5,4 @@
 - [React hook reading module storage needs subscribe](hook-storage-subscribe.md) — without a pub/sub channel, charts stay stale after writes until remount.
 - [Luno pair coverage is region-shaped](luno-pair-coverage.md) — ZAR is direct, USD must route via USDC pairs (inverse for ZAR→USD).
 - [Orval-generated query options need a cast for partial `enabled`](orval-query-options-cast.md) — strict UseQueryOptions shape rejects `{enabled}` alone.
+- [expo-haptics background safety](expo-haptics-background-safety.md) — don't gate haptics on AppState in shared fg/bg code paths; the wrapper already handles it.

@@ -3,6 +3,7 @@ import * as SecureStore from "expo-secure-store";
 import { Platform } from "react-native";
 
 import { listAlertRules, ruleAppliesTo, type AlertRule } from "@/lib/alertRules";
+import { haptic } from "@/lib/haptics";
 import type { Loan } from "@workspace/api-client-react";
 
 const ENABLED_KEY = "ledger.alerts.enabled.v1";
@@ -95,6 +96,9 @@ export async function checkAndNotifyLoans(loans: Loan[]): Promise<void> {
 
   await writeFired(next);
 
+  // A foreground crossing buzzes the device; in background, haptics are a
+  // no-op and the local notif itself supplies the alert.
+  if (toNotify.length > 0) haptic.warning();
   for (const { rule, loan } of toNotify) {
     const pair = `${loan.collateral.asset}/${loan.asset}`;
     const label = rule.label ?? `${rule.ltv}% LTV`;

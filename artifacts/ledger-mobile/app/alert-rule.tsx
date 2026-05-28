@@ -2,6 +2,7 @@ import { Feather } from "@expo/vector-icons";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import {
+  Alert,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -13,6 +14,7 @@ import {
 } from "react-native";
 
 import { useColors } from "@/hooks/useColors";
+import { haptic } from "@/lib/haptics";
 import {
   deleteAlertRule,
   listAlertRules,
@@ -81,12 +83,22 @@ export default function AlertRuleScreen() {
     router.back();
   };
 
-  const onDelete = async () => {
+  const onDelete = () => {
     if (!isEdit || !id) return;
-    setBusy(true);
-    await deleteAlertRule(id);
-    setBusy(false);
-    router.back();
+    Alert.alert("Delete alert?", "This rule will be removed from this device.", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Delete",
+        style: "destructive",
+        onPress: async () => {
+          haptic.heavy();
+          setBusy(true);
+          await deleteAlertRule(id);
+          setBusy(false);
+          router.back();
+        },
+      },
+    ]);
   };
 
   return (

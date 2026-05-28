@@ -29,7 +29,7 @@ import { ErrorView } from "@/components/ErrorView";
 import { LoanRow } from "@/components/LoanRow";
 import { LtvHistoryChart } from "@/components/LtvHistoryChart";
 import { Pill } from "@/components/Pill";
-import { ScreenLoader } from "@/components/ScreenLoader";
+import { ScreenSkeleton } from "@/components/Skeleton";
 import { Tile } from "@/components/Tile";
 import { useCurrency } from "@/context/CurrencyContext";
 import { useTargetLtv } from "@/context/RiskSettingsContext";
@@ -182,7 +182,7 @@ export default function DashboardScreen() {
   // fall back on. With cache, we render the dashboard normally and surface
   // the stale state via a banner at the top.
   if ((accountsQ.isLoading || loansQ.isLoading) && all.length === 0) {
-    return <ScreenLoader hint="Loading your loans…" />;
+    return <ScreenSkeleton kind="dashboard" />;
   }
 
   if ((accountsQ.isError || loansQ.isError) && all.length === 0) {

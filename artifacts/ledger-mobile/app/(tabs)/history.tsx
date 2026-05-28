@@ -13,7 +13,7 @@ import Svg, { Rect } from "react-native-svg";
 import { Container } from "@/components/Container";
 import { ErrorView } from "@/components/ErrorView";
 import { LtvHistoryChart } from "@/components/LtvHistoryChart";
-import { ScreenLoader } from "@/components/ScreenLoader";
+import { ScreenSkeleton } from "@/components/Skeleton";
 import { Sparkline } from "@/components/Sparkline";
 import { Tile } from "@/components/Tile";
 import { useTargetLtv } from "@/context/RiskSettingsContext";
@@ -75,7 +75,7 @@ export default function HistoryScreen() {
   const chartHasRealData = rows.length > 0 || snapshots.length >= 2;
 
   if (interestQ.isLoading || accountsQ.isLoading || loansQ.isLoading) {
-    return <ScreenLoader hint="Loading history…" />;
+    return <ScreenSkeleton kind="history" />;
   }
 
   if (interestQ.isError || accountsQ.isError || loansQ.isError) {

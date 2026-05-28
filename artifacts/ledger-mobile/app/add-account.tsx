@@ -23,7 +23,9 @@ import { useSession } from "@/context/SessionContext";
 import {
   addLink,
   listContainers,
+  ProfileAlreadyHasLinkError,
   type ExchangeKind,
+  type ProfileType,
   type StoredContainer,
 } from "@/lib/accountStore";
 import {
@@ -34,6 +36,10 @@ import { validateLunoKeyId, validateLunoKeySecret } from "@/lib/lunoKeys";
 import { parseBinanceQR } from "@/lib/parseBinanceQR";
 
 type Step = "exchange" | "container" | "credentials";
+
+type ContainerChoice =
+  | { kind: "existing"; id: string }
+  | { kind: "new"; type: ProfileType; label?: string };
 
 export default function AddAccountScreen() {
   const colors = useColors();
@@ -57,16 +63,18 @@ export default function AddAccountScreen() {
   // We advance to the credentials step ONLY on confirm — tapping an option
   // doesn't auto-advance, so the user can change their mind and the
   // Continue button isn't bypassed. Pre-seeded via URL params skips both.
-  const seeded: { kind: "existing"; id: string } | null = params.containerId
+  const seeded: ContainerChoice | null = params.containerId
     ? { kind: "existing", id: params.containerId }
     : null;
-  const [containerDraft, setContainerDraft] = useState<
-    { kind: "existing"; id: string } | { kind: "new"; name: string } | null
-  >(seeded);
-  const [containerChoice, setContainerChoice] = useState<
-    { kind: "existing"; id: string } | { kind: "new"; name: string } | null
-  >(seeded);
-  const [newContainerName, setNewContainerName] = useState("");
+  const [containerDraft, setContainerDraft] = useState<ContainerChoice | null>(
+    seeded,
+  );
+  const [containerChoice, setContainerChoice] = useState<ContainerChoice | null>(
+    seeded,
+  );
+  // New-profile inputs — only used when containerDraft.kind === "new".
+  const [newProfileType, setNewProfileType] = useState<ProfileType>("personal");
+  const [newProfileLabel, setNewProfileLabel] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [apiSecret, setApiSecret] = useState("");
   const [linkLabel, setLinkLabel] = useState("");
@@ -79,16 +87,29 @@ export default function AddAccountScreen() {
   useEffect(() => {
     void listContainers().then((c) => {
       setContainers(c);
-      // Auto-confirm the only existing container so a user with a single
-      // account isn't forced through a redundant picker. URL-pinned choices
-      // are already seeded above.
-      if (!params.containerId && c.length === 1 && !containerChoice) {
-        const auto = { kind: "existing" as const, id: c[0].id };
-        setContainerDraft(auto);
-        setContainerChoice(auto);
+      // Auto-confirm the only existing profile so a user adding a SECOND
+      // exchange isn't forced through a redundant picker. Two guards:
+      //   1. exchange must already be chosen (params.exchange) — otherwise
+      //      the user came in via "Add another profile" and explicitly
+      //      wants a new profile, not their existing one.
+      //   2. that profile must not already have the chosen exchange
+      //      linked, or auto-advancing traps them in an invalid state.
+      if (
+        exchange != null &&
+        !params.containerId &&
+        c.length === 1 &&
+        !containerChoice
+      ) {
+        const sole = c[0];
+        const blocked = sole.links.some((l) => l.exchange === exchange);
+        if (!blocked) {
+          const auto: ContainerChoice = { kind: "existing", id: sole.id };
+          setContainerDraft(auto);
+          setContainerChoice(auto);
+        }
       }
     });
-  }, []);
+  }, [exchange]);
 
   const step: Step = exchange === null
     ? "exchange"
@@ -117,12 +138,6 @@ export default function AddAccountScreen() {
     if (!exchange || !containerChoice) return;
     setError(null);
 
-    // Container validation
-    if (containerChoice.kind === "new") {
-      const name = newContainerName.trim();
-      if (!name) return setError("Give the account a name (e.g. \"Personal\")");
-    }
-
     // Credentials validation
     if (exchange === "binance") {
       const ke = validateBinanceKey(apiKey);
@@ -140,7 +155,11 @@ export default function AddAccountScreen() {
     try {
       await addLink(
         containerChoice.kind === "new"
-          ? { kind: "new", name: newContainerName }
+          ? {
+              kind: "new",
+              type: containerChoice.type,
+              label: containerChoice.label,
+            }
           : { kind: "existing", containerId: containerChoice.id },
         {
           exchange,
@@ -151,14 +170,18 @@ export default function AddAccountScreen() {
       haptic.success();
       router.back();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not save");
+      if (e instanceof ProfileAlreadyHasLinkError) {
+        setError(e.message);
+      } else {
+        setError(e instanceof Error ? e.message : "Could not save");
+      }
     } finally {
       setBusy(false);
     }
   };
 
   const onCancel = () => {
-    const dirty = !!(apiKey || apiSecret || newContainerName);
+    const dirty = !!(apiKey || apiSecret || newProfileLabel);
     if (!dirty) {
       router.back();
       return;
@@ -226,28 +249,34 @@ export default function AddAccountScreen() {
           />
         ) : null}
 
-        {step === "container" ? (
+        {step === "container" && exchange ? (
           <ContainerPicker
             containers={containers}
+            exchange={exchange}
             value={containerDraft}
-            newName={newContainerName}
+            newProfileType={newProfileType}
+            newProfileLabel={newProfileLabel}
             onPick={(choice) => {
               haptic.tap();
               setContainerDraft(choice);
               setError(null);
             }}
-            onChangeNewName={setNewContainerName}
+            onChangeNewProfileType={setNewProfileType}
+            onChangeNewProfileLabel={setNewProfileLabel}
             onContinue={() => {
               if (!containerDraft) return;
-              if (
-                containerDraft.kind === "new" &&
-                !newContainerName.trim()
-              ) {
-                setError("Give the account a name (e.g. \"Personal\")");
-                return;
-              }
+              // For "new" profiles, fold the current type/label inputs in so
+              // we don't read stale state on the next render.
+              const choice: ContainerChoice =
+                containerDraft.kind === "new"
+                  ? {
+                      kind: "new",
+                      type: newProfileType,
+                      label: newProfileLabel.trim() || undefined,
+                    }
+                  : containerDraft;
               setError(null);
-              setContainerChoice(containerDraft);
+              setContainerChoice(choice);
             }}
           />
         ) : null}
@@ -257,8 +286,6 @@ export default function AddAccountScreen() {
             exchange={exchange}
             containerChoice={containerChoice!}
             containers={containers}
-            newContainerName={newContainerName}
-            onChangeNewContainerName={setNewContainerName}
             linkLabel={linkLabel}
             onChangeLinkLabel={setLinkLabel}
             apiKey={apiKey}
@@ -353,44 +380,56 @@ function ExchangeOption({
 
 function ContainerPicker({
   containers,
+  exchange,
   value,
-  newName,
+  newProfileType,
+  newProfileLabel,
   onPick,
-  onChangeNewName,
+  onChangeNewProfileType,
+  onChangeNewProfileLabel,
   onContinue,
 }: {
   containers: StoredContainer[];
-  value:
-    | { kind: "existing"; id: string }
-    | { kind: "new"; name: string }
-    | null;
-  newName: string;
-  onPick: (
-    v: { kind: "existing"; id: string } | { kind: "new"; name: string },
-  ) => void;
-  onChangeNewName: (s: string) => void;
+  exchange: ExchangeKind;
+  value: ContainerChoice | null;
+  newProfileType: ProfileType;
+  newProfileLabel: string;
+  onPick: (v: ContainerChoice) => void;
+  onChangeNewProfileType: (t: ProfileType) => void;
+  onChangeNewProfileLabel: (s: string) => void;
   onContinue: () => void;
 }) {
   const colors = useColors();
+  const exchangeName = exchange === "binance" ? "Binance" : "Luno";
+  // Surface profiles that already have this exchange linked as disabled
+  // rows with a hint — picking them is the most common user mistake we
+  // want to head off, and hiding them entirely is confusing when the
+  // user expected to see their profile in the list.
   return (
     <View style={{ gap: 12 }}>
       <Text style={[styles.bodyHint, { color: colors.mutedForeground }]}>
-        Add this link to an existing account, or create a new one.
+        Link this {exchangeName} key to one of your existing profiles, or create
+        a new profile for it. Each profile can hold one Binance link and one
+        Luno link.
       </Text>
       {containers.map((c) => {
-        const selected =
-          value?.kind === "existing" && value.id === c.id;
+        const alreadyLinked = c.links.some((l) => l.exchange === exchange);
+        const selected = value?.kind === "existing" && value.id === c.id;
         return (
           <Pressable
             key={c.id}
-            onPress={() => onPick({ kind: "existing", id: c.id })}
+            onPress={() => {
+              if (alreadyLinked) return;
+              onPick({ kind: "existing", id: c.id });
+            }}
+            disabled={alreadyLinked}
             style={({ pressed }) => [
               styles.exchangeOpt,
               {
                 backgroundColor: colors.card,
                 borderColor: selected ? colors.primary : colors.border,
                 borderRadius: colors.radius,
-                opacity: pressed ? 0.7 : 1,
+                opacity: alreadyLinked ? 0.4 : pressed ? 0.7 : 1,
               },
             ]}
           >
@@ -403,9 +442,11 @@ function ContainerPicker({
               <Text
                 style={[styles.exchangeSub, { color: colors.mutedForeground }]}
               >
-                {c.links.length === 0
-                  ? "No exchanges linked yet"
-                  : c.links.map((l) => l.exchange).join(" · ")}
+                {alreadyLinked
+                  ? `Already has a ${exchangeName} link`
+                  : c.links.length === 0
+                    ? "No exchanges linked yet"
+                    : c.links.map((l) => l.exchange).join(" · ")}
               </Text>
             </View>
             {selected ? (
@@ -415,7 +456,13 @@ function ContainerPicker({
         );
       })}
       <Pressable
-        onPress={() => onPick({ kind: "new", name: newName })}
+        onPress={() =>
+          onPick({
+            kind: "new",
+            type: newProfileType,
+            label: newProfileLabel.trim() || undefined,
+          })
+        }
         style={({ pressed }) => [
           styles.exchangeOpt,
           {
@@ -428,10 +475,10 @@ function ContainerPicker({
       >
         <View style={{ flex: 1 }}>
           <Text style={[styles.exchangeTitle, { color: colors.foreground }]}>
-            New account
+            New profile
           </Text>
           <Text style={[styles.exchangeSub, { color: colors.mutedForeground }]}>
-            Group this and any future links under a fresh name.
+            Personal or Trust — pick what this {exchangeName} key belongs to.
           </Text>
         </View>
         {value?.kind === "new" ? (
@@ -439,22 +486,51 @@ function ContainerPicker({
         ) : null}
       </Pressable>
       {value?.kind === "new" ? (
-        <TextInput
-          value={newName}
-          onChangeText={onChangeNewName}
-          placeholder="Account name (e.g. Personal)"
-          placeholderTextColor={colors.mutedForeground}
-          autoCapitalize="words"
-          style={[
-            styles.input,
-            {
-              color: colors.foreground,
-              backgroundColor: colors.card,
-              borderColor: colors.border,
-              borderRadius: colors.radius,
-            },
-          ]}
-        />
+        <View style={{ gap: 10 }}>
+          <ProfileTypeToggle
+            value={newProfileType}
+            onChange={(t) => {
+              onChangeNewProfileType(t);
+              // Keep the picker choice in sync so onContinue sees the
+              // latest type without an extra tap.
+              onPick({
+                kind: "new",
+                type: t,
+                label: newProfileLabel.trim() || undefined,
+              });
+            }}
+          />
+          <TextInput
+            value={newProfileLabel}
+            onChangeText={(s) => {
+              onChangeNewProfileLabel(s);
+              onPick({
+                kind: "new",
+                type: newProfileType,
+                label: s.trim() || undefined,
+              });
+            }}
+            placeholder={
+              newProfileType === "trust"
+                ? "Label (optional, e.g. Family Trust)"
+                : "Label (optional, e.g. your name)"
+            }
+            placeholderTextColor={colors.mutedForeground}
+            autoCapitalize="words"
+            style={[
+              styles.input,
+              {
+                color: colors.foreground,
+                backgroundColor: colors.card,
+                borderColor: colors.border,
+                borderRadius: colors.radius,
+              },
+            ]}
+          />
+          <Text style={[styles.hint, { color: colors.mutedForeground }]}>
+            Skip the label if you only have one {newProfileType === "trust" ? "trust" : "personal"} profile.
+          </Text>
+        </View>
       ) : null}
       <Pressable
         onPress={onContinue}
@@ -476,12 +552,65 @@ function ContainerPicker({
   );
 }
 
+function ProfileTypeToggle({
+  value,
+  onChange,
+}: {
+  value: ProfileType;
+  onChange: (t: ProfileType) => void;
+}) {
+  const colors = useColors();
+  const opts: Array<{ key: ProfileType; label: string }> = [
+    { key: "personal", label: "Personal" },
+    { key: "trust", label: "Trust" },
+  ];
+  return (
+    <View
+      style={[
+        styles.toggleWrap,
+        {
+          backgroundColor: colors.card,
+          borderColor: colors.border,
+          borderRadius: colors.radius,
+        },
+      ]}
+    >
+      {opts.map((o) => {
+        const selected = value === o.key;
+        return (
+          <Pressable
+            key={o.key}
+            onPress={() => onChange(o.key)}
+            style={({ pressed }) => [
+              styles.toggleSeg,
+              {
+                backgroundColor: selected ? colors.primary : "transparent",
+                borderRadius: colors.radius,
+                opacity: pressed ? 0.7 : 1,
+              },
+            ]}
+          >
+            <Text
+              style={[
+                styles.toggleSegText,
+                {
+                  color: selected ? colors.background : colors.foreground,
+                },
+              ]}
+            >
+              {o.label}
+            </Text>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
 function CredentialsForm({
   exchange,
   containerChoice,
   containers,
-  newContainerName,
-  onChangeNewContainerName,
   linkLabel,
   onChangeLinkLabel,
   apiKey,
@@ -494,12 +623,8 @@ function CredentialsForm({
   scanInfo,
 }: {
   exchange: ExchangeKind;
-  containerChoice:
-    | { kind: "existing"; id: string }
-    | { kind: "new"; name: string };
+  containerChoice: ContainerChoice;
   containers: StoredContainer[];
-  newContainerName: string;
-  onChangeNewContainerName: (s: string) => void;
   linkLabel: string;
   onChangeLinkLabel: (s: string) => void;
   apiKey: string;
@@ -515,8 +640,12 @@ function CredentialsForm({
   const isBinance = exchange === "binance";
   const targetName =
     containerChoice.kind === "existing"
-      ? containers.find((c) => c.id === containerChoice.id)?.name ?? "account"
-      : newContainerName || "new account";
+      ? containers.find((c) => c.id === containerChoice.id)?.name ?? "profile"
+      : containerChoice.label
+        ? `${containerChoice.type === "trust" ? "Trust" : "Personal"} · ${containerChoice.label}`
+        : containerChoice.type === "trust"
+          ? "Trust"
+          : "Personal";
 
   return (
     <View style={{ gap: 20 }}>
@@ -586,27 +715,6 @@ function CredentialsForm({
           ]}
         />
       </Field>
-
-      {containerChoice.kind === "new" ? (
-        <Field label="Account name">
-          <TextInput
-            value={newContainerName}
-            onChangeText={onChangeNewContainerName}
-            placeholder="Personal"
-            placeholderTextColor={colors.mutedForeground}
-            autoCapitalize="words"
-            style={[
-              styles.input,
-              {
-                color: colors.foreground,
-                backgroundColor: colors.card,
-                borderColor: colors.border,
-                borderRadius: colors.radius,
-              },
-            ]}
-          />
-        </Field>
-      ) : null}
 
       <Field label={isBinance ? "API key" : "Key ID"}>
         <TextInput
@@ -786,4 +894,20 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   continueText: { fontSize: 14, fontFamily: "Inter_600SemiBold" },
+  toggleWrap: {
+    flexDirection: "row",
+    padding: 4,
+    borderWidth: StyleSheet.hairlineWidth,
+    gap: 4,
+  },
+  toggleSeg: {
+    flex: 1,
+    paddingVertical: 10,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  toggleSegText: {
+    fontSize: 13,
+    fontFamily: "Inter_600SemiBold",
+  },
 });

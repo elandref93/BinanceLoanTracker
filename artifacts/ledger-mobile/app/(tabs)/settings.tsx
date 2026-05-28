@@ -15,6 +15,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { Container } from "@/components/Container";
 import { useCurrency } from "@/context/CurrencyContext";
+import { haptic } from "@/lib/haptics";
 import {
   MAX_TARGET_LTV,
   MIN_TARGET_LTV,
@@ -258,6 +259,7 @@ export default function SettingsScreen() {
           text: "Remove",
           style: "destructive",
           onPress: async () => {
+            haptic.heavy();
             await removeLink(containerId, linkId);
             await refreshContainers();
           },
@@ -276,6 +278,7 @@ export default function SettingsScreen() {
           text: "Remove",
           style: "destructive",
           onPress: async () => {
+            haptic.heavy();
             await removeContainer(id);
             await refreshContainers();
           },
@@ -291,6 +294,7 @@ export default function SettingsScreen() {
         text: "Sign out",
         style: "destructive",
         onPress: async () => {
+          haptic.heavy();
           await signOut();
           router.replace("/(auth)/sign-in");
         },
@@ -322,7 +326,10 @@ export default function SettingsScreen() {
           />
         </Section>
       ) : (
-        containers.map((c) => (
+        containers.map((c) => {
+          const hasBinance = c.links.some((l) => l.exchange === "binance");
+          const hasLuno = c.links.some((l) => l.exchange === "luno");
+          return (
           <Section key={c.id} title={c.name}>
             {c.links.length === 0 ? (
               <Row label="No exchanges linked yet" />
@@ -415,41 +422,50 @@ export default function SettingsScreen() {
                 );
               })
             )}
+            {!hasBinance ? (
+              <>
+                <View style={[styles.divider, { backgroundColor: colors.border }]} />
+                <Row
+                  label="Add Binance link"
+                  right={<Feather name="plus" size={18} color={colors.primary} />}
+                  onPress={() =>
+                    router.push({
+                      pathname: "/add-account",
+                      params: { exchange: "binance", containerId: c.id },
+                    })
+                  }
+                />
+              </>
+            ) : null}
+            {!hasLuno ? (
+              <>
+                <View style={[styles.divider, { backgroundColor: colors.border }]} />
+                <Row
+                  label="Add Luno link"
+                  right={<Feather name="plus" size={18} color={colors.primary} />}
+                  onPress={() =>
+                    router.push({
+                      pathname: "/add-account",
+                      params: { exchange: "luno", containerId: c.id },
+                    })
+                  }
+                />
+              </>
+            ) : null}
             <View style={[styles.divider, { backgroundColor: colors.border }]} />
             <Row
-              label="Add Binance link"
-              right={<Feather name="plus" size={18} color={colors.primary} />}
-              onPress={() =>
-                router.push({
-                  pathname: "/add-account",
-                  params: { exchange: "binance", containerId: c.id },
-                })
-              }
-            />
-            <View style={[styles.divider, { backgroundColor: colors.border }]} />
-            <Row
-              label="Add Luno link"
-              right={<Feather name="plus" size={18} color={colors.primary} />}
-              onPress={() =>
-                router.push({
-                  pathname: "/add-account",
-                  params: { exchange: "luno", containerId: c.id },
-                })
-              }
-            />
-            <View style={[styles.divider, { backgroundColor: colors.border }]} />
-            <Row
-              label="Remove account"
+              label="Remove profile"
               destructive
               onPress={() => onRemoveContainer(c.id, c.name)}
             />
           </Section>
-        ))
+          );
+        })
       )}
       {containers.length > 0 ? (
-        <Section title="New account">
+        <Section title="New profile">
           <Row
-            label="Add another account"
+            label="Add another profile"
             right={<Feather name="plus" size={18} color={colors.primary} />}
             onPress={() => router.push("/add-account")}
           />

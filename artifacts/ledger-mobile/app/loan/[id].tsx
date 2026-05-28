@@ -14,7 +14,7 @@ import { Container } from "@/components/Container";
 import { ErrorView } from "@/components/ErrorView";
 import { Pill } from "@/components/Pill";
 import { RiskGauge } from "@/components/RiskGauge";
-import { ScreenLoader } from "@/components/ScreenLoader";
+import { ScreenSkeleton } from "@/components/Skeleton";
 import { Sparkline } from "@/components/Sparkline";
 import { useCurrency } from "@/context/CurrencyContext";
 import { useColors } from "@/hooks/useColors";
@@ -118,7 +118,7 @@ export default function LoanDetailScreen() {
     return (
       <>
         <Stack.Screen options={{ title: "Loan" }} />
-        <ScreenLoader hint="Loading loan…" />
+        <ScreenSkeleton kind="loanDetail" />
       </>
     );
   }

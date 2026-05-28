@@ -40,6 +40,23 @@ export type LeverageInputs = {
   years: number;
   /** SA tax entity treatment for the simulation. */
   taxMode: TaxMode;
+  /**
+   * Calendar month (1-12) the simulation conceptually begins in. Combined
+   * with `rebalanceMonth` this shifts when the annual sell-and-rebalance
+   * fires. Default: 1 (January) → matches the original engine where the
+   * first rebalance lands at month 12.
+   */
+  startMonth?: number;
+  /**
+   * Calendar month (1-12) the annual rebalance fires in. Default: 1 —
+   * meaning "same calendar month as start", which puts the first
+   * rebalance exactly 12 months from the start (preserving the original
+   * §7 fixture math for the legacy defaults). Set to 2 to align with
+   * the SA tax year (rebalance on Feb 28/29). The number of months to
+   * the FIRST rebalance is
+   * `((rebalanceMonth - startMonth + 12) % 12) || 12`, then every 12.
+   */
+  rebalanceMonth?: number;
 };
 
 export type YearRowA = {
@@ -112,6 +129,14 @@ export function compute(params: LeverageInputs): LeverageResult {
     years,
     taxMode,
   } = params;
+  const startMonth = params.startMonth ?? 1;
+  const rebalanceMonth = params.rebalanceMonth ?? 1;
+  // Months from sim start to the first rebalance. When startMonth ===
+  // rebalanceMonth (the legacy default) we want the rebalance at month
+  // 12 (i.e. one full year later), not month 0 — hence the `|| 12`
+  // fallback. SA tax year (start=May, rebalance=Feb) → 9 months, etc.
+  const firstRebalance =
+    ((rebalanceMonth - startMonth + 12) % 12) || 12;
 
   const inclusionRate =
     taxMode === "trust" ? 0.8 : taxMode === "taxfree" ? 0 : 0.4;
@@ -173,8 +198,11 @@ export function compute(params: LeverageInputs): LeverageResult {
     bBase += curContrib;
     cumB += curContrib;
 
-    if (m % 12 === 0) {
-      const y = m / 12;
+    // Rebalance fires on the configured calendar month: first at
+    // `firstRebalance`, then every 12 months after. `y` is the count of
+    // rebalances so far (sequence year), not a calendar year.
+    if (m >= firstRebalance && (m - firstRebalance) % 12 === 0) {
+      const y = Math.round((m - firstRebalance) / 12) + 1;
       const amcGain = Math.max(0, amc - amcBase);
       const amcTax = Math.max(0, amcGain - annualExcl) * effectiveCGT;
       totTaxA += amcTax;
@@ -286,6 +314,8 @@ export const DEFAULT_INPUTS: LeverageInputs = {
   contribEscalation: 0,
   years: 10,
   taxMode: "personal", // explicit: never assume trust
+  startMonth: 1,
+  rebalanceMonth: 1, // same as start → first rebalance at m=12 (legacy)
 };
 
 /**

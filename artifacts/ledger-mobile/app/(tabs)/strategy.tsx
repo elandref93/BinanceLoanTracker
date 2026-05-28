@@ -1,4 +1,6 @@
 import { Feather } from "@expo/vector-icons";
+import * as Print from "expo-print";
+import * as Sharing from "expo-sharing";
 import { useEffect, useMemo, useState } from "react";
 import {
   Alert,
@@ -54,6 +56,8 @@ export default function StrategyScreen() {
   const [activeScenarioId, setActiveScenarioId] = useState<string | null>(null);
   const [scenarioName, setScenarioName] = useState("");
   const [savingOpen, setSavingOpen] = useState(false);
+  const [compareIds, setCompareIds] = useState<Set<string>>(new Set());
+  const [activeCreatedAt, setActiveCreatedAt] = useState<string | null>(null);
 
   const loansQ = useListLoans();
   const livePosition = useMemo(
@@ -139,9 +143,145 @@ export default function StrategyScreen() {
 
   const onLoad = (s: Scenario) => {
     haptic.tap();
-    setInputs(s.inputs);
+    // Older scenarios may lack startMonth/rebalanceMonth — backfill from
+    // DEFAULT_INPUTS so the engine and UI toggles stay coherent.
+    setInputs({
+      ...DEFAULT_INPUTS,
+      ...s.inputs,
+    });
     setActiveScenarioId(s.id);
     setScenarioName(s.name);
+    setActiveCreatedAt(s.createdAt);
+  };
+
+  // ── SA tax-year toggle ───────────────────────────────────────────────────
+  // ON: rebalance fires Feb 28 (rebalanceMonth=2) with simulation starting
+  // from the current real-world month. OFF: original behaviour (start Jan,
+  // rebalance Dec → first rebalance at month 12).
+  const saTaxYearOn =
+    (inputs.rebalanceMonth ?? 1) === 2;
+  const toggleSaTaxYear = () => {
+    haptic.tap();
+    if (saTaxYearOn) {
+      // Off → legacy: start/rebalance both = month 1 puts first
+      // rebalance at m=12 and matches the documented §7 fixtures.
+      setInputs((p) => ({ ...p, startMonth: 1, rebalanceMonth: 1 }));
+    } else {
+      const nowMonth = new Date().getMonth() + 1; // 1-12
+      setInputs((p) => ({ ...p, startMonth: nowMonth, rebalanceMonth: 2 }));
+    }
+  };
+
+  // ── Compare picker ───────────────────────────────────────────────────────
+  const toggleCompare = (id: string) => {
+    haptic.tap();
+    setCompareIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else if (next.size < 3) next.add(id);
+      else {
+        // Replace oldest pick if at cap
+        const first = next.values().next().value;
+        if (first) next.delete(first);
+        next.add(id);
+      }
+      return next;
+    });
+  };
+  const compareList = useMemo(
+    () =>
+      scenarios
+        .filter((s) => compareIds.has(s.id))
+        .map((s) => {
+          const r = compute({ ...DEFAULT_INPUTS, ...s.inputs });
+          const last = r.rowsA[r.rowsA.length - 1];
+          const lastB = r.rowsB[r.rowsB.length - 1];
+          return {
+            s,
+            aNet: last?.net ?? 0,
+            bNet: lastB?.net ?? 0,
+            contributed: last?.contributed ?? 0,
+          };
+        }),
+    [scenarios, compareIds],
+  );
+
+  // ── Plan-vs-actual marker for the chart ──────────────────────────────────
+  // Live net = Σ (collateralUsd − debtUsd) across BTC-backed loans, in ZAR.
+  const liveNetZar = useMemo(() => {
+    const loans = loansQ.data?.loans;
+    if (!loans || loans.length === 0) return null;
+    // Match snapshotFromLoans() — only BTC-collateralized positions count
+    // toward the planned-vs-actual comparison, since the strategy plan is
+    // strictly BTC + leverage.
+    const btcLoans = loans.filter((l) => l.collateral?.asset === "BTC");
+    if (btcLoans.length === 0) return null;
+    const usd = btcLoans.reduce(
+      (s, l) => s + (l.collateral?.valueUsd ?? 0) - (l.debtUsd ?? 0),
+      0,
+    );
+    return usd * USD_TO_ZAR;
+  }, [loansQ.data]);
+
+  const planMarker = useMemo(() => {
+    if (!activeScenarioId || !activeCreatedAt || liveNetZar == null) return null;
+    const monthsElapsed = Math.max(
+      0,
+      Math.floor(
+        (Date.now() - new Date(activeCreatedAt).getTime()) /
+          (1000 * 60 * 60 * 24 * 30.4375),
+      ),
+    );
+    if (monthsElapsed === 0) return null;
+    return { month: monthsElapsed, net: liveNetZar };
+  }, [activeScenarioId, activeCreatedAt, liveNetZar]);
+
+  // Closest quarterly snap to the elapsed months → planned value at that point
+  const planVsActual = useMemo(() => {
+    if (!planMarker) return null;
+    const target = planMarker.month;
+    let best = snapsA[0];
+    let bestDist = Math.abs(snapsA[0].month - target);
+    for (const s of snapsA) {
+      const d = Math.abs(s.month - target);
+      if (d < bestDist) {
+        best = s;
+        bestDist = d;
+      }
+    }
+    const planned = best.net;
+    const drift = planMarker.net - planned;
+    const driftPct = planned > 0 ? (drift / planned) * 100 : 0;
+    return { plannedZar: planned, actualZar: planMarker.net, drift, driftPct, monthsElapsed: planMarker.month };
+  }, [planMarker, snapsA]);
+
+  // ── Share / export PDF ───────────────────────────────────────────────────
+  const onShare = async () => {
+    haptic.impact();
+    try {
+      const html = buildShareHtml({
+        name: scenarioName || "Unsaved scenario",
+        inputs,
+        result,
+        currency,
+      });
+      const { uri } = await Print.printToFileAsync({ html });
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(uri, {
+          mimeType: "application/pdf",
+          dialogTitle: "Share strategy summary",
+          UTI: "com.adobe.pdf",
+        });
+      } else {
+        Alert.alert("Saved", `PDF saved to ${uri}`);
+      }
+    } catch (err) {
+      haptic.error();
+      Alert.alert(
+        "Couldn't export",
+        err instanceof Error ? err.message : "Unknown error",
+      );
+    }
   };
 
   const onDelete = (s: Scenario) => {
@@ -209,6 +349,12 @@ export default function StrategyScreen() {
               {activeScenarioId ? scenarioName : "Unsaved scenario"}
             </Text>
             <SmallBtn label="New" onPress={onNew} colors={colors} />
+            <SmallBtn
+              label="Share"
+              onPress={() => void onShare()}
+              colors={colors}
+              icon="share"
+            />
             <SmallBtn
               label={activeScenarioId ? "Save" : "Save as…"}
               onPress={() => {
@@ -295,6 +441,21 @@ export default function StrategyScreen() {
                     </Text>
                   </View>
                   <Pressable
+                    onPress={() => toggleCompare(s.id)}
+                    hitSlop={10}
+                    style={{ padding: 4 }}
+                  >
+                    <Feather
+                      name={compareIds.has(s.id) ? "check-square" : "square"}
+                      size={14}
+                      color={
+                        compareIds.has(s.id)
+                          ? colors.primary
+                          : colors.mutedForeground
+                      }
+                    />
+                  </Pressable>
+                  <Pressable
                     onPress={() => onDelete(s)}
                     hitSlop={10}
                     style={{ padding: 4 }}
@@ -307,6 +468,78 @@ export default function StrategyScreen() {
                   </Pressable>
                 </Pressable>
               ))}
+              {compareList.length >= 2 ? (
+                <View
+                  style={{
+                    marginTop: 8,
+                    padding: 10,
+                    borderRadius: 8,
+                    borderWidth: 1,
+                    borderColor: colors.primary + "44",
+                    backgroundColor: colors.primary + "0d",
+                  }}
+                >
+                  <Text
+                    style={{
+                      fontSize: 10,
+                      fontWeight: "700",
+                      letterSpacing: 1,
+                      color: colors.primary,
+                      marginBottom: 8,
+                    }}
+                  >
+                    COMPARE · {compareList.length} SCENARIOS
+                  </Text>
+                  {compareList.map((c) => {
+                    const winA = c.aNet >= c.bNet;
+                    const winnerNet = winA ? c.aNet : c.bNet;
+                    const winnerLabel = winA ? "A" : "B";
+                    const winnerColor = winA ? colors.primary : "#7c6aef";
+                    const mult = c.contributed > 0 ? winnerNet / c.contributed : 0;
+                    return (
+                      <View
+                        key={c.s.id}
+                        style={{
+                          paddingVertical: 6,
+                          borderTopWidth: StyleSheet.hairlineWidth,
+                          borderTopColor: colors.border,
+                        }}
+                      >
+                        <Text
+                          style={{
+                            color: colors.foreground,
+                            fontWeight: "600",
+                            fontSize: 12,
+                          }}
+                          numberOfLines={1}
+                        >
+                          {c.s.name}
+                        </Text>
+                        <View
+                          style={{
+                            flexDirection: "row",
+                            justifyContent: "space-between",
+                            marginTop: 3,
+                          }}
+                        >
+                          <Text style={{ color: colors.mutedForeground, fontSize: 10 }}>
+                            A {fmtZ(c.aNet, currency)} · B {fmtZ(c.bNet, currency)}
+                          </Text>
+                          <Text
+                            style={{
+                              color: winnerColor,
+                              fontWeight: "700",
+                              fontSize: 11,
+                            }}
+                          >
+                            {winnerLabel} wins · {mult.toFixed(1)}×
+                          </Text>
+                        </View>
+                      </View>
+                    );
+                  })}
+                </View>
+              ) : null}
             </View>
           ) : null}
         </Card>
@@ -433,6 +666,46 @@ export default function StrategyScreen() {
               colors={colors}
             />
           </View>
+          <Pressable
+            onPress={toggleSaTaxYear}
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 8,
+              marginTop: 12,
+              padding: 10,
+              borderRadius: 8,
+              borderWidth: 1,
+              borderColor: saTaxYearOn ? colors.primary : colors.border,
+              backgroundColor: saTaxYearOn
+                ? colors.primary + "14"
+                : colors.background,
+            }}
+          >
+            <Feather
+              name={saTaxYearOn ? "check-square" : "square"}
+              size={16}
+              color={saTaxYearOn ? colors.primary : colors.mutedForeground}
+            />
+            <View style={{ flex: 1 }}>
+              <Text
+                style={{
+                  color: colors.foreground,
+                  fontWeight: "600",
+                  fontSize: 12,
+                }}
+              >
+                Align to SA tax year (rebalance Feb 28)
+              </Text>
+              <Text
+                style={{ color: colors.mutedForeground, fontSize: 10, marginTop: 2 }}
+              >
+                {saTaxYearOn
+                  ? `Starts month ${inputs.startMonth} · first rebalance in ${(((inputs.rebalanceMonth ?? 1) - (inputs.startMonth ?? 1) + 12) % 12) || 12} months`
+                  : "Off · annual rebalance at month 12"}
+              </Text>
+            </View>
+          </Pressable>
         </Card>
 
         {/* INPUTS */}
@@ -682,7 +955,51 @@ export default function StrategyScreen() {
             years={inputs.years}
             currency={currency}
             colors={colors}
+            marker={planMarker}
           />
+          {planVsActual ? (
+            <View
+              style={{
+                marginTop: 10,
+                padding: 10,
+                borderRadius: 8,
+                borderWidth: 1,
+                borderColor: colors.border,
+                backgroundColor: colors.background,
+              }}
+            >
+              <Text
+                style={{
+                  fontSize: 10,
+                  fontWeight: "700",
+                  letterSpacing: 1,
+                  color: colors.mutedForeground,
+                  marginBottom: 6,
+                }}
+              >
+                PLAN VS ACTUAL · M{planVsActual.monthsElapsed}
+              </Text>
+              <View style={{ flexDirection: "row", gap: 6 }}>
+                <MiniStat
+                  label="Planned"
+                  value={fmtZ(planVsActual.plannedZar, currency)}
+                  colors={colors}
+                />
+                <MiniStat
+                  label="Actual"
+                  value={fmtZ(planVsActual.actualZar, currency)}
+                  colors={colors}
+                  tone="primary"
+                />
+                <MiniStat
+                  label="Drift"
+                  value={`${planVsActual.drift >= 0 ? "+" : ""}${planVsActual.driftPct.toFixed(1)}%`}
+                  colors={colors}
+                  tone={planVsActual.drift >= 0 ? "primary" : "danger"}
+                />
+              </View>
+            </View>
+          ) : null}
           {rateCross != null ? (
             <Text
               style={{
@@ -1057,12 +1374,14 @@ function ChartArea({
   years,
   currency,
   colors,
+  marker,
 }: {
   snapsA: ReturnType<typeof compute>["snapsA"];
   snapsB: ReturnType<typeof compute>["snapsB"];
   years: number;
   currency: "USD" | "ZAR";
   colors: ReturnType<typeof useColors>;
+  marker?: { month: number; net: number } | null;
 }) {
   const [w, setW] = useState(0);
   const cMax = Math.max(
@@ -1089,6 +1408,7 @@ function ChartArea({
             width={w}
             height={180}
             years={years}
+            marker={marker}
           />
         ) : null}
       </View>
@@ -1192,6 +1512,116 @@ function ColC({
       {text}
     </Text>
   );
+}
+
+function buildShareHtml({
+  name,
+  inputs,
+  result,
+  currency,
+}: {
+  name: string;
+  inputs: LeverageInputs;
+  result: ReturnType<typeof compute>;
+  currency: "USD" | "ZAR";
+}): string {
+  const taxLabel =
+    inputs.taxMode === "trust"
+      ? "Trust (36%)"
+      : inputs.taxMode === "taxfree"
+        ? "Tax-Free (0%)"
+        : "Personal (18%)";
+  const lastA = result.rowsA[result.rowsA.length - 1];
+  const lastB = result.rowsB[result.rowsB.length - 1];
+  const winA = (lastA?.net ?? 0) >= (lastB?.net ?? 0);
+  const winLabel = winA ? "A: BTC + Lever" : "B: Pure AMC";
+  const winDelta = Math.abs((lastA?.net ?? 0) - (lastB?.net ?? 0));
+  const aMult = lastA && lastA.contributed > 0 ? lastA.net / lastA.contributed : 0;
+  const bMult = lastB && lastB.contributed > 0 ? lastB.net / lastB.contributed : 0;
+  const rows = result.rowsA
+    .map((rA, i) => {
+      const rB = result.rowsB[i];
+      const d = rA.net - rB.net;
+      return `<tr>
+        <td>${rA.year}</td>
+        <td class="num pri">${fmtZ(rA.net, currency)}</td>
+        <td class="num pur">${fmtZ(rB.net, currency)}</td>
+        <td class="num dng">${fmtZ(rA.amcTax, currency)}</td>
+        <td class="num ${d >= 0 ? "pri" : "dng"}">${d >= 0 ? "+" : ""}${fmtZ(d, currency)}</td>
+      </tr>`;
+    })
+    .join("");
+  return `<!doctype html><html><head><meta charset="utf-8" />
+<title>${name}</title>
+<style>
+  body { font-family: -apple-system, system-ui, Arial, sans-serif; color: #111; padding: 28px; font-size: 13px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  .sub { color: #666; font-size: 12px; margin-bottom: 18px; }
+  .card { border: 1px solid #ddd; border-radius: 10px; padding: 14px; margin-bottom: 12px; }
+  .eyebrow { font-size: 10px; font-weight: 700; letter-spacing: 1.5px; color: #666; margin-bottom: 8px; }
+  .row { display: flex; justify-content: space-between; padding: 4px 0; }
+  .pri { color: #ec6800; font-weight: 700; }
+  .pur { color: #7c6aef; font-weight: 700; }
+  .dng { color: #d33; }
+  .winner { padding: 10px; border-radius: 8px; background: #fff5ec; border: 1px solid #f5c89a; margin-top: 8px; }
+  table { width: 100%; border-collapse: collapse; font-size: 11px; }
+  th, td { padding: 5px 6px; border-bottom: 1px solid #eee; text-align: left; }
+  th { color: #666; font-size: 9px; letter-spacing: 0.5px; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .small { font-size: 10px; color: #888; margin-top: 18px; line-height: 1.5; }
+</style></head><body>
+  <div class="eyebrow">STRATEGY SIMULATOR</div>
+  <h1>${escapeHtml(name)}</h1>
+  <div class="sub">BTC Lever + AMC vs Pure AMC · ${taxLabel} · Horizon ${inputs.years}y · Display: ${currency}</div>
+
+  <div class="card">
+    <div class="eyebrow">INPUTS</div>
+    <div class="row"><span>BTC annual growth</span><span><b>${inputs.btcGrowth}%</b></span></div>
+    <div class="row"><span>Options / AMC return</span><span><b>${inputs.optionsReturn}%</b></span></div>
+    <div class="row"><span>LTV</span><span><b>${inputs.ltv}%</b></span></div>
+    <div class="row"><span>Borrow cost</span><span><b>${inputs.borrowCost}%</b></span></div>
+    <div class="row"><span>Starting capital</span><span><b>${fmtZ(inputs.startingCapital, currency)}</b></span></div>
+    <div class="row"><span>Monthly contribution</span><span><b>${fmtZ(inputs.monthlyContrib, currency)}</b></span></div>
+    <div class="row"><span>Annual escalation</span><span><b>${inputs.contribEscalation}%</b></span></div>
+    <div class="row"><span>Rebalance month</span><span><b>${inputs.rebalanceMonth ?? 12}</b> (start ${inputs.startMonth ?? 1})</span></div>
+  </div>
+
+  <div class="card">
+    <div class="eyebrow">EXIT VALUE · YEAR ${inputs.years}</div>
+    <div class="row"><span class="pri">A: BTC + Lever (net)</span><span class="pri">${fmtZ(lastA?.net ?? 0, currency)} · ${aMult.toFixed(1)}×</span></div>
+    <div class="row"><span class="pur">B: Pure AMC (net)</span><span class="pur">${fmtZ(lastB?.net ?? 0, currency)} · ${bMult.toFixed(1)}×</span></div>
+    <div class="winner"><b>${escapeHtml(winLabel)}</b> wins by <b>${fmtZ(winDelta, currency)}</b></div>
+  </div>
+
+  <div class="card">
+    <div class="eyebrow">KEY RATES</div>
+    <div class="row"><span>A gross effective</span><span><b>${result.grossEffA.toFixed(1)}%</b></span></div>
+    <div class="row"><span>B gross effective</span><span><b>${result.grossEffB.toFixed(1)}%</b></span></div>
+    <div class="row"><span>Break-even borrow</span><span><b>${isFinite(result.breakEvenBorrowPct) ? result.breakEvenBorrowPct.toFixed(1) + "%" : "—"}</b></span></div>
+    <div class="row"><span>BTC drop to liquidation (80% LTV)</span><span><b>${result.liquidationDropPct > 0 ? "−" + result.liquidationDropPct.toFixed(0) + "%" : "—"}</b></span></div>
+  </div>
+
+  <div class="card">
+    <div class="eyebrow">YEAR BY YEAR</div>
+    <table>
+      <thead><tr><th>YR</th><th class="num">A NET</th><th class="num">B NET</th><th class="num">A TAX</th><th class="num">Δ</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  </div>
+
+  <div class="small">
+    Generated by Ledger on ${new Date().toISOString().slice(0, 10)}. Personal simulation — not financial advice.
+    Assumes constant rates, BTC compounds at the modeled rate, and Binance liquidation at 80% LTV. SA CGT applied annually for Strategy A.
+  </div>
+</body></html>`;
+}
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }
 
 const styles = StyleSheet.create({

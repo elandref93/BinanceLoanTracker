@@ -77,6 +77,8 @@
     "expo-background-fetch": "^14.0.9",
     "expo-camera": "^17.0.10",
     "expo-local-authentication": "~17.0.8",
+    "expo-print": "~15.0.8",
+    "expo-sharing": "~14.0.8",
     "expo-task-manager": "^14.0.9"
   }
 }

@@ -75,9 +75,9 @@ export function LoanRow({ loan, accountName, onPress }: Props) {
         />
       </View>
       <Text style={[styles.hint, { color: colors.mutedForeground }]}>
-        {headroom > 0
-          ? `+${fmtMoney(headroom, currency, { compact: true })} to reach ${targetLtv}%`
-          : `Headroom ${fmtMoney(-headroom, currency, { compact: true })}`}
+        {headroom >= 0
+          ? `+${fmtMoney(headroom, currency, { compact: true })} headroom to ${targetLtv}%`
+          : `Over ${targetLtv}% by ${fmtMoney(-headroom, currency, { compact: true })}`}
       </Text>
     </Pressable>
   );

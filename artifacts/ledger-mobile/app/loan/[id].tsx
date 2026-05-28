@@ -211,11 +211,11 @@ export default function LoanDetailScreen() {
           value={fmtMoney(loan.collateral.valueUsd, currency)}
         />
         <Row
-          label="Headroom to target"
+          label={headroom >= 0 ? "Headroom to target" : "Over target by"}
           value={
-            headroom > 0
+            headroom >= 0
               ? `+${fmtMoney(headroom, currency)}`
-              : fmtMoney(-headroom, currency)
+              : `−${fmtMoney(-headroom, currency)}`
           }
         />
       </Card>

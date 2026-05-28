@@ -45,12 +45,36 @@ export function priceDropPctTo(loan: Loan, targetLtv: number): number {
 }
 
 /**
- * USD amount of additional collateral that would lower LTV to `targetLtv`.
- * Positive = need to add collateral, negative = could remove.
+ * Signed USD distance between the loan's current collateral and the
+ * collateral level required to sit exactly at `targetLtv`.
+ *
+ *   POSITIVE → current LTV is BELOW target; this much excess collateral
+ *              could be removed (or this much extra debt taken) before
+ *              hitting target. This is genuine headroom.
+ *   NEGATIVE → current LTV is ABOVE target; this much *additional*
+ *              collateral would need to be added to bring LTV back down
+ *              to target. There is NO headroom — you're already over.
+ *   ZERO     → exactly at target.
+ *
+ * Callers must respect the sign. Earlier revisions returned the opposite
+ * sign and the UI cheerfully showed a "+$128k headroom" for a loan that
+ * was actually $128k over target.
  */
 export function headroomToTarget(loan: Loan, targetLtv: number = DEFAULT_TARGET_LTV): number {
   const requiredCollateral = loan.debtUsd / (targetLtv / 100);
-  return requiredCollateral - loan.collateral.valueUsd;
+  return loan.collateral.valueUsd - requiredCollateral;
+}
+
+/**
+ * USD of extra collateral needed to bring a loan DOWN to `targetLtv`.
+ * Zero when the loan is already at or below target. Always non-negative.
+ */
+export function collateralShortfallToTarget(
+  loan: Loan,
+  targetLtv: number = DEFAULT_TARGET_LTV,
+): number {
+  const h = headroomToTarget(loan, targetLtv);
+  return h < 0 ? -h : 0;
 }
 
 export function nextAction(
@@ -59,7 +83,7 @@ export function nextAction(
 ): { loanId: string; asset: string; amountUsd: number } | null {
   const worst = [...loans].sort((a, b) => b.ltv - a.ltv)[0];
   if (!worst || worst.ltv < targetLtv) return null;
-  const need = headroomToTarget(worst, targetLtv);
+  const need = collateralShortfallToTarget(worst, targetLtv);
   if (need <= 0) return null;
   return {
     loanId: worst.id,

@@ -129,14 +129,22 @@ export default function DashboardScreen() {
     return [...loans].sort((a, b) => b.ltv - a.ltv)[0];
   }, [loans]);
 
-  const totalHeadroomToTarget = useMemo(
-    () =>
-      loans.reduce((s, l) => {
-        const h = headroomToTarget(l, targetLtv);
-        return s + (h > 0 ? h : 0);
-      }, 0),
-    [loans, targetLtv],
-  );
+  // Aggregate signed distance to target across all loans. With the
+  // corrected `headroomToTarget` semantics, POSITIVE values are real
+  // headroom and NEGATIVE values are shortfall. Surface the worse of
+  // the two so the dashboard tells the truth: if any loan is over
+  // target the user needs to know, even if other loans have buffer.
+  const { totalShortfall, totalHeadroom } = useMemo(() => {
+    let shortfall = 0;
+    let headroom = 0;
+    for (const l of loans) {
+      const h = headroomToTarget(l, targetLtv);
+      if (h < 0) shortfall += -h;
+      else headroom += h;
+    }
+    return { totalShortfall: shortfall, totalHeadroom: headroom };
+  }, [loans, targetLtv]);
+  const overTarget = totalShortfall > 0;
 
   // Side effects (alerts, widget snapshot, LTV history) MUST run only on a
   // fresh network success. If we fire them on cached data we:
@@ -381,10 +389,14 @@ export default function DashboardScreen() {
           style={{ flex: 1 }}
         />
         <Tile
-          label={`To reach ${targetLtv}%`}
-          value={fmtMoney(totalHeadroomToTarget, currency, { compact: true })}
-          hint={totalHeadroomToTarget > 0 ? "add collateral" : "at target"}
-          tone={totalHeadroomToTarget > 0 ? "warn" : "ok"}
+          label={overTarget ? `Over ${targetLtv}%` : `Headroom to ${targetLtv}%`}
+          value={fmtMoney(
+            overTarget ? totalShortfall : totalHeadroom,
+            currency,
+            { compact: true },
+          )}
+          hint={overTarget ? "add collateral" : "buffer"}
+          tone={overTarget ? "warn" : "ok"}
           style={{ flex: 1 }}
         />
       </View>

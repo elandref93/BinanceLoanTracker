@@ -120,8 +120,18 @@ export function aprStatsFor(
   days: number,
 ): AprStats | null {
   const cutoff = Date.now() - days * 86_400_000;
+  // Exclude snapshots with non-positive / non-finite APR — those are
+  // either uninitialised writes (rate field missing in an older API
+  // response) or noise. Including them pins `min` to 0 and falsely
+  // widens the "30d range" UI to "0.00% – …".
   const rows = snapshots
-    .filter((s) => s.loanId === loanId && s.t >= cutoff)
+    .filter(
+      (s) =>
+        s.loanId === loanId &&
+        s.t >= cutoff &&
+        Number.isFinite(s.apr) &&
+        s.apr > 0,
+    )
     .sort((a, b) => a.t - b.t);
   if (rows.length < 2) return null;
   // Time-weighted average: each sample's APR contributes for the span until

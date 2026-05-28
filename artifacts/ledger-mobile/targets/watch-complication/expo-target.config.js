@@ -8,7 +8,7 @@ module.exports = {
   // (com.ubuntu.life.ledger.watchkitapp), NOT the iOS app's bundle ID.
   // Earlier `.watchwidget` (sibling of the watch app) tripped the
   // embedded-binary check in Xcode archive.
-  bundleIdentifier: "com.ubuntu.life.ledger.watchkitapp.complication",
+  bundleIdentifier: "com.ubuntu.life.ledger.watchkitapp.widget",
   // Widget extensions inherit their AppIcon from the host app — supplying one
   // here makes apple-targets emit an empty AppIcon.appiconset which Xcode
   // rejects with "AppIcon did not have any applicable content".

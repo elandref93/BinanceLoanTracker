@@ -1,10 +1,3 @@
-- [pnpm packageManager pin vs Replit nix pnpm](pnpm-package-manager-pin.md) — version mismatch SIGABRT-loops on every invocation.
-- [SecureStore/AsyncStorage RMW writes need a chain lock](securestore-rmw-lock.md) — no CAS; concurrent mutators silently lose updates.
-- [Multi-account fan-out limits must be global](api-fanout-global-limit.md) — divide budget per-account, re-sort + trim merged result.
-- [Workspace @types/react dupe via cmdk subtree](workspace-types-react-dupe.md) — older Expo pin vs newer transitives; delete dead consumers.
-- [React hook reading module storage needs subscribe](hook-storage-subscribe.md) — without a pub/sub channel, charts stay stale after writes until remount.
-- [Luno pair coverage is region-shaped](luno-pair-coverage.md) — ZAR is direct, USD must route via USDC pairs (inverse for ZAR→USD).
-- [Orval-generated query options need a cast for partial `enabled`](orval-query-options-cast.md) — strict UseQueryOptions shape rejects `{enabled}` alone.
-- [expo-haptics background safety](expo-haptics-background-safety.md) — don't gate haptics on AppState in shared fg/bg code paths; the wrapper already handles it.
-- [Binance loan rate units](binance-loan-rate-units.md) — Binance loan/margin rate fields don't reliably name their unit; pick by semantics and reject any candidate whose implied APR > 200%.
-- [headroomToTarget sign](headroom-sign-convention.md) — positive = real buffer, negative = over target; aggregate widgets must NOT net positives against negatives across loans.
+- [pnpm packageManager pin vs Replit nix pnpm](pnpm-package-manager-pin.md) — pnpm pinned to an older version than the container ships SIGABRT-loops on every invocation; bump the pin to match.
+- [expo-secure-store iCloud sync](expo-secure-store-icloud-sync.md) — expo-secure-store does not expose kSecAttrSynchronizable; cross-device sync must go through your own backend, not iCloud Keychain.
+- [Server LWW conflict resolution](server-lww-conflict-resolution.md) — node single-thread is NOT a serialization guarantee; per-user async mutex required around read-compare-write, and client timestamps must be process-monotonic to survive clock skew.

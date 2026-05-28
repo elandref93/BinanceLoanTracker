@@ -15,6 +15,8 @@ import {
   type Session,
   type SessionUser,
 } from "@/lib/session";
+import { hydrateFromServer } from "@/lib/accountStore";
+import { setSyncTokenGetter } from "@/lib/accountSync";
 
 interface SessionContextValue {
   /** True once the hydration from secure storage has completed. */
@@ -64,6 +66,19 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const getToken = useCallback(async () => {
     return sessionRef.current?.sessionToken ?? null;
   }, []);
+
+  // Register the token getter with accountSync so it can authenticate the
+  // cross-device sync requests, and pull the remote copy whenever the
+  // signed-in user changes (sign-in, sign-out, or initial hydrate).
+  useEffect(() => {
+    setSyncTokenGetter(getToken);
+    if (session) {
+      void hydrateFromServer();
+    }
+    return () => {
+      setSyncTokenGetter(null);
+    };
+  }, [session, getToken]);
 
   const signInWithApple = useCallback(async () => {
     const next = await performAppleSignIn();

@@ -1,5 +1,10 @@
 import * as SecureStore from "expo-secure-store";
 import { useEffect, useState } from "react";
+import {
+  fetchRemoteBlob,
+  pushRemoteBlob,
+  type RemoteBlob,
+} from "./accountSync";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Profile model: a single "account" is a Personal or Trust profile that holds
@@ -231,9 +236,84 @@ async function readAll(): Promise<AccountContainer[]> {
   }
 }
 
-async function writeAll(containers: AccountContainer[]): Promise<void> {
-  await SecureStore.setItemAsync(V3_KEY, JSON.stringify(containers));
+// Process-lifetime monotonic timestamp generator. Wall-clock can step
+// backwards (NTP adjust, manual change) or two writes inside the same ms
+// can collide; either tricks the server-side `>=` conflict check into
+// rejecting a legitimate newer write. Clamp every issued timestamp to be
+// strictly greater than the previous one this process emitted AND greater
+// than the last-known server timestamp we've ever seen.
+let lastIssuedMs = 0;
+function nextMonotonicTimestamp(): string {
+  const now = Date.now();
+  const next = Math.max(now, lastIssuedMs + 1);
+  lastIssuedMs = next;
+  return new Date(next).toISOString();
 }
+
+async function writeAll(containers: AccountContainer[]): Promise<void> {
+  const updatedAt = nextMonotonicTimestamp();
+  await SecureStore.setItemAsync(V3_KEY, JSON.stringify(containers));
+  await SecureStore.setItemAsync(UPDATED_AT_KEY, updatedAt);
+  // Fire-and-forget the server push. Network failures don't block the local
+  // write — the next successful push (or hydrate) reconciles state.
+  void pushRemoteBlob({ updatedAt, containers }).then((result) => {
+    if (result === "conflict") {
+      // The server has a newer copy from another device. Re-pull so this
+      // device shows the merged truth instead of silently overwriting it.
+      void hydrateFromServer();
+    }
+  });
+}
+
+const UPDATED_AT_KEY = "ledger.accounts.v3.updatedAt";
+
+async function readLocalUpdatedAt(): Promise<string | null> {
+  return SecureStore.getItemAsync(UPDATED_AT_KEY);
+}
+
+/**
+ * Pull the server's copy and replace local state when the server is newer
+ * (or local has nothing yet). Returns true when local state changed.
+ *
+ * Called once after sign-in completes, and after a 409 push response.
+ * Safe to call when signed out — fetchRemoteBlob returns null and we no-op.
+ */
+export async function hydrateFromServer(): Promise<boolean> {
+  const remote = await fetchRemoteBlob();
+  if (!remote) return false;
+  // Pull the high-water mark forward so any local write we issue next is
+  // guaranteed to outrank what's on the server (server compares with `>=`).
+  const remoteMs = Date.parse(remote.updatedAt);
+  if (Number.isFinite(remoteMs) && remoteMs > lastIssuedMs) {
+    lastIssuedMs = remoteMs;
+  }
+  return withWriteLock(async () => {
+    const localUpdatedAt = await readLocalUpdatedAt();
+    const localExists = (await SecureStore.getItemAsync(V3_KEY)) !== null;
+    // Local wins iff local exists AND has a strictly newer timestamp.
+    if (localExists && localUpdatedAt && localUpdatedAt >= remote.updatedAt) {
+      // Local is fresher (or tied) — push it up so the server has the latest.
+      if (!localUpdatedAt || localUpdatedAt > remote.updatedAt) {
+        const raw = await SecureStore.getItemAsync(V3_KEY);
+        if (raw) {
+          const parsed = JSON.parse(raw) as AccountContainer[];
+          void pushRemoteBlob({
+            updatedAt: localUpdatedAt,
+            containers: parsed,
+          });
+        }
+      }
+      return false;
+    }
+    await SecureStore.setItemAsync(V3_KEY, JSON.stringify(remote.containers));
+    await SecureStore.setItemAsync(UPDATED_AT_KEY, remote.updatedAt);
+    notify();
+    return true;
+  });
+}
+
+// Re-export for callers that already imported from this module.
+export type { RemoteBlob };
 
 // ── write serialization ──
 // SecureStore has no compare-and-swap, so two concurrent

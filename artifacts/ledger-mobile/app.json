@@ -67,7 +67,8 @@
       ],
       "expo-background-fetch",
       "expo-task-manager",
-      "@bacons/apple-targets"
+      "@bacons/apple-targets",
+      "./plugins/withSyncedExtensionBuildNumbers"
     ],
     "experiments": {
       "typedRoutes": true,

@@ -10,6 +10,8 @@ export * from './account';
 export * from './accountKind';
 export * from './collateral';
 export * from './getLunoTickerParams';
+export * from './getLunoTickers200';
+export * from './getLunoTickersParams';
 export * from './getPrices200';
 export * from './getPricesParams';
 export * from './healthStatus';

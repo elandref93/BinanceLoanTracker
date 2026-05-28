@@ -1,5 +1,5 @@
 import { Feather } from "@expo/vector-icons";
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import {
   RefreshControl,
   ScrollView,
@@ -12,24 +12,27 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Container } from "@/components/Container";
 import { ErrorView } from "@/components/ErrorView";
 import { ScreenLoader } from "@/components/ScreenLoader";
+import { Sparkline } from "@/components/Sparkline";
 import { useColors } from "@/hooks/useColors";
 import { useCurrency } from "@/context/CurrencyContext";
+import { useLunoHistory } from "@/hooks/useLunoHistory";
 import { haptic } from "@/lib/haptics";
+import {
+  pairsForAssets,
+  quoteWalletInFiat,
+  displayAsset,
+} from "@/lib/lunoPricing";
+import { recordLunoSample } from "@/lib/lunoHistory";
 import { fmtMoney } from "@/utils/format";
 
 import {
-  useGetLunoTicker,
+  useGetLunoTickers,
   useListLunoPending,
   useListLunoTransactions,
   useListLunoWallets,
   type LunoTransaction,
   type LunoWallet,
 } from "@workspace/api-client-react";
-
-// Luno asset → display symbol. BTC is XBT on the wire.
-function displayAsset(asset: string): string {
-  return asset.toUpperCase() === "XBT" ? "BTC" : asset.toUpperCase();
-}
 
 function fmtCrypto(n: number, asset: string): string {
   const sym = displayAsset(asset);
@@ -55,18 +58,72 @@ export default function CryptoScreen() {
   const walletsQ = useListLunoWallets();
   const pendingQ = useListLunoPending();
   const txQ = useListLunoTransactions({ limit: 30 });
-  // Spot XBT/ZAR (Luno's primary BTC pair) so we can quote BTC ↔ ZAR locally.
-  const tickerQ = useGetLunoTicker({ pair: "XBTZAR" });
 
   const wallets = walletsQ.data?.wallets ?? [];
   const transactions = txQ.data?.transactions ?? [];
   const pending = pendingQ.data?.withdrawals ?? [];
-  const xbtZar = tickerQ.data?.lastTrade ?? 0;
+
+  // Pair coverage: derive the set of pairs we need to quote from the
+  // assets the user actually holds, against their display currency.
+  // Pure-fiat balances (ZAR holding when currency=ZAR) need no ticker.
+  const neededPairs = useMemo(
+    () => pairsForAssets(wallets.map((w) => w.asset), currency),
+    [wallets, currency],
+  );
+  const tickersQ = useGetLunoTickers(
+    { pairs: neededPairs.join(",") },
+    // orval's generated options demand a full UseQueryOptions; we only
+    // need `enabled` to suppress the request when there are no pairs.
+    { query: { enabled: neededPairs.length > 0 } as never },
+  );
+  const tickerMap = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const t of tickersQ.data?.tickers ?? []) m.set(t.pair, t.lastTrade);
+    return m;
+  }, [tickersQ.data]);
 
   const grouped = useMemo(() => groupByAsset(wallets), [wallets]);
   const btcReady = grouped.get("XBT")?.totalBalance ?? 0;
-  const zarReady = grouped.get("ZAR")?.totalBalance ?? 0;
-  const btcReadyZar = btcReady * xbtZar;
+
+  // Per-asset fiat values + portfolio total. Assets without a working
+  // ticker contribute zero (already logged server-side); the BTC headline
+  // still works as long as XBT→fiat resolves.
+  const { perAssetFiat, totalFiat } = useMemo(() => {
+    const per = new Map<string, number>();
+    let sum = 0;
+    for (const [asset, agg] of grouped) {
+      const v = quoteWalletInFiat(asset, agg.totalBalance, tickerMap, currency);
+      per.set(asset, v);
+      sum += v;
+    }
+    return { perAssetFiat: per, totalFiat: sum };
+  }, [grouped, tickerMap, currency]);
+  const btcReadyFiat = perAssetFiat.get("XBT") ?? 0;
+  const zarCashFiat = perAssetFiat.get("ZAR") ?? 0;
+
+  // Record a history sample on every fresh, successful render where we
+  // actually have a usable fiat figure. Skipping when totalFiat=0
+  // prevents a spurious "zero" sample landing during a cold start while
+  // tickers are still loading.
+  useEffect(() => {
+    if (
+      !walletsQ.isFetching &&
+      !tickersQ.isFetching &&
+      wallets.length > 0 &&
+      totalFiat > 0
+    ) {
+      void recordLunoSample({ btc: btcReady, fiat: totalFiat, currency });
+    }
+  }, [
+    walletsQ.isFetching,
+    tickersQ.isFetching,
+    wallets.length,
+    totalFiat,
+    btcReady,
+    currency,
+  ]);
+
+  const history = useLunoHistory(7 * 24, currency);
 
   const onRefresh = () => {
     haptic.impact();
@@ -74,7 +131,7 @@ export default function CryptoScreen() {
       walletsQ.refetch(),
       pendingQ.refetch(),
       txQ.refetch(),
-      tickerQ.refetch(),
+      tickersQ.refetch(),
     ]).then(([w, p, t, k]) => {
       if (w.isError || p.isError || t.isError || k.isError) haptic.error();
       else haptic.success();
@@ -82,9 +139,9 @@ export default function CryptoScreen() {
   };
 
   const loading =
-    walletsQ.isLoading && pendingQ.isLoading && txQ.isLoading && tickerQ.isLoading;
+    walletsQ.isLoading && pendingQ.isLoading && txQ.isLoading && tickersQ.isLoading;
   const allError =
-    walletsQ.isError && pendingQ.isError && txQ.isError && tickerQ.isError;
+    walletsQ.isError && pendingQ.isError && txQ.isError && tickersQ.isError;
 
   if (loading) return <ScreenLoader hint="Reading Luno…" />;
   if (allError && wallets.length === 0) {
@@ -156,9 +213,9 @@ export default function CryptoScreen() {
               <Text style={[styles.tileValue, { color: colors.foreground }]}>
                 {btcReady.toFixed(8)}
               </Text>
-              {xbtZar > 0 ? (
+              {btcReadyFiat > 0 ? (
                 <Text style={[styles.tileSub, { color: colors.mutedForeground }]}>
-                  ≈ {fmtMoney(btcReadyZar, "ZAR")}
+                  ≈ {fmtMoney(btcReadyFiat, currency)}
                 </Text>
               ) : null}
             </View>
@@ -173,17 +230,55 @@ export default function CryptoScreen() {
               ]}
             >
               <Text style={[styles.tileLabel, { color: colors.mutedForeground }]}>
-                ZAR READY
+                TOTAL · LUNO
               </Text>
               <Text style={[styles.tileValue, { color: colors.foreground }]}>
-                {fmtMoney(zarReady, "ZAR")}
+                {fmtMoney(totalFiat, currency)}
               </Text>
-              {xbtZar > 0 ? (
+              {/* "Cash" subtitle: pull the ZAR wallet (Luno's only native
+                  cash asset) and quote it in the user's display currency
+                  via the same pricing helper, so the label and value
+                  always agree. */}
+              {zarCashFiat > 0 ? (
                 <Text style={[styles.tileSub, { color: colors.mutedForeground }]}>
-                  ≈ {(zarReady / xbtZar).toFixed(8)} BTC
+                  incl. {fmtMoney(zarCashFiat, currency)} cash
                 </Text>
               ) : null}
             </View>
+          </View>
+        ) : null}
+
+        {/* 7-day portfolio sparkline — only useful once we have ≥2 samples
+            in the current display currency. Hidden cleanly otherwise. */}
+        {history.length >= 2 ? (
+          <View
+            style={[
+              styles.card,
+              {
+                backgroundColor: colors.card,
+                borderColor: colors.border,
+                borderRadius: colors.radius,
+                paddingVertical: 14,
+                gap: 8,
+              },
+            ]}
+          >
+            <View style={styles.sparkHeader}>
+              <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>
+                LUNO · 7D
+              </Text>
+              <Text
+                style={[styles.sparkDelta, { color: colors.mutedForeground }]}
+              >
+                {fmtDelta(history[0].fiat, history[history.length - 1].fiat, currency)}
+              </Text>
+            </View>
+            <Sparkline
+              values={history.map((s) => s.fiat)}
+              width={320}
+              height={48}
+              reference={history[0].fiat}
+            />
           </View>
         ) : null}
 
@@ -400,6 +495,18 @@ function groupByAsset(
   return out;
 }
 
+function fmtDelta(
+  first: number,
+  last: number,
+  currency: "USD" | "ZAR",
+): string {
+  if (first <= 0) return "";
+  const diff = last - first;
+  const pct = (diff / first) * 100;
+  const sign = diff >= 0 ? "+" : "";
+  return `${sign}${fmtMoney(diff, currency, { compact: true })}  ·  ${sign}${pct.toFixed(2)}%`;
+}
+
 const styles = StyleSheet.create({
   title: {
     fontSize: 24,
@@ -495,5 +602,15 @@ const styles = StyleSheet.create({
     fontFamily: "Inter_400Regular",
     textAlign: "center",
     paddingVertical: 16,
+  },
+  sparkHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  sparkDelta: {
+    fontSize: 11,
+    fontFamily: "Inter_500Medium",
+    fontVariant: ["tabular-nums"],
   },
 });

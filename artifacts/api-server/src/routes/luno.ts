@@ -2,10 +2,12 @@ import { Router, type IRouter, type Request } from "express";
 import {
   ListLunoTransactionsQueryParams,
   GetLunoTickerQueryParams,
+  GetLunoTickersQueryParams,
   ListLunoWalletsResponse,
   ListLunoTransactionsResponse,
   ListLunoPendingResponse,
   GetLunoTickerResponse,
+  GetLunoTickersResponse,
 } from "@workspace/api-zod";
 import {
   LunoApiError,
@@ -40,7 +42,14 @@ const emptyClient: LunoClient = {
       asOf: new Date().toISOString(),
     };
   },
+  async getTickers() {
+    return [];
+  },
 };
+
+// Max pairs in one /tickers request — guards against a malformed/huge
+// `pairs=` query exploding into N upstream HTTP calls.
+const MAX_TICKER_PAIRS = 20;
 
 interface DeviceLunoAccount {
   id: string;
@@ -137,6 +146,25 @@ router.get("/ticker", async (req, res, next) => {
     const { pair } = GetLunoTickerQueryParams.parse(req.query);
     const ticker = await clientFor(req).getTicker(pair);
     res.json(GetLunoTickerResponse.parse(ticker));
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get("/tickers", async (req, res, next) => {
+  try {
+    const { pairs } = GetLunoTickersQueryParams.parse(req.query);
+    // Normalize: uppercase, dedupe, drop empties, cap.
+    const list = Array.from(
+      new Set(
+        pairs
+          .split(",")
+          .map((p) => p.trim().toUpperCase())
+          .filter(Boolean),
+      ),
+    ).slice(0, MAX_TICKER_PAIRS);
+    const tickers = await clientFor(req).getTickers(list);
+    res.json(GetLunoTickersResponse.parse({ tickers }));
   } catch (err) {
     next(err);
   }

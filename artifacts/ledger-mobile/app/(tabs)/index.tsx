@@ -48,10 +48,12 @@ import {
   useListAccounts,
   useListLoans,
   useListLunoWallets,
-  useGetLunoTicker,
+  useGetLunoTickers,
   type Loan,
   type Account,
 } from "@workspace/api-client-react";
+
+import { pairsForAssets, quoteWalletInFiat } from "@/lib/lunoPricing";
 
 export default function DashboardScreen() {
   const colors = useColors();
@@ -428,22 +430,32 @@ export default function DashboardScreen() {
 // Luno data or no meaningful BTC balance — keeps the dashboard quiet for
 // Binance-only users.
 function LunoReadyToDeployTile({
-  currency: _currency,
+  currency,
 }: {
   currency: "USD" | "ZAR";
 }) {
   const colors = useColors();
   const router = useRouter();
   const walletsQ = useListLunoWallets();
-  const tickerQ = useGetLunoTicker({ pair: "XBTZAR" });
+  // Use the same currency-aware pair the Crypto tab uses, so a USD-display
+  // user doesn't see a ZAR quote here. `pairsForAssets(["XBT"], currency)`
+  // gives XBTZAR for ZAR, XBTUSDC for USD, etc.
+  const btcPair = pairsForAssets(["XBT"], currency)[0] ?? "XBTZAR";
+  const tickersQ = useGetLunoTickers(
+    { pairs: btcPair },
+    // See crypto.tsx — narrow the option without satisfying orval's full
+    // UseQueryOptions shape.
+    { query: { enabled: !!btcPair } as never },
+  );
   const wallets = walletsQ.data?.wallets ?? [];
   if (wallets.length === 0) return null;
   const btc = wallets
     .filter((w) => w.asset.toUpperCase() === "XBT")
     .reduce((s, w) => s + w.balance, 0);
   if (btc < 0.0001) return null;
-  const xbtZar = tickerQ.data?.lastTrade ?? 0;
-  const zar = btc * xbtZar;
+  const tickerMap = new Map<string, number>();
+  for (const t of tickersQ.data?.tickers ?? []) tickerMap.set(t.pair, t.lastTrade);
+  const fiat = quoteWalletInFiat("XBT", btc, tickerMap, currency);
   return (
     <Pressable
       onPress={() => {
@@ -486,8 +498,8 @@ function LunoReadyToDeployTile({
           }}
         >
           {btc.toFixed(8)} BTC
-          {xbtZar > 0
-            ? `  ·  ≈ ${fmtMoney(zar, "ZAR", { compact: true })}`
+          {fiat > 0
+            ? `  ·  ≈ ${fmtMoney(fiat, currency, { compact: true })}`
             : ""}
         </Text>
       </View>

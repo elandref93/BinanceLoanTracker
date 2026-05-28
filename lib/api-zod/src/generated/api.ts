@@ -205,3 +205,24 @@ export const GetLunoTickerResponse = zod.object({
 })
 
 
+/**
+ * Quote N pairs in one round-trip. Per-pair failures (unsupported pair, upstream hiccup) are silently dropped from the result; clients must key by `pair` and tolerate missing entries.
+
+ * @summary Batch live tickers for multiple Luno pairs
+ */
+export const GetLunoTickersQueryParams = zod.object({
+  "pairs": zod.coerce.string().describe('Comma-separated list of pairs, e.g. `XBTZAR,ETHZAR,SOLZAR`. Max 20.')
+})
+
+export const GetLunoTickersResponse = zod.object({
+  "tickers": zod.array(zod.object({
+  "pair": zod.string(),
+  "ask": zod.number(),
+  "bid": zod.number(),
+  "lastTrade": zod.number(),
+  "rolling24hVolume": zod.number(),
+  "asOf": zod.coerce.date()
+}))
+})
+
+

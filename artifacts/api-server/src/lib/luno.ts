@@ -59,6 +59,12 @@ export interface LunoClient {
   }): Promise<LunoTransaction[]>;
   listPendingWithdrawals(): Promise<LunoPendingWithdrawal[]>;
   getTicker(pair: string): Promise<LunoTicker>;
+  /**
+   * Batch quote multiple pairs in parallel. Unknown / failing pairs are
+   * silently omitted from the result so one bad pair doesn't poison the
+   * whole response. Ordering is not guaranteed; callers should key by `pair`.
+   */
+  getTickers(pairs: string[]): Promise<LunoTicker[]>;
 }
 
 export class LunoApiError extends Error {
@@ -244,6 +250,27 @@ export function createRealLunoClient(
         asOf: new Date(res.timestamp || Date.now()).toISOString(),
       };
     },
+    async getTickers(pairs) {
+      // Public endpoint, no auth, fanned in parallel. Bad pairs (e.g.
+      // unsupported asset for the user's region) silently drop out of the
+      // result so the caller's whole dashboard doesn't go red.
+      const settled = await Promise.allSettled(
+        pairs.map((p) => this.getTicker(p)),
+      );
+      const out: LunoTicker[] = [];
+      for (let i = 0; i < settled.length; i++) {
+        const r = settled[i];
+        if (r.status === "fulfilled") {
+          out.push(r.value);
+        } else {
+          logger.warn(
+            { err: r.reason, pair: pairs[i] },
+            "luno ticker fetch failed",
+          );
+        }
+      }
+      return out;
+    },
   };
 }
 
@@ -315,6 +342,12 @@ export function createMultiplexLunoClient(
         throw new Error("No Luno accounts configured");
       }
       return members[0].client.getTicker(pair);
+    },
+    async getTickers(pairs) {
+      // Same as getTicker — pick any member because the underlying endpoint
+      // is public. Per-pair failures are already swallowed inside.
+      if (members.length === 0) return [];
+      return members[0].client.getTickers(pairs);
     },
   };
 }

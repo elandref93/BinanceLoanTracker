@@ -218,3 +218,14 @@ export type GetLunoTickerParams = {
 pair: string;
 };
 
+export type GetLunoTickersParams = {
+/**
+ * Comma-separated list of pairs, e.g. `XBTZAR,ETHZAR,SOLZAR`. Max 20.
+ */
+pairs: string;
+};
+
+export type GetLunoTickers200 = {
+  tickers: LunoTicker[];
+};
+

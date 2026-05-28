@@ -17,6 +17,8 @@ import type {
 
 import type {
   GetLunoTickerParams,
+  GetLunoTickers200,
+  GetLunoTickersParams,
   GetPrices200,
   GetPricesParams,
   HealthStatus,
@@ -761,6 +763,92 @@ export function useGetLunoTicker<TData = Awaited<ReturnType<typeof getLunoTicker
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetLunoTickerQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getGetLunoTickersUrl = (params: GetLunoTickersParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/luno/tickers?${stringifiedParams}` : `/api/luno/tickers`
+}
+
+/**
+ * Quote N pairs in one round-trip. Per-pair failures (unsupported pair, upstream hiccup) are silently dropped from the result; clients must key by `pair` and tolerate missing entries.
+
+ * @summary Batch live tickers for multiple Luno pairs
+ */
+export const getLunoTickers = async (params: GetLunoTickersParams, options?: RequestInit): Promise<GetLunoTickers200> => {
+
+  return customFetch<GetLunoTickers200>(getGetLunoTickersUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetLunoTickersQueryKey = (params?: GetLunoTickersParams,) => {
+    return [
+    `/api/luno/tickers`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetLunoTickersQueryOptions = <TData = Awaited<ReturnType<typeof getLunoTickers>>, TError = ErrorType<unknown>>(params: GetLunoTickersParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getLunoTickers>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetLunoTickersQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getLunoTickers>>> = ({ signal }) => getLunoTickers(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getLunoTickers>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetLunoTickersQueryResult = NonNullable<Awaited<ReturnType<typeof getLunoTickers>>>
+export type GetLunoTickersQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Batch live tickers for multiple Luno pairs
+ */
+
+export function useGetLunoTickers<TData = Awaited<ReturnType<typeof getLunoTickers>>, TError = ErrorType<unknown>>(
+ params: GetLunoTickersParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getLunoTickers>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetLunoTickersQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

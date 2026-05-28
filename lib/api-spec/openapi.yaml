@@ -226,6 +226,35 @@ paths:
               schema:
                 $ref: "#/components/schemas/LunoTicker"
 
+  /luno/tickers:
+    get:
+      operationId: getLunoTickers
+      tags: [luno]
+      summary: Batch live tickers for multiple Luno pairs
+      description: >
+        Quote N pairs in one round-trip. Per-pair failures (unsupported pair,
+        upstream hiccup) are silently dropped from the result; clients must
+        key by `pair` and tolerate missing entries.
+      parameters:
+        - in: query
+          name: pairs
+          required: true
+          description: Comma-separated list of pairs, e.g. `XBTZAR,ETHZAR,SOLZAR`. Max 20.
+          schema: { type: string }
+      responses:
+        "200":
+          description: Tickers
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [tickers]
+                properties:
+                  tickers:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/LunoTicker"
+
 components:
   schemas:
     HealthStatus:

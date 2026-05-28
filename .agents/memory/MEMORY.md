@@ -1,4 +1,7 @@
-- [pnpm packageManager pin vs Replit nix pnpm](pnpm-package-manager-pin.md) — pnpm pinned to an older version than the container ships SIGABRT-loops on every invocation; bump the pin to match.
-- [SecureStore RMW writes need a chain lock](securestore-rmw-lock.md) — SecureStore has no CAS, so concurrent read-modify-write mutators clobber each other; serialize all mutators through a promise-chain lock, leave reads unsynchronized.
-- [Multi-account fan-out limits must be global](api-fanout-global-limit.md) — when a server endpoint fans a single `limit` across N upstream accounts, divide the budget per-account and re-sort + trim the merged result, otherwise the wire contract returns up to N× the requested rows in arbitrary order.
-- [Workspace `@types/react` dupe via cmdk subtree](workspace-types-react-dupe.md) — when older Expo transitives pin `@types/react@19.1.x` and newer libs (cmdk) pull `19.2.x`, TS sees "two unrelated types with this name"; cleanest fix is deleting unused consumer files rather than dedupe-hammering the lockfile.
+- [pnpm packageManager pin vs Replit nix pnpm](pnpm-package-manager-pin.md) — version mismatch SIGABRT-loops on every invocation.
+- [SecureStore/AsyncStorage RMW writes need a chain lock](securestore-rmw-lock.md) — no CAS; concurrent mutators silently lose updates.
+- [Multi-account fan-out limits must be global](api-fanout-global-limit.md) — divide budget per-account, re-sort + trim merged result.
+- [Workspace @types/react dupe via cmdk subtree](workspace-types-react-dupe.md) — older Expo pin vs newer transitives; delete dead consumers.
+- [React hook reading module storage needs subscribe](hook-storage-subscribe.md) — without a pub/sub channel, charts stay stale after writes until remount.
+- [Luno pair coverage is region-shaped](luno-pair-coverage.md) — ZAR is direct, USD must route via USDC pairs (inverse for ZAR→USD).
+- [Orval-generated query options need a cast for partial `enabled`](orval-query-options-cast.md) — strict UseQueryOptions shape rejects `{enabled}` alone.

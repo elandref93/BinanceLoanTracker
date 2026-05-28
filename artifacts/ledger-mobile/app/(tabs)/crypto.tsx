@@ -1,6 +1,8 @@
 import { Feather } from "@expo/vector-icons";
+import { useRouter } from "expo-router";
 import { useEffect, useMemo } from "react";
 import {
+  Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -54,6 +56,7 @@ function fmtTime(iso: string): string {
 export default function CryptoScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
+  const router = useRouter();
   const { currency } = useCurrency();
 
   const walletsQ = useListLunoWallets();
@@ -379,7 +382,13 @@ export default function CryptoScreen() {
                         style={[styles.divider, { backgroundColor: colors.border }]}
                       />
                     ) : null}
-                    <WalletRow w={w} />
+                    <WalletRow
+                      w={w}
+                      onPress={() => {
+                        haptic.tap();
+                        router.push(`/crypto/${displayAsset(w.asset)}`);
+                      }}
+                    />
                   </View>
                 ))}
             </View>
@@ -426,10 +435,19 @@ export default function CryptoScreen() {
   );
 }
 
-function WalletRow({ w }: { w: LunoWallet }) {
+function WalletRow({
+  w,
+  onPress,
+}: {
+  w: LunoWallet;
+  onPress?: () => void;
+}) {
   const colors = useColors();
   return (
-    <View style={styles.txRow}>
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [styles.txRow, { opacity: pressed ? 0.6 : 1 }]}
+    >
       <AssetIcon asset={w.asset} size={32} />
       <View style={{ flex: 1 }}>
         <Text style={[styles.txTitle, { color: colors.foreground }]}>
@@ -443,7 +461,8 @@ function WalletRow({ w }: { w: LunoWallet }) {
             : ""}
         </Text>
       </View>
-    </View>
+      <Feather name="chevron-right" size={16} color={colors.mutedForeground} />
+    </Pressable>
   );
 }
 

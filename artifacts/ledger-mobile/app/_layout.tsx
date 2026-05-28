@@ -94,6 +94,10 @@ export default function RootLayout() {
                         options={{ title: "Loan", presentation: "card" }}
                       />
                       <Stack.Screen
+                        name="crypto/[asset]"
+                        options={{ title: "Asset", presentation: "card" }}
+                      />
+                      <Stack.Screen
                         name="add-account"
                         options={{
                           presentation: "modal",

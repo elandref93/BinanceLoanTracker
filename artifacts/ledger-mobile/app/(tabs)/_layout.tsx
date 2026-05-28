@@ -118,6 +118,15 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="strategy"
+        options={{
+          title: "Strategy",
+          tabBarIcon: ({ color }) => (
+            <Feather name="bar-chart-2" size={22} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="settings"
         options={{
           title: "Settings",

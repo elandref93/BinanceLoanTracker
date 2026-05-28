@@ -2,8 +2,13 @@
 module.exports = {
   type: "watch-widget",
   name: "LedgerWatchComplication",
-  // Full ID (not a main-app suffix): Apple rejects ".watchkitapp.complication".
-  bundleIdentifier: "com.ubuntu.life.ledger.watchwidget",
+  // Watch complications are embedded inside the watch app, so Apple's
+  // "embedded binary bundle ID must be prefixed with parent" rule
+  // requires this to start with the watch app's bundle ID
+  // (com.ubuntu.life.ledger.watchkitapp), NOT the iOS app's bundle ID.
+  // Earlier `.watchwidget` (sibling of the watch app) tripped the
+  // embedded-binary check in Xcode archive.
+  bundleIdentifier: "com.ubuntu.life.ledger.watchkitapp.complication",
   // Widget extensions inherit their AppIcon from the host app — supplying one
   // here makes apple-targets emit an empty AppIcon.appiconset which Xcode
   // rejects with "AppIcon did not have any applicable content".

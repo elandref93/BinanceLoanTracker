@@ -73,7 +73,7 @@ export class AppleTokenVerificationError extends Error {
 
 export async function verifyAppleIdentityToken(
   token: string,
-  audience: string,
+  audience: string | string[],
 ): Promise<AppleIdentityClaims> {
   let payload: Record<string, unknown>;
   try {
@@ -101,7 +101,9 @@ export async function verifyAppleIdentityToken(
     if (err instanceof joseErrors.JWTClaimValidationFailed) {
       throw new AppleTokenVerificationError(
         "wrong_issuer_or_audience",
-        `Apple identity token has wrong issuer or audience (expected aud=${audience})`,
+        `Apple identity token has wrong issuer or audience (expected aud=${
+          Array.isArray(audience) ? audience.join(" | ") : audience
+        })`,
         { cause: err },
       );
     }

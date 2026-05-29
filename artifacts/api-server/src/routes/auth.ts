@@ -47,12 +47,22 @@ router.post("/apple", async (req, res) => {
     return;
   }
 
-  const audience = process.env.APPLE_BUNDLE_ID;
-  if (!audience) {
+  const bundleId = process.env.APPLE_BUNDLE_ID;
+  if (!bundleId) {
     logger.error("APPLE_BUNDLE_ID env var is not set — cannot verify tokens");
     res.status(500).json({ error: "Server is not configured for Apple Sign In" });
     return;
   }
+
+  // In development we ALSO accept Apple tokens minted inside Expo Go. Expo Go
+  // signs the user into Apple under its own bundle id (host.exp.Exponent), so
+  // the token's `aud` is never our real bundle id while testing in Expo Go.
+  // Production (NODE_ENV=production on Azure) only ever accepts our bundle id.
+  const EXPO_GO_BUNDLE_ID = "host.exp.Exponent";
+  const audience =
+    process.env.NODE_ENV === "production"
+      ? bundleId
+      : [bundleId, EXPO_GO_BUNDLE_ID];
 
   let appleClaims;
   try {

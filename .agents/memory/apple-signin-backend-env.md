@@ -27,3 +27,11 @@ lists exactly these missing vars (503 "degraded" with a `missing` array) when un
 
 **Simulator note:** Apple sign-in only returns an identity token if the simulator/device
 is signed into an Apple ID. Otherwise the native flow fails before reaching the backend.
+
+**Expo Go gotcha (401 wrong_issuer_or_audience):** Apple sign-in inside Expo Go mints the
+token under Expo Go's own bundle id `host.exp.Exponent`, never the app's real bundle id,
+so the backend rejects it as wrong audience. The route therefore accepts an audience
+ARRAY: production (NODE_ENV=production on Azure) accepts ONLY APPLE_BUNDLE_ID; non-prod
+also accepts `host.exp.Exponent` so login works in Expo Go. Full app testing (widgets,
+background-fetch, notifications) still needs a dev build / TestFlight — those native
+features don't run in Expo Go at all.

@@ -18,18 +18,18 @@ author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "workflow.run"
-args = "TestFlight Build (iOS)"
+args = "Start Dev Environment"
 
 [[workflows.workflow]]
-name = "TestFlight Build (iOS)"
+name = "Start Dev Environment"
 author = "agent"
-
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "pnpm --filter @workspace/ledger-mobile run tf:build"
 
 [workflows.workflow.metadata]
 outputType = "console"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "echo 'Dev servers (API + Expo + Canvas) start automatically and power the preview. To publish a TestFlight build manually, run:  pnpm --filter @workspace/ledger-mobile run tf:build'"
 
 [agent]
 stack = "PNPM_WORKSPACE"

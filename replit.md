@@ -38,7 +38,8 @@ _Populate as you build — explicit user instructions worth remembering across s
 
 ## Gotchas
 
-_Populate as you build — sharp edges, "always run X before Y" rules._
+- **TestFlight builds are manual-only.** The Run button (the "Project" workflow) only starts the dev environment — it does NOT build. To publish a build, run it yourself from the Shell: `pnpm --filter @workspace/ledger-mobile run tf:build` (this is `eas build -p ios --profile production --auto-submit`). Do NOT wire this command into the Run button / "Project" workflow again — doing so makes every project start/wake create and auto-submit a TestFlight build, which silently burns EAS build credits.
+- The three dev servers (api-server, ledger-mobile/expo, mockup-sandbox) auto-start on their own as artifact services; the Run button does not need to start them.
 
 ## Pointers
 

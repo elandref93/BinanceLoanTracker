@@ -1,4 +1,5 @@
 - [pnpm packageManager pin vs Replit nix pnpm](pnpm-package-manager-pin.md) — pnpm pinned to an older version than the container ships SIGABRT-loops on every invocation; bump the pin to match.
+- [TestFlight builds firing by themselves](testflight-run-button-autobuild.md) — the "Project" run button runs all workflow.run children on every start; never put eas build / deploy commands there. configureWorkflow always adds to "Project".
 - [Apple Sign In backend env](apple-signin-backend-env.md) — /api/auth/apple 500s unless APPLE_BUNDLE_ID + SESSION_JWT_SECRET are set; fresh Replit dev env has neither. Check /api/healthz.
 - [WidgetKit snapshot staleness](widgetkit-snapshot-reload.md) — widgets drift unless you reloadAllTimelines after writing the App Group snapshot AND write a zeroed snapshot on empty responses.
 - [accountStore-derived state must subscribe](accountstore-derived-state.md) — ledger-mobile contexts caching accountStore data must subscribe() or container/account lists go stale within a session.

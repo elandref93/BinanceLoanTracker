@@ -53,16 +53,21 @@ import { fmtAge, fmtPct } from "@/utils/format";
 function Section({
   title,
   children,
+  right,
 }: {
   title: string;
   children: React.ReactNode;
+  right?: React.ReactNode;
 }) {
   const colors = useColors();
   return (
     <View style={styles.section}>
-      <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>
-        {title.toUpperCase()}
-      </Text>
+      <View style={styles.sectionHead}>
+        <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>
+          {title.toUpperCase()}
+        </Text>
+        {right}
+      </View>
       <View
         style={[
           styles.card,
@@ -75,6 +80,20 @@ function Section({
       >
         {children}
       </View>
+    </View>
+  );
+}
+
+// Small pill that tags an account card as Personal or Trust so the
+// "Accounts" group reads as a clear two-level hierarchy.
+function TypeBadge({ type }: { type: "personal" | "trust" }) {
+  const colors = useColors();
+  const tone = type === "trust" ? colors.primary : colors.mutedForeground;
+  return (
+    <View style={[styles.badge, { borderColor: tone }]}>
+      <Text style={[styles.badgeText, { color: tone }]}>
+        {type === "trust" ? "TRUST" : "PERSONAL"}
+      </Text>
     </View>
   );
 }
@@ -355,12 +374,22 @@ export default function SettingsScreen() {
       <Container style={{ gap: 20 }}>
       <Text style={[styles.title, { color: colors.foreground }]}>Settings</Text>
 
+      <View style={{ gap: 4 }}>
+        <Text style={[styles.groupTitle, { color: colors.foreground }]}>
+          Accounts
+        </Text>
+        <Text style={[styles.groupSub, { color: colors.mutedForeground }]}>
+          Group your Binance and Luno links under Personal or Trust accounts.
+          Each account keeps its own targets, alerts and strategy.
+        </Text>
+      </View>
+
       {containers.length === 0 ? (
-        <Section title="Accounts">
+        <Section title="No accounts yet">
           <Row label="No accounts connected" value="Tap below to add" />
           <View style={[styles.divider, { backgroundColor: colors.border }]} />
           <Row
-            label="Add exchange"
+            label="Add account"
             right={<Feather name="plus" size={18} color={colors.primary} />}
             onPress={() => router.push("/add-account")}
           />
@@ -370,7 +399,7 @@ export default function SettingsScreen() {
           const hasBinance = c.links.some((l) => l.exchange === "binance");
           const hasLuno = c.links.some((l) => l.exchange === "luno");
           return (
-          <Section key={c.id} title={c.name}>
+          <Section key={c.id} title={c.name} right={<TypeBadge type={c.type} />}>
             {c.links.length === 0 ? (
               <Row label="No exchanges linked yet" />
             ) : (
@@ -494,7 +523,7 @@ export default function SettingsScreen() {
             ) : null}
             <View style={[styles.divider, { backgroundColor: colors.border }]} />
             <Row
-              label="Remove profile"
+              label="Remove account"
               destructive
               onPress={() => onRemoveContainer(c.id, c.name)}
             />
@@ -503,9 +532,9 @@ export default function SettingsScreen() {
         })
       )}
       {containers.length > 0 ? (
-        <Section title="New profile">
+        <Section title="Add account">
           <Row
-            label="Add another profile"
+            label="Add another account (e.g. a Trust)"
             right={<Feather name="plus" size={18} color={colors.primary} />}
             onPress={() => router.push("/add-account")}
           />
@@ -633,7 +662,25 @@ const styles = StyleSheet.create({
     letterSpacing: -0.5,
   },
   section: { gap: 8 },
+  sectionHead: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
   sectionTitle: { fontSize: 10, letterSpacing: 1, fontFamily: "Inter_600SemiBold" },
+  groupTitle: {
+    fontSize: 18,
+    fontFamily: "Inter_700Bold",
+    letterSpacing: -0.3,
+  },
+  groupSub: { fontSize: 12, fontFamily: "Inter_400Regular", lineHeight: 17 },
+  badge: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  badgeText: { fontSize: 9, letterSpacing: 1, fontFamily: "Inter_600SemiBold" },
   card: {
     borderWidth: StyleSheet.hairlineWidth,
     paddingHorizontal: 14,

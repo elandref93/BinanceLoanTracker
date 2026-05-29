@@ -101,29 +101,33 @@ const HOURS_PER_YEAR = 24 * 365; // 8760
  *
  * Set `context` for clearer warning logs when nothing parses.
  */
+const MAX_PLAUSIBLE_APR_FRACTION = 2.0; // 200% APR cap (guards the high side)
+// Lower/upper band used to INFER the unit of an ambiguously-named rate field.
+// Real Binance loan APRs sit comfortably inside this; anything outside means
+// we picked the wrong unit (e.g. read an already-hourly value as annual,
+// collapsing the APR to ~0.00% — the bug this guards against).
+const PLAUSIBLE_APR_LO = 0.005; // 0.5%
+const PLAUSIBLE_APR_HI = 0.6; //  60%
+
 function pickHourlyRate(
   row: Record<string, unknown>,
   context: string,
 ): number {
-  const MAX_PLAUSIBLE_APR_FRACTION = 2.0; // 200% APR cap
-  const candidates: Array<{ label: string; hourly: number }> = [
-    // Hourly fields — use directly.
+  // 1) Explicitly-unit-named fields: trust the NAME, normalise to hourly,
+  //    accept the first whose implied APR is under the 200% cap. These names
+  //    are unambiguous so we don't second-guess the unit.
+  const named: Array<{ label: string; hourly: number }> = [
     { label: "flexibleHourlyInterestRate", hourly: num(row["flexibleHourlyInterestRate"]) },
     { label: "currentHourlyInterestRate", hourly: num(row["currentHourlyInterestRate"]) },
     { label: "hourlyInterestRate", hourly: num(row["hourlyInterestRate"]) },
-    // Daily fields — divide by 24.
     { label: "flexibleDailyInterestRate", hourly: num(row["flexibleDailyInterestRate"]) / 24 },
     { label: "dailyInterestRate", hourly: num(row["dailyInterestRate"]) / 24 },
-    // Annual fields — divide by 8760. `flexibleInterestRate` belongs HERE:
-    // Binance returns it as an annual decimal, not hourly, despite the
-    // ambiguous name.
-    { label: "flexibleInterestRate", hourly: num(row["flexibleInterestRate"]) / HOURS_PER_YEAR },
     { label: "flexibleAnnualInterestRate", hourly: num(row["flexibleAnnualInterestRate"]) / HOURS_PER_YEAR },
     { label: "flexibleYearlyInterestRate", hourly: num(row["flexibleYearlyInterestRate"]) / HOURS_PER_YEAR },
     { label: "annualInterestRate", hourly: num(row["annualInterestRate"]) / HOURS_PER_YEAR },
     { label: "yearlyInterestRate", hourly: num(row["yearlyInterestRate"]) / HOURS_PER_YEAR },
   ];
-  for (const c of candidates) {
+  for (const c of named) {
     if (c.hourly <= 0) continue;
     const aprFraction = c.hourly * HOURS_PER_YEAR;
     if (aprFraction > MAX_PLAUSIBLE_APR_FRACTION) {
@@ -135,6 +139,41 @@ function pickHourlyRate(
     }
     return c.hourly;
   }
+
+  // 2) Ambiguously-named fields (no unit word in the name). Binance has
+  //    shipped these as annual, daily, AND hourly decimals across endpoints
+  //    and revisions, so we can't trust the name. Infer the unit by trying
+  //    each interpretation and accepting the one whose APR lands in the
+  //    plausible band. This fixes both the 8760× high-side blow-up and the
+  //    "divide an already-hourly value → 0.00%" low-side collapse.
+  const ambiguous = [
+    "flexibleInterestRate",
+    "currentInterestRate",
+    "interestRate",
+    "rate",
+  ];
+  for (const field of ambiguous) {
+    const v = num(row[field]);
+    if (v <= 0) continue;
+    const interpretations: Array<{ unit: string; hourly: number; apr: number }> = [
+      { unit: "annual", hourly: v / HOURS_PER_YEAR, apr: v },
+      { unit: "daily", hourly: v / 24, apr: v * 365 },
+      { unit: "hourly", hourly: v, apr: v * HOURS_PER_YEAR },
+    ];
+    const match = interpretations.find(
+      (i) => i.apr >= PLAUSIBLE_APR_LO && i.apr <= PLAUSIBLE_APR_HI,
+    );
+    if (match) return match.hourly;
+    logger.warn(
+      { context, field, value: v, interpretations: interpretations.map((i) => ({ unit: i.unit, apr: i.apr })) },
+      "binance ambiguous rate field had no plausible interpretation — skipping",
+    );
+  }
+
+  logger.warn(
+    { context, keys: Object.keys(row) },
+    "binance rate could not be resolved from row — APR will be 0",
+  );
   return 0;
 }
 

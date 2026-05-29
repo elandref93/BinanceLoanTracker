@@ -44,8 +44,16 @@ export function LtvHistoryChart({
 
   // Need at least 2 points to draw a line; otherwise show a placeholder card.
   const enough = samples.length >= 2;
-  const minLtv = enough ? Math.min(...samples.map((s) => s.ltv)) - 1 : 0;
-  const maxLtv = enough ? Math.max(...samples.map((s) => s.ltv)) + 1 : 100;
+  // Fit the y-axis to the actual data so even small LTV movements fill the
+  // chart instead of collapsing to a flat line. A fixed ±1 pad swamped tiny
+  // real moves (e.g. 57.80 → 57.85); pad proportionally to the observed span
+  // instead, with a small floor so a truly-flat series still has a sane band.
+  const rawMin = enough ? Math.min(...samples.map((s) => s.ltv)) : 0;
+  const rawMax = enough ? Math.max(...samples.map((s) => s.ltv)) : 100;
+  const span = rawMax - rawMin;
+  const pad = enough ? Math.max(0.05, span * 0.2) : 0;
+  const minLtv = enough ? rawMin - pad : 0;
+  const maxLtv = enough ? rawMax + pad : 100;
   const targetY =
     enough && targetLtv >= minLtv && targetLtv <= maxLtv
       ? PAD_Y +

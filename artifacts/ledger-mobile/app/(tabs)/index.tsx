@@ -334,10 +334,10 @@ export default function DashboardScreen() {
         <Pill status={status} label={statusLabel(status)} />
         <View style={styles.heroFooter}>
           <Text style={[styles.heroSub, { color: colors.mutedForeground }]}>
-            Debt {fmtMoney(totalDebtUsd, currency, { compact: true })}
+            Debt {fmtMoney(totalDebtUsd, currency, { whole: true })}
           </Text>
           <Text style={[styles.heroSub, { color: colors.mutedForeground }]}>
-            Collateral {fmtMoney(totalColUsd, currency, { compact: true })}
+            Collateral {fmtMoney(totalColUsd, currency, { whole: true })}
           </Text>
         </View>
       </View>

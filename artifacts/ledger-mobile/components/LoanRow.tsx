@@ -49,8 +49,8 @@ export function LoanRow({ loan, accountName, onPress }: Props) {
             </Text>
           </Text>
           <Text style={[styles.debt, { color: colors.mutedForeground }]}>
-            {fmtMoney(loan.debtUsd, currency, { compact: true })} debt ·{" "}
-            {fmtMoney(loan.collateral.valueUsd, currency, { compact: true })}{" "}
+            {fmtMoney(loan.debtUsd, currency, { whole: true })} debt ·{" "}
+            {fmtMoney(loan.collateral.valueUsd, currency, { whole: true })}{" "}
             collateral
           </Text>
         </View>

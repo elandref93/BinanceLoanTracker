@@ -14,6 +14,15 @@
     "scheme": "binance-loan-tracker",
     "userInterfaceStyle": "dark",
     "newArchEnabled": true,
+    "runtimeVersion": {
+      "policy": "fingerprint"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/507ca16a-ae95-4f54-84f2-fef5180a4f93",
+      "enabled": true,
+      "checkAutomatically": "ON_LOAD",
+      "fallbackToCacheTimeout": 0
+    },
     "splash": {
       "image": "./assets/images/icon.png",
       "resizeMode": "contain",

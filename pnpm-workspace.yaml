@@ -33,6 +33,11 @@ minimumReleaseAgeExclude:
   # this setting guards against does not apply to our own packages.
   - '@replit/*'
   - stripe-replit-sync
+  # Expo SDK 54 OTA-updates package + its Expo-published transitive deps.
+  # Excluded because the SDK-matched releases landed inside the 1-day window.
+  # All published by Expo. Safe to remove once the window has passed.
+  - expo-updates
+  - '@expo/*'
 
 packages:
   - artifacts/*

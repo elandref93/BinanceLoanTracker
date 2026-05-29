@@ -17,6 +17,7 @@ import {
 } from "@/lib/session";
 import { hydrateFromServer } from "@/lib/accountStore";
 import { setSyncTokenGetter } from "@/lib/accountSync";
+import { checkAndApplyUpdate } from "@/lib/otaUpdates";
 
 interface SessionContextValue {
   /** True once the hydration from secure storage has completed. */
@@ -83,6 +84,10 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const signInWithApple = useCallback(async () => {
     const next = await performAppleSignIn();
     setSession(next);
+    // Pull the latest OTA bundle on login. Runs in the background; if an
+    // update exists the app reloads into it (session persists, so the user
+    // stays signed in). No-op in dev / Expo Go.
+    void checkAndApplyUpdate();
     return next;
   }, []);
 

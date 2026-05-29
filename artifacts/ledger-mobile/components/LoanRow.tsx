@@ -3,7 +3,7 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import { useColors } from "@/hooks/useColors";
 import { useCurrency } from "@/context/CurrencyContext";
-import { useTargetLtv } from "@/context/RiskSettingsContext";
+import { useRiskSettings } from "@/context/RiskSettingsContext";
 import { fmtMoney, fmtPct } from "@/utils/format";
 import { headroomToTarget, statusFromLtv } from "@/utils/risk";
 import type { Loan } from "@workspace/api-client-react";
@@ -17,7 +17,8 @@ interface Props {
 export function LoanRow({ loan, accountName, onPress }: Props) {
   const colors = useColors();
   const { currency } = useCurrency();
-  const targetLtv = useTargetLtv();
+  const { targetForAccountId } = useRiskSettings();
+  const targetLtv = targetForAccountId(loan.accountId);
   const status = statusFromLtv(loan.ltv, targetLtv);
   const tone =
     status === "ok"

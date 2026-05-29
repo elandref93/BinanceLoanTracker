@@ -17,12 +17,15 @@ import { useColors } from "@/hooks/useColors";
 import { haptic } from "@/lib/haptics";
 import {
   deleteAlertRule,
+  isContainerScope,
+  isLoanScope,
   listAlertRules,
   makeRuleId,
   upsertAlertRule,
   type AlertRule,
   type AlertScope,
 } from "@/lib/alertRules";
+import { useRiskSettings } from "@/context/RiskSettingsContext";
 import { useListAccounts, useListLoans } from "@workspace/api-client-react";
 
 export default function AlertRuleScreen() {
@@ -43,6 +46,7 @@ export default function AlertRuleScreen() {
 
   const loansQ = useListLoans();
   const accountsQ = useListAccounts();
+  const { containers } = useRiskSettings();
   const loans = loansQ.data?.loans ?? [];
   const accounts = accountsQ.data?.accounts ?? [];
 
@@ -174,9 +178,20 @@ export default function AlertRuleScreen() {
               selected={scope === "any"}
               onPress={() => setScope("any")}
             />
+            {containers.map((c) => {
+              const isSel = isContainerScope(scope) && scope.containerId === c.id;
+              return (
+                <ScopeRow
+                  key={c.id}
+                  label={`${c.name} account`}
+                  hint="Fires on any loan in this account"
+                  selected={isSel}
+                  onPress={() => setScope({ containerId: c.id })}
+                />
+              );
+            })}
             {loans.map((l) => {
-              const isSel =
-                scope !== "any" && scope.loanId === l.id;
+              const isSel = isLoanScope(scope) && scope.loanId === l.id;
               return (
                 <ScopeRow
                   key={l.id}

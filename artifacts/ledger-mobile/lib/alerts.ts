@@ -3,6 +3,7 @@ import * as SecureStore from "expo-secure-store";
 import { Platform } from "react-native";
 
 import { listAlertRules, ruleAppliesTo, type AlertRule } from "@/lib/alertRules";
+import { listContainers } from "@/lib/accountStore";
 import { haptic } from "@/lib/haptics";
 import type { Loan } from "@workspace/api-client-react";
 
@@ -77,13 +78,22 @@ export async function checkAndNotifyLoans(loans: Loan[]): Promise<void> {
   const rules = await listAlertRules();
   if (rules.length === 0) return;
 
+  // Resolve each loan's owning Personal/Trust container so account-scoped
+  // rules can be evaluated. Map exchange-link accountId → containerId.
+  const containers = await listContainers();
+  const containerByAccountId = new Map<string, string>();
+  for (const c of containers) {
+    for (const l of c.links) containerByAccountId.set(l.id, c.id);
+  }
+
   const fired = await readFired();
   const next: FiredMap = {};
   const toNotify: { rule: AlertRule; loan: Loan }[] = [];
 
   for (const loan of loans) {
+    const containerId = containerByAccountId.get(loan.accountId);
     for (const rule of rules) {
-      if (!ruleAppliesTo(rule, loan.id)) continue;
+      if (!ruleAppliesTo(rule, loan.id, containerId)) continue;
       const k = key(rule.id, loan.id);
       const over = loan.ltv >= rule.ltv;
       if (over) {

@@ -3,13 +3,24 @@ import * as SecureStore from "expo-secure-store";
 const KEY = "ledger.alertRules.v1";
 const SEEDED_KEY = "ledger.alertRules.seeded.v1";
 
-export type AlertScope = "any" | { loanId: string };
+export type AlertScope =
+  | "any"
+  | { loanId: string }
+  | { containerId: string };
 
 export interface AlertRule {
   id: string;
   ltv: number;
   scope: AlertScope;
   label?: string;
+}
+
+export function isLoanScope(s: AlertScope): s is { loanId: string } {
+  return typeof s === "object" && "loanId" in s;
+}
+
+export function isContainerScope(s: AlertScope): s is { containerId: string } {
+  return typeof s === "object" && "containerId" in s;
 }
 
 const DEFAULT_RULES: AlertRule[] = [
@@ -56,13 +67,29 @@ export async function deleteAlertRule(id: string): Promise<AlertRule[]> {
 export function describeScope(
   rule: AlertRule,
   loanLabel: (loanId: string) => string,
+  containerLabel?: (containerId: string) => string,
 ): string {
   if (rule.scope === "any") return "Any loan";
+  if (isContainerScope(rule.scope)) {
+    return containerLabel?.(rule.scope.containerId) ?? "1 account";
+  }
   return loanLabel(rule.scope.loanId);
 }
 
-export function ruleAppliesTo(rule: AlertRule, loanId: string): boolean {
-  return rule.scope === "any" || rule.scope.loanId === loanId;
+/**
+ * Whether a rule applies to a given loan. `containerId` is the Personal/Trust
+ * account that owns the loan — required to evaluate account-scoped rules.
+ */
+export function ruleAppliesTo(
+  rule: AlertRule,
+  loanId: string,
+  containerId?: string | null,
+): boolean {
+  if (rule.scope === "any") return true;
+  if (isContainerScope(rule.scope)) {
+    return containerId != null && rule.scope.containerId === containerId;
+  }
+  return rule.scope.loanId === loanId;
 }
 
 export function makeRuleId(): string {

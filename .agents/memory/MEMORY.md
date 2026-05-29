@@ -1,3 +1,4 @@
 - [pnpm packageManager pin vs Replit nix pnpm](pnpm-package-manager-pin.md) — pnpm pinned to an older version than the container ships SIGABRT-loops on every invocation; bump the pin to match.
+- [accountStore-derived state must subscribe](accountstore-derived-state.md) — ledger-mobile contexts caching accountStore data must subscribe() or container/account lists go stale within a session.
 - [expo-secure-store iCloud sync](expo-secure-store-icloud-sync.md) — expo-secure-store does not expose kSecAttrSynchronizable; cross-device sync must go through your own backend, not iCloud Keychain.
 - [Server LWW conflict resolution](server-lww-conflict-resolution.md) — node single-thread is NOT a serialization guarantee; per-user async mutex required around read-compare-write, and client timestamps must be process-monotonic to survive clock skew.

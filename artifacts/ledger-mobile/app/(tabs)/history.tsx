@@ -16,7 +16,6 @@ import { LtvHistoryChart } from "@/components/LtvHistoryChart";
 import { ScreenSkeleton } from "@/components/Skeleton";
 import { Sparkline } from "@/components/Sparkline";
 import { Tile } from "@/components/Tile";
-import { useTargetLtv } from "@/context/RiskSettingsContext";
 import { useCurrency } from "@/context/CurrencyContext";
 import { useColors } from "@/hooks/useColors";
 import { fmtMoney, fmtPct } from "@/utils/format";
@@ -38,7 +37,6 @@ export default function HistoryScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { currency } = useCurrency();
-  const targetLtv = useTargetLtv();
 
   const interestQ = useListInterest();
   const accountsQ = useListAccounts();
@@ -165,7 +163,7 @@ export default function HistoryScreen() {
         />
       </View>
 
-      <LtvHistoryChart currentLtv={aggLtv} targetLtv={targetLtv} hours={168} />
+      <LtvHistoryChart currentLtv={aggLtv} hours={168} />
 
       <View style={styles.row}>
         <Tile

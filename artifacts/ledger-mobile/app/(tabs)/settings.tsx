@@ -25,6 +25,7 @@ import { useSession } from "@/context/SessionContext";
 import { useColors } from "@/hooks/useColors";
 import { getAlertsEnabled, setAlertsEnabled } from "@/lib/alerts";
 import {
+  isContainerScope,
   listAlertRules,
   type AlertRule,
 } from "@/lib/alertRules";
@@ -154,11 +155,19 @@ export default function SettingsScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { currency, set } = useCurrency();
-  const { targetLtv, setTargetLtv } = useRiskSettings();
+  const {
+    targetLtv,
+    setTargetLtv,
+    targetForContainer,
+    setTargetForContainer,
+  } = useRiskSettings();
 
-  const onEditTargetLtv = () => {
+  // When `containerId` is provided we edit that account's override; otherwise
+  // we edit the global default used by any account without its own target.
+  const onEditTargetLtv = (containerId?: string, label?: string) => {
+    const current = containerId ? targetForContainer(containerId) : targetLtv;
     Alert.prompt(
-      "Target LTV",
+      containerId ? `${label ?? "Account"} Target LTV` : "Default Target LTV",
       `Used for headroom calculations. Allowed range: ${MIN_TARGET_LTV}–${MAX_TARGET_LTV}%.`,
       [
         { text: "Cancel", style: "cancel" },
@@ -177,12 +186,13 @@ export default function SettingsScreen() {
               );
               return;
             }
-            setTargetLtv(n);
+            if (containerId) setTargetForContainer(containerId, n);
+            else setTargetLtv(n);
           },
         },
       ],
       "plain-text",
-      String(targetLtv),
+      String(current),
       "number-pad",
     );
   };
@@ -585,20 +595,36 @@ export default function SettingsScreen() {
         {rules.length === 0 ? (
           <Row label="No alerts" value="Add one below" />
         ) : (
-          rules.map((r, i) => (
-            <View key={r.id}>
-              {i > 0 ? (
-                <View style={[styles.divider, { backgroundColor: colors.border }]} />
-              ) : null}
-              <Row
-                label={r.label ? `${r.label} · ${fmtPct(r.ltv, 1)}` : fmtPct(r.ltv, 1)}
-                value={r.scope === "any" ? "Any loan" : "1 loan"}
-                onPress={() =>
-                  router.push({ pathname: "/alert-rule", params: { id: r.id } })
-                }
-              />
-            </View>
-          ))
+          rules.map((r, i) => {
+            const sc = r.scope;
+            const scopeValue =
+              sc === "any"
+                ? "Any loan"
+                : isContainerScope(sc)
+                  ? containers.find((c) => c.id === sc.containerId)?.name ??
+                    "1 account"
+                  : "1 loan";
+            return (
+              <View key={r.id}>
+                {i > 0 ? (
+                  <View
+                    style={[styles.divider, { backgroundColor: colors.border }]}
+                  />
+                ) : null}
+                <Row
+                  label={
+                    r.label
+                      ? `${r.label} · ${fmtPct(r.ltv, 1)}`
+                      : fmtPct(r.ltv, 1)
+                  }
+                  value={scopeValue}
+                  onPress={() =>
+                    router.push({ pathname: "/alert-rule", params: { id: r.id } })
+                  }
+                />
+              </View>
+            );
+          })
         )}
         <View style={[styles.divider, { backgroundColor: colors.border }]} />
         <Row
@@ -608,12 +634,22 @@ export default function SettingsScreen() {
         />
       </Section>
 
-      <Section title="Reference">
+      <Section title="Target LTV (headroom calc)">
         <Row
-          label="Target LTV (headroom calc)"
+          label="Default (all accounts)"
           value={`${targetLtv}%`}
-          onPress={onEditTargetLtv}
+          onPress={() => onEditTargetLtv()}
         />
+        {containers.map((c) => (
+          <View key={c.id}>
+            <View style={[styles.divider, { backgroundColor: colors.border }]} />
+            <Row
+              label={c.name}
+              value={`${targetForContainer(c.id)}%`}
+              onPress={() => onEditTargetLtv(c.id, c.name)}
+            />
+          </View>
+        ))}
       </Section>
 
       {appLockSupported ? (

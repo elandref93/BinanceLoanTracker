@@ -32,7 +32,8 @@ export function LtvHistoryChart({
   hours = 24,
 }: {
   currentLtv: number;
-  targetLtv: number;
+  /** Omit to hide the target line (e.g. the combined "All accounts" view). */
+  targetLtv?: number;
   hours?: number;
 }) {
   const colors = useColors();
@@ -55,7 +56,7 @@ export function LtvHistoryChart({
   const minLtv = enough ? rawMin - pad : 0;
   const maxLtv = enough ? rawMax + pad : 100;
   const targetY =
-    enough && targetLtv >= minLtv && targetLtv <= maxLtv
+    enough && targetLtv != null && targetLtv >= minLtv && targetLtv <= maxLtv
       ? PAD_Y +
         (1 - (targetLtv - minLtv) / Math.max(0.0001, maxLtv - minLtv)) *
           (CHART_H - PAD_Y * 2)

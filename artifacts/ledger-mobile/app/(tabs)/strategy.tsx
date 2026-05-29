@@ -16,6 +16,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Container, useWideScreen } from "@/components/Container";
 import { LeverageChart } from "@/components/LeverageChart";
 import { useCurrency } from "@/context/CurrencyContext";
+import { useRiskSettings } from "@/context/RiskSettingsContext";
 import { useSession } from "@/context/SessionContext";
 import { useColors } from "@/hooks/useColors";
 import { haptic } from "@/lib/haptics";
@@ -58,17 +59,52 @@ export default function StrategyScreen() {
   const [savingOpen, setSavingOpen] = useState(false);
   const [compareIds, setCompareIds] = useState<Set<string>>(new Set());
   const [activeCreatedAt, setActiveCreatedAt] = useState<string | null>(null);
+  // Which Personal/Trust account the calculator is scoped to (null = all).
+  const [accountFilter, setAccountFilter] = useState<string | null>(null);
+  // Borrow cost: "auto" tracks the live debt-weighted Binance APR (default),
+  // "manual" lets the user type a hypothetical rate.
+  const [borrowAuto, setBorrowAuto] = useState(true);
 
+  const { containers } = useRiskSettings();
   const loansQ = useListLoans();
+
+  // Restrict the live position (starting capital, APR, LTV) to the loans owned
+  // by the selected account so each entity models only its own book.
+  const scopedLoans = useMemo(() => {
+    const loans = loansQ.data?.loans ?? [];
+    if (!accountFilter) return loans;
+    const c = containers.find((x) => x.id === accountFilter);
+    if (!c) return loans;
+    const ids = new Set(c.links.map((l) => l.id));
+    return loans.filter((l) => ids.has(l.accountId));
+  }, [loansQ.data, accountFilter, containers]);
+
   const livePosition = useMemo(
-    () => snapshotFromLoans(loansQ.data?.loans),
-    [loansQ.data],
+    () => snapshotFromLoans(scopedLoans),
+    [scopedLoans],
   );
 
   const { scenarios, loading: scenariosLoading } = useScenarios(userId);
 
   const set = <K extends keyof LeverageInputs>(k: K, v: LeverageInputs[K]) =>
     setInputs((prev) => ({ ...prev, [k]: v }));
+
+  // In auto mode keep borrow cost pinned to the live weighted APR.
+  useEffect(() => {
+    if (!borrowAuto) return;
+    const apr = livePosition.weightedAprPct;
+    if (apr == null) return;
+    const v = Math.round(apr * 10) / 10;
+    setInputs((prev) => (prev.borrowCost === v ? prev : { ...prev, borrowCost: v }));
+  }, [borrowAuto, livePosition.weightedAprPct]);
+
+  // Selecting an account also sets the matching tax entity (Personal/Trust).
+  const onSelectAccount = (id: string | null) => {
+    haptic.tap();
+    setAccountFilter(id);
+    const c = containers.find((x) => x.id === id);
+    if (c) set("taxMode", c.type === "trust" ? "trust" : "personal");
+  };
 
   const result = useMemo(() => compute(inputs), [inputs]);
   const {
@@ -600,6 +636,52 @@ export default function StrategyScreen() {
             ))}
         </Card>
 
+        {/* ACCOUNT */}
+        {containers.length > 0 ? (
+          <Card colors={colors}>
+            <SectionHead text="Account" colors={colors} />
+            <Text
+              style={{
+                color: colors.mutedForeground,
+                fontSize: 11,
+                marginBottom: 10,
+              }}
+            >
+              Scope the calculator to one entity's loans, or model the whole book.
+            </Text>
+            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+              {[{ id: null as string | null, label: "All" }, ...containers.map(
+                (c) => ({ id: c.id as string | null, label: c.name }),
+              )].map((opt) => {
+                const sel = accountFilter === opt.id;
+                return (
+                  <Pressable
+                    key={opt.id ?? "all"}
+                    onPress={() => onSelectAccount(opt.id)}
+                    style={[
+                      styles.tog,
+                      {
+                        backgroundColor: sel ? colors.primary : colors.card,
+                        borderColor: sel ? colors.primary : colors.border,
+                      },
+                    ]}
+                  >
+                    <Text
+                      style={{
+                        fontSize: 11,
+                        fontWeight: "700",
+                        color: sel ? colors.background : colors.mutedForeground,
+                      }}
+                    >
+                      {opt.label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </Card>
+        ) : null}
+
         {/* TAX ENTITY */}
         <Card colors={colors}>
           <SectionHead text="Tax entity" colors={colors} />
@@ -754,14 +836,89 @@ export default function StrategyScreen() {
             step={5}
             colors={colors}
           />
-          <NumRow
-            label="Borrow cost"
-            value={inputs.borrowCost}
-            onChange={(v) => set("borrowCost", clamp(v, 0, 100))}
-            suffix="%"
-            step={0.5}
-            colors={colors}
-          />
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              justifyContent: "space-between",
+              marginTop: 6,
+            }}
+          >
+            <Text style={{ color: colors.mutedForeground, fontSize: 11 }}>
+              Borrow cost source
+            </Text>
+            <View style={{ flexDirection: "row", gap: 6 }}>
+              {(
+                [
+                  { id: true, label: "Auto (Binance)" },
+                  { id: false, label: "Manual" },
+                ] as const
+              ).map((o) => {
+                const sel = borrowAuto === o.id;
+                return (
+                  <Pressable
+                    key={String(o.id)}
+                    onPress={() => {
+                      haptic.tap();
+                      setBorrowAuto(o.id);
+                    }}
+                    style={[
+                      styles.tog,
+                      {
+                        backgroundColor: sel ? colors.primary : colors.card,
+                        borderColor: sel ? colors.primary : colors.border,
+                      },
+                    ]}
+                  >
+                    <Text
+                      style={{
+                        fontSize: 11,
+                        fontWeight: "700",
+                        color: sel ? colors.background : colors.mutedForeground,
+                      }}
+                    >
+                      {o.label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </View>
+          {borrowAuto ? (
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                justifyContent: "space-between",
+                paddingVertical: 12,
+              }}
+            >
+              <Text style={{ color: colors.foreground, fontSize: 13 }}>
+                Borrow cost
+              </Text>
+              <Text
+                style={{
+                  color: colors.foreground,
+                  fontSize: 15,
+                  fontWeight: "700",
+                  fontVariant: ["tabular-nums"],
+                }}
+              >
+                {livePosition.weightedAprPct != null
+                  ? `${inputs.borrowCost}% · live`
+                  : `${inputs.borrowCost}% · no live loan`}
+              </Text>
+            </View>
+          ) : (
+            <NumRow
+              label="Borrow cost"
+              value={inputs.borrowCost}
+              onChange={(v) => set("borrowCost", clamp(v, 0, 100))}
+              suffix="%"
+              step={0.5}
+              colors={colors}
+            />
+          )}
           <NumRow
             label="Starting capital (BTC)"
             value={inputs.startingCapital}

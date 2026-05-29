@@ -20,11 +20,12 @@ import { useCurrency } from "@/context/CurrencyContext";
 import { useColors } from "@/hooks/useColors";
 import {
   deleteAlertRule,
+  isContainerScope,
   listAlertRules,
   ruleAppliesTo,
   type AlertRule,
 } from "@/lib/alertRules";
-import { useTargetLtv } from "@/context/RiskSettingsContext";
+import { useRiskSettings } from "@/context/RiskSettingsContext";
 import { fmtMoney, fmtPct, fmtQty } from "@/utils/format";
 import {
   headroomToTarget,
@@ -95,7 +96,7 @@ function Card({
 
 export default function LoanDetailScreen() {
   const colors = useColors();
-  const targetLtv = useTargetLtv();
+  const { targetForAccountId, containerForAccountId } = useRiskSettings();
   const router = useRouter();
   const { currency } = useCurrency();
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -148,6 +149,7 @@ export default function LoanDetailScreen() {
     );
   }
   const account = accountsQ.data?.accounts.find((a) => a.id === loan.accountId);
+  const targetLtv = targetForAccountId(loan.accountId);
   const status = statusFromLtv(loan.ltv, targetLtv);
   const headroom = headroomToTarget(loan, targetLtv);
   const warnPrice = priceAtLtv(loan, WARNING_LTV);
@@ -175,7 +177,10 @@ export default function LoanDetailScreen() {
     avg30 > 0 ? ((loan.apr - avg30) / avg30) * 100 : 0;
   const hasRealHistory = localStats !== null;
 
-  const relevantRules = rules.filter((r) => ruleAppliesTo(r, loan.id));
+  const loanContainer = containerForAccountId(loan.accountId);
+  const relevantRules = rules.filter((r) =>
+    ruleAppliesTo(r, loan.id, loanContainer?.id),
+  );
 
   return (
     <ScrollView
@@ -194,7 +199,7 @@ export default function LoanDetailScreen() {
       </View>
 
       <View style={{ alignItems: "center", marginVertical: 6 }}>
-        <RiskGauge ltv={loan.ltv} size={220} />
+        <RiskGauge ltv={loan.ltv} size={220} target={targetLtv} />
       </View>
 
       <Card title="Position">
@@ -429,7 +434,12 @@ export default function LoanDetailScreen() {
                   {fmtPct(r.ltv, 1)} LTV
                 </Text>
                 <Text style={[styles.ruleScope, { color: colors.mutedForeground }]}>
-                  {r.label ?? (r.scope === "any" ? "Any loan" : "This loan only")}
+                  {r.label ??
+                    (r.scope === "any"
+                      ? "Any loan"
+                      : isContainerScope(r.scope)
+                        ? `${loanContainer?.name ?? "Account"} loans`
+                        : "This loan only")}
                 </Text>
               </View>
               <Pressable

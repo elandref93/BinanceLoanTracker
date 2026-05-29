@@ -32,7 +32,7 @@ import { Pill } from "@/components/Pill";
 import { ScreenSkeleton } from "@/components/Skeleton";
 import { Tile } from "@/components/Tile";
 import { useCurrency } from "@/context/CurrencyContext";
-import { useTargetLtv } from "@/context/RiskSettingsContext";
+import { useRiskSettings } from "@/context/RiskSettingsContext";
 import { useColors } from "@/hooks/useColors";
 import { fmtMoney, fmtPct } from "@/utils/format";
 import {
@@ -60,7 +60,10 @@ export default function DashboardScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { currency, toggle } = useCurrency();
-  const targetLtv = useTargetLtv();
+  const { targetLtv, containers, targetForContainer, refreshContainers } =
+    useRiskSettings();
+  // `filter` is the selected Personal/Trust container id, or null for the
+  // combined "All" view across every account.
   const [filter, setFilter] = useState<string | null>(null);
 
   const accountsQ = useListAccounts();
@@ -102,27 +105,47 @@ export default function DashboardScreen() {
   const accounts =
     accountsQ.data?.accounts ?? cachedAccounts ?? [];
   const all = loansQ.data?.loans ?? cachedLoans ?? [];
-  const loans = filter ? all.filter((l) => l.accountId === filter) : all;
+
+  // Map each loan to its Personal/Trust container via the exchange-link id.
+  const linkToContainer = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const c of containers) {
+      for (const l of c.links) m.set(l.id, c.id);
+    }
+    return m;
+  }, [containers]);
+
+  // When a container is selected, show only its loans (across whichever of
+  // its Binance/Luno links carry debt).
+  const loans = filter
+    ? all.filter((l) => linkToContainer.get(l.accountId) === filter)
+    : all;
   const showingCached =
     !loansQ.data &&
     cachedLoans != null &&
     (loansQ.isError || loansQ.isLoading);
 
-  const accountLtv = useMemo(() => {
+  // Per-account (container) LTV for the selector chips.
+  const containerLtv = useMemo(() => {
     const m = new Map<string, number>();
-    for (const a of accounts) {
-      const ls = all.filter((l) => l.accountId === a.id);
+    for (const c of containers) {
+      const ids = new Set(c.links.map((l) => l.id));
+      const ls = all.filter((l) => ids.has(l.accountId));
       const debt = ls.reduce((s, l) => s + l.debtUsd, 0);
       const col = ls.reduce((s, l) => s + l.collateral.valueUsd, 0);
-      m.set(a.id, col > 0 ? (debt / col) * 100 : 0);
+      m.set(c.id, col > 0 ? (debt / col) * 100 : 0);
     }
     return m;
-  }, [accounts, all]);
+  }, [containers, all]);
 
   const totalDebtUsd = loans.reduce((s, l) => s + l.debtUsd, 0);
   const totalColUsd = loans.reduce((s, l) => s + l.collateral.valueUsd, 0);
   const aggLtv = totalColUsd > 0 ? (totalDebtUsd / totalColUsd) * 100 : 0;
-  const status = statusFromLtv(aggLtv, targetLtv);
+  // Targets only apply to a single selected account; the combined "All" view
+  // has no single target, so we suppress the target line / status there.
+  const activeTarget = filter ? targetForContainer(filter) : null;
+  const status =
+    activeTarget != null ? statusFromLtv(aggLtv, activeTarget) : null;
 
   const closest = useMemo(() => {
     if (loans.length === 0) return null;
@@ -137,13 +160,14 @@ export default function DashboardScreen() {
   const { totalShortfall, totalHeadroom } = useMemo(() => {
     let shortfall = 0;
     let headroom = 0;
+    if (activeTarget == null) return { totalShortfall: 0, totalHeadroom: 0 };
     for (const l of loans) {
-      const h = headroomToTarget(l, targetLtv);
+      const h = headroomToTarget(l, activeTarget);
       if (h < 0) shortfall += -h;
       else headroom += h;
     }
     return { totalShortfall: shortfall, totalHeadroom: headroom };
-  }, [loans, targetLtv]);
+  }, [loans, activeTarget]);
   const overTarget = totalShortfall > 0;
 
   // Side effects (alerts, widget snapshot, LTV history) MUST run only on a
@@ -250,7 +274,7 @@ export default function DashboardScreen() {
             Dashboard
           </Text>
           <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>
-            Across {accounts.length} account{accounts.length === 1 ? "" : "s"}
+            Across {containers.length} account{containers.length === 1 ? "" : "s"}
           </Text>
         </View>
         <Pressable
@@ -289,15 +313,15 @@ export default function DashboardScreen() {
             setFilter(null);
           }}
         />
-        {accounts.map((a) => (
+        {containers.map((c) => (
           <AccountChip
-            key={a.id}
-            label={a.name}
-            hint={`LTV ${fmtPct(accountLtv.get(a.id) ?? 0)}`}
-            selected={filter === a.id}
+            key={c.id}
+            label={c.name}
+            hint={`LTV ${fmtPct(containerLtv.get(c.id) ?? 0)}`}
+            selected={filter === c.id}
             onPress={() => {
               haptic.tap();
-              setFilter(a.id);
+              setFilter(c.id);
             }}
           />
         ))}
@@ -321,17 +345,21 @@ export default function DashboardScreen() {
             styles.heroValue,
             {
               color:
-                status === "ok"
-                  ? colors.ok
-                  : status === "warn"
-                    ? colors.warn
-                    : colors.danger,
+                status === null
+                  ? colors.foreground
+                  : status === "ok"
+                    ? colors.ok
+                    : status === "warn"
+                      ? colors.warn
+                      : colors.danger,
             },
           ]}
         >
           {fmtPct(aggLtv)}
         </Text>
-        <Pill status={status} label={statusLabel(status)} />
+        {status !== null ? (
+          <Pill status={status} label={statusLabel(status)} />
+        ) : null}
         <View style={styles.heroFooter}>
           <Text style={[styles.heroSub, { color: colors.mutedForeground }]}>
             Debt {fmtMoney(totalDebtUsd, currency, { whole: true })}
@@ -342,7 +370,7 @@ export default function DashboardScreen() {
         </View>
       </View>
 
-      <LtvHistoryChart currentLtv={aggLtv} targetLtv={targetLtv} />
+      <LtvHistoryChart currentLtv={aggLtv} targetLtv={activeTarget ?? undefined} />
 
       {closest ? (
         <Pressable
@@ -388,17 +416,28 @@ export default function DashboardScreen() {
           value={String(loans.length)}
           style={{ flex: 1 }}
         />
-        <Tile
-          label={overTarget ? `Over ${targetLtv}%` : `Headroom to ${targetLtv}%`}
-          value={fmtMoney(
-            overTarget ? totalShortfall : totalHeadroom,
-            currency,
-            { compact: true },
-          )}
-          hint={overTarget ? "add collateral" : "buffer"}
-          tone={overTarget ? "warn" : "ok"}
-          style={{ flex: 1 }}
-        />
+        {activeTarget != null ? (
+          <Tile
+            label={
+              overTarget ? `Over ${activeTarget}%` : `Headroom to ${activeTarget}%`
+            }
+            value={fmtMoney(
+              overTarget ? totalShortfall : totalHeadroom,
+              currency,
+              { compact: true },
+            )}
+            hint={overTarget ? "add collateral" : "buffer"}
+            tone={overTarget ? "warn" : "ok"}
+            style={{ flex: 1 }}
+          />
+        ) : (
+          <Tile
+            label="Collateral"
+            value={fmtMoney(totalColUsd, currency, { compact: true })}
+            hint="total value"
+            style={{ flex: 1 }}
+          />
+        )}
       </View>
 
       <LunoReadyToDeployTile currency={currency} />

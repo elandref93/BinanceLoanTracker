@@ -8,11 +8,14 @@ import { LIQ_LTV, statusFromLtv, WARNING_LTV } from "@/utils/risk";
 interface Props {
   ltv: number;
   size?: number;
+  /** Per-account target; falls back to the global default when omitted. */
+  target?: number;
 }
 
-export function RiskGauge({ ltv, size = 220 }: Props) {
+export function RiskGauge({ ltv, size = 220, target }: Props) {
   const colors = useColors();
-  const targetLtv = useTargetLtv();
+  const defaultTarget = useTargetLtv();
+  const targetLtv = target ?? defaultTarget;
   const status = statusFromLtv(ltv, targetLtv);
   const tone =
     status === "ok"

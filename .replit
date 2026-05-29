@@ -59,4 +59,3 @@ externalPort = 3000
 
 [userenv.shared]
 APPLE_BUNDLE_ID = "com.ubuntu.life.ledger"
-SESSION_JWT_SECRET = "5d121a5df2b216167094e87ac05fe84fb152544cc4123c2c3b3bb2591d4f5d7f"

@@ -16,6 +16,8 @@ export type AccountBreakdown = {
   collateralUsd: number;
   targetLtv: number;
   loanCount: number;
+  /** Debt-weighted APR (percent) across the account's loans; null if no debt. */
+  weightedAprPct: number | null;
 };
 
 export type LoanSnapshot = {
@@ -24,6 +26,8 @@ export type LoanSnapshot = {
   totalCollateralUsd: number;
   netEquityUsd: number;
   loanCount: number;
+  /** Debt-weighted APR (percent) across all loans; null if no debt. */
+  weightedAprPct: number | null;
   closestAsset: string | null;
   closestLtv: number | null;
   priceDropPctToLiq: number | null;
@@ -31,6 +35,15 @@ export type LoanSnapshot = {
   accounts: AccountBreakdown[];
   updatedAt: string;
 };
+
+/** Debt-weighted average APR (percent) across `loans`; null when no debt. */
+export function weightedApr(
+  loans: { apr: number; debtUsd: number }[],
+): number | null {
+  const debt = loans.reduce((s, l) => s + l.debtUsd, 0);
+  if (debt <= 0) return null;
+  return loans.reduce((s, l) => s + l.apr * l.debtUsd, 0) / debt;
+}
 
 export function buildSnapshot(
   loans: Loan[],
@@ -47,6 +60,7 @@ export function buildSnapshot(
     totalCollateralUsd: totalCol,
     netEquityUsd: totalCol - totalDebt,
     loanCount: loans.length,
+    weightedAprPct: weightedApr(loans),
     closestAsset: worst?.collateral.asset ?? null,
     closestLtv: worst?.ltv ?? null,
     priceDropPctToLiq: worst ? priceDropPctTo(worst, LIQ_LTV) : null,

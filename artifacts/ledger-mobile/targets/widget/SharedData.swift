@@ -16,6 +16,7 @@ struct AccountSnapshot: Codable, Identifiable {
     let collateralUsd: Double
     let targetLtv: Double
     let loanCount: Int
+    let weightedAprPct: Double?   // debt-weighted APR; nil if no debt
 
     var id: String { label }
 
@@ -33,6 +34,7 @@ struct LoanSnapshot: Codable {
     let totalCollateralUsd: Double
     let netEquityUsd: Double?        // collateral − debt; nil on pre-expansion snapshots
     let loanCount: Int?              // number of open loans
+    let weightedAprPct: Double?      // debt-weighted APR across all loans; nil if no debt
     let closestAsset: String?        // collateral symbol of the worst loan
     let closestLtv: Double?          // its LTV
     let priceDropPctToLiq: Double?   // % drop in collateral price until 91% (Binance liquidation)
@@ -58,15 +60,18 @@ struct LoanSnapshot: Codable {
         totalCollateralUsd: 28_800,
         netEquityUsd: 10_300,
         loanCount: 3,
+        weightedAprPct: 8.4,
         closestAsset: "BTC",
         closestLtv: 71.4,
         priceDropPctToLiq: 8.1,
         targetLtv: 65,
         accounts: [
             AccountSnapshot(label: "Personal", type: "personal", ltv: 61.2,
-                            debtUsd: 9_500, collateralUsd: 15_500, targetLtv: 65, loanCount: 2),
+                            debtUsd: 9_500, collateralUsd: 15_500, targetLtv: 65,
+                            loanCount: 2, weightedAprPct: 7.9),
             AccountSnapshot(label: "Trust", type: "trust", ltv: 67.8,
-                            debtUsd: 9_000, collateralUsd: 13_300, targetLtv: 65, loanCount: 1),
+                            debtUsd: 9_000, collateralUsd: 13_300, targetLtv: 65,
+                            loanCount: 1, weightedAprPct: 8.9),
         ],
         updatedAt: Date()
     )
@@ -112,6 +117,13 @@ struct LoanSnapshot: Codable {
         }
         return "Updated \(Int(s / 86400))d ago"
     }
+}
+
+/// Formats a debt-weighted APR for the widget, e.g. "8.4%" or "—" when there's
+/// no debt to charge interest on.
+func aprLabel(_ apr: Double?) -> String {
+    guard let apr = apr else { return "—" }
+    return String(format: "%.1f%%", apr)
 }
 
 /// Compact USD formatting for the cramped widget canvas: $9.5K, $1.2M, $940.

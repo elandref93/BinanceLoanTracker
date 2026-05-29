@@ -22,7 +22,11 @@ import {
 } from "@/lib/loanCache";
 import { recordLtvSample } from "@/lib/ltvHistory";
 import { recordLoanSnapshots } from "@/lib/loanSnapshots";
-import { buildSnapshot, writeWidgetSnapshot } from "@/lib/widgetSnapshot";
+import {
+  buildSnapshot,
+  weightedApr,
+  writeWidgetSnapshot,
+} from "@/lib/widgetSnapshot";
 import { AccountChip } from "@/components/AccountChip";
 import { Container } from "@/components/Container";
 import { ErrorView } from "@/components/ErrorView";
@@ -216,6 +220,7 @@ export default function DashboardScreen() {
         collateralUsd: col,
         targetLtv: targetForContainer(c.id) ?? targetLtv,
         loanCount: ls.length,
+        weightedAprPct: weightedApr(ls),
       };
     });
     void writeWidgetSnapshot(

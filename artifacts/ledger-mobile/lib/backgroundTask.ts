@@ -9,6 +9,7 @@ import { recordLtvSample } from "@/lib/ltvHistory";
 import { recordLoanSnapshots } from "@/lib/loanSnapshots";
 import {
   buildSnapshot,
+  weightedApr,
   writeWidgetSnapshot,
   type AccountBreakdown,
 } from "@/lib/widgetSnapshot";
@@ -79,6 +80,7 @@ async function runRefresh(): Promise<BackgroundFetch.BackgroundFetchResult> {
           collateralUsd: col,
           targetLtv: DEFAULT_TARGET_LTV,
           loanCount: ls.length,
+          weightedAprPct: weightedApr(ls),
         };
       });
     } catch {

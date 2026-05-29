@@ -65,6 +65,9 @@ struct HomeWidgetView: View {
             Text(String(format: "%@ debt", compactUsd(snapshot.totalDebtUsd)))
                 .font(.system(size: 10, weight: .medium))
                 .foregroundStyle(Color.ledgerMuted)
+            Text("\(aprLabel(snapshot.weightedAprPct)) APR")
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(Color.ledgerMuted)
             Spacer(minLength: 0)
             Text(snapshot.status().label)
                 .font(.system(size: 11, weight: .semibold))
@@ -92,6 +95,7 @@ struct HomeWidgetView: View {
                 Spacer(minLength: 0)
                 HStack(spacing: 10) {
                     metric("DEBT", compactUsd(snapshot.totalDebtUsd))
+                    metric("APR", aprLabel(snapshot.weightedAprPct))
                     metric("EQUITY", compactUsd(snapshot.equityUsd), color: .ledgerTint)
                 }
             }
@@ -153,6 +157,7 @@ struct HomeWidgetView: View {
             // Totals row
             HStack(spacing: 10) {
                 metric("DEBT", compactUsd(snapshot.totalDebtUsd))
+                metric("APR", aprLabel(snapshot.weightedAprPct))
                 metric("COLLATERAL", compactUsd(snapshot.totalCollateralUsd))
                 metric("EQUITY", compactUsd(snapshot.equityUsd), color: .ledgerTint)
             }
@@ -202,7 +207,7 @@ struct HomeWidgetView: View {
                 Text(acct.label)
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(Color.ledgerFg)
-                Text("\(acct.loanCount) loan\(acct.loanCount == 1 ? "" : "s") · \(compactUsd(acct.debtUsd)) debt")
+                Text("\(acct.loanCount) loan\(acct.loanCount == 1 ? "" : "s") · \(compactUsd(acct.debtUsd)) · \(aprLabel(acct.weightedAprPct)) APR")
                     .font(.system(size: 10))
                     .foregroundStyle(Color.ledgerMuted)
             }

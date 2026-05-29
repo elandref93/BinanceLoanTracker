@@ -1,4 +1,5 @@
 - [pnpm packageManager pin vs Replit nix pnpm](pnpm-package-manager-pin.md) — pnpm pinned to an older version than the container ships SIGABRT-loops on every invocation; bump the pin to match.
+- [Apple Sign In backend env](apple-signin-backend-env.md) — /api/auth/apple 500s unless APPLE_BUNDLE_ID + SESSION_JWT_SECRET are set; fresh Replit dev env has neither. Check /api/healthz.
 - [WidgetKit snapshot staleness](widgetkit-snapshot-reload.md) — widgets drift unless you reloadAllTimelines after writing the App Group snapshot AND write a zeroed snapshot on empty responses.
 - [accountStore-derived state must subscribe](accountstore-derived-state.md) — ledger-mobile contexts caching accountStore data must subscribe() or container/account lists go stale within a session.
 - [Expo install vs minimumReleaseAge](expo-install-minimum-release-age.md) — new Expo SDK packages (+ @expo/* transitive deps) get blocked by the 24h pnpm gate; allowlist in minimumReleaseAgeExclude, never disable the gate.

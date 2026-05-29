@@ -148,7 +148,11 @@ export function useCurrency() {
 export function fmtMoney(usd: number, c: Currency, decimals = 2): string {
   const value = c === "USD" ? usd : usd * USD_ZAR_RATE;
   const symbol = c === "USD" ? "$" : "R ";
-  return `${symbol}${value.toLocaleString(undefined, { minimumFractionDigits: decimals, maximumFractionDigits: decimals })}`;
+  // Full amount with a non-breaking space as the thousands separator, e.g. "$817 716".
+  const formatted = value
+    .toLocaleString("en-US", { minimumFractionDigits: decimals, maximumFractionDigits: decimals })
+    .replace(/,/g, "\u00A0");
+  return `${symbol}${formatted}`;
 }
 
 export function CurrencyToggle() {

@@ -52,9 +52,9 @@ export function WidgetHomeLarge() {
                 </div>
               </div>
               <div className="mt-1.5"><LtvBar value={loan.ltv} target={D.targetLtv} liquidation={D.liquidationLtv} height={3} /></div>
-              <div className="flex justify-between mt-1 text-[9px] text-muted tabular">
-                <span>LTV {loan.ltv}%</span>
-                <span>APR {loan.apr}%</span>
+              <div className="flex justify-between mt-1 text-[10px] tabular">
+                <span className="text-muted">LTV {loan.ltv}%</span>
+                <span className="text-primary font-medium">APR {loan.apr}%</span>
               </div>
             </div>
           ))}

@@ -4,9 +4,14 @@ import { Platform } from "react-native";
 
 import { loadStoredSession } from "@/lib/session";
 import { checkAndNotifyLoans } from "@/lib/alerts";
+import { listContainers } from "@/lib/accountStore";
 import { recordLtvSample } from "@/lib/ltvHistory";
 import { recordLoanSnapshots } from "@/lib/loanSnapshots";
-import { buildSnapshot, writeWidgetSnapshot } from "@/lib/widgetSnapshot";
+import {
+  buildSnapshot,
+  writeWidgetSnapshot,
+  type AccountBreakdown,
+} from "@/lib/widgetSnapshot";
 import { DEFAULT_TARGET_LTV } from "@/utils/risk";
 
 // Must match app.json → infoPlist.BGTaskSchedulerPermittedIdentifiers.
@@ -17,6 +22,7 @@ const MIN_INTERVAL_SECONDS = 15 * 60;
 
 type LoanLite = {
   id: string;
+  accountId: string;
   apr: number;
   ltv: number;
   debtUsd: number;
@@ -36,7 +42,10 @@ async function runRefresh(): Promise<BackgroundFetch.BackgroundFetchResult> {
     const body = (await res.json()) as { loans?: LoanLite[] };
     const loans = body.loans ?? [];
     if (loans.length === 0) {
-      return BackgroundFetch.BackgroundFetchResult.NoData;
+      // No open loans: still refresh the widget so it zeroes out instead of
+      // showing stale debt/LTV from before the loans were closed.
+      await writeWidgetSnapshot(buildSnapshot([], DEFAULT_TARGET_LTV, []));
+      return BackgroundFetch.BackgroundFetchResult.NewData;
     }
     const totalDebt = loans.reduce((s, l) => s + l.debtUsd, 0);
     const totalCol = loans.reduce((s, l) => s + l.collateral.valueUsd, 0);
@@ -50,11 +59,38 @@ async function runRefresh(): Promise<BackgroundFetch.BackgroundFetchResult> {
         debtUsd: l.debtUsd,
       })),
     );
+    // Per-account (Personal / Trust container) breakdown for the large widget.
+    // The headless task can't read the RiskSettings context, so per-account
+    // targets fall back to the default; the foreground write (on every app
+    // open / refresh) carries the user-configured targets.
+    let accountBreakdown: AccountBreakdown[] = [];
+    try {
+      const containers = await listContainers();
+      accountBreakdown = containers.map((c) => {
+        const ids = new Set(c.links.map((l) => l.id));
+        const ls = loans.filter((l) => ids.has(l.accountId));
+        const debt = ls.reduce((s, l) => s + l.debtUsd, 0);
+        const col = ls.reduce((s, l) => s + l.collateral.valueUsd, 0);
+        return {
+          label: c.name,
+          type: c.type,
+          ltv: col > 0 ? (debt / col) * 100 : 0,
+          debtUsd: debt,
+          collateralUsd: col,
+          targetLtv: DEFAULT_TARGET_LTV,
+          loanCount: ls.length,
+        };
+      });
+    } catch {
+      // Best-effort: if the account store can't be read, ship aggregate-only.
+    }
     // The full Loan type is wider; the snapshot/alert helpers only use the
     // fields present here. Cast through unknown to placate the structural
     // check — bg-fetch keeps the JS bundle as cold-start small as possible.
     const fullLoans = loans as unknown as Parameters<typeof buildSnapshot>[0];
-    await writeWidgetSnapshot(buildSnapshot(fullLoans, DEFAULT_TARGET_LTV));
+    await writeWidgetSnapshot(
+      buildSnapshot(fullLoans, DEFAULT_TARGET_LTV, accountBreakdown),
+    );
     await checkAndNotifyLoans(fullLoans);
     return BackgroundFetch.BackgroundFetchResult.NewData;
   } catch {

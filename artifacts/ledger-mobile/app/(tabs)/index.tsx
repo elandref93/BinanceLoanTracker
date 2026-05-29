@@ -179,10 +179,13 @@ export default function DashboardScreen() {
   // Gate everything off `loansQ.data` (the live response), not `all` (which
   // falls back to cache).
   const freshLoans = loansQ.data?.loans;
+
+  // Alerts + history: only meaningful when there are open loans. Keyed to the
+  // fresh loan payload so changing risk/container metadata doesn't re-fire
+  // notifications or record duplicate history samples.
   useEffect(() => {
     if (!freshLoans || freshLoans.length === 0) return;
     void checkAndNotifyLoans(freshLoans);
-    void writeWidgetSnapshot(buildSnapshot(freshLoans, targetLtv));
     void recordLtvSample(aggLtv);
     void recordLoanSnapshots(
       freshLoans.map((l) => ({
@@ -192,7 +195,33 @@ export default function DashboardScreen() {
         debtUsd: l.debtUsd,
       })),
     );
-  }, [freshLoans, targetLtv, aggLtv]);
+  }, [freshLoans, aggLtv]);
+
+  // Widget snapshot: write on EVERY fresh network response, including an empty
+  // one (all loans closed) so the widget zeroes out instead of showing stale
+  // debt/LTV. Writing also pokes WidgetCenter to reload immediately.
+  useEffect(() => {
+    if (!freshLoans) return;
+    // Per-account (Personal / Trust container) breakdown for the large widget.
+    const accountBreakdown = containers.map((c) => {
+      const ids = new Set(c.links.map((l) => l.id));
+      const ls = freshLoans.filter((l) => ids.has(l.accountId));
+      const debt = ls.reduce((s, l) => s + l.debtUsd, 0);
+      const col = ls.reduce((s, l) => s + l.collateral.valueUsd, 0);
+      return {
+        label: c.name,
+        type: c.type,
+        ltv: col > 0 ? (debt / col) * 100 : 0,
+        debtUsd: debt,
+        collateralUsd: col,
+        targetLtv: targetForContainer(c.id) ?? targetLtv,
+        loanCount: ls.length,
+      };
+    });
+    void writeWidgetSnapshot(
+      buildSnapshot(freshLoans, targetLtv, accountBreakdown),
+    );
+  }, [freshLoans, targetLtv, containers, targetForContainer]);
 
   const refreshing = accountsQ.isFetching || loansQ.isFetching;
   const wasRefreshing = useRef(false);

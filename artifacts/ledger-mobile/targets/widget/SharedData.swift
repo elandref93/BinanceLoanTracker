@@ -7,15 +7,37 @@ import WidgetKit
 let kAppGroup = "group.com.ledger.shared"
 let kSnapshotKey = "ledger.snapshot.v1"
 
+/// Per-account (Personal / Trust container) rollup shown in the large widget.
+struct AccountSnapshot: Codable, Identifiable {
+    let label: String
+    let type: String
+    let ltv: Double
+    let debtUsd: Double
+    let collateralUsd: Double
+    let targetLtv: Double
+    let loanCount: Int
+
+    var id: String { label }
+
+    func status() -> RiskStatus {
+        if ltv >= 72 { return .danger }
+        if ltv >= targetLtv { return .warn }
+        return .ok
+    }
+}
+
 /// Snapshot the JS app writes into shared UserDefaults whenever loans refresh.
 struct LoanSnapshot: Codable {
     let aggregateLtv: Double         // 0..100
     let totalDebtUsd: Double
     let totalCollateralUsd: Double
+    let netEquityUsd: Double?        // collateral − debt; nil on pre-expansion snapshots
+    let loanCount: Int?              // number of open loans
     let closestAsset: String?        // collateral symbol of the worst loan
     let closestLtv: Double?          // its LTV
     let priceDropPctToLiq: Double?   // % drop in collateral price until 91% (Binance liquidation)
     let targetLtv: Double?           // user-configured headroom target; nil = use default
+    let accounts: [AccountSnapshot]? // per-container breakdown; nil on old snapshots
     let updatedAt: Date
 
     /// User-configured target LTV with a sane fallback for snapshots written
@@ -24,14 +46,28 @@ struct LoanSnapshot: Codable {
         return targetLtv ?? 65
     }
 
+    /// Collateral minus debt, falling back to a computed value for snapshots
+    /// written before the field existed.
+    var equityUsd: Double {
+        return netEquityUsd ?? (totalCollateralUsd - totalDebtUsd)
+    }
+
     static let placeholder = LoanSnapshot(
         aggregateLtv: 64.2,
         totalDebtUsd: 18_500,
         totalCollateralUsd: 28_800,
+        netEquityUsd: 10_300,
+        loanCount: 3,
         closestAsset: "BTC",
         closestLtv: 71.4,
         priceDropPctToLiq: 8.1,
         targetLtv: 65,
+        accounts: [
+            AccountSnapshot(label: "Personal", type: "personal", ltv: 61.2,
+                            debtUsd: 9_500, collateralUsd: 15_500, targetLtv: 65, loanCount: 2),
+            AccountSnapshot(label: "Trust", type: "trust", ltv: 67.8,
+                            debtUsd: 9_000, collateralUsd: 13_300, targetLtv: 65, loanCount: 1),
+        ],
         updatedAt: Date()
     )
 
@@ -76,6 +112,19 @@ struct LoanSnapshot: Codable {
         }
         return "Updated \(Int(s / 86400))d ago"
     }
+}
+
+/// Compact USD formatting for the cramped widget canvas: $9.5K, $1.2M, $940.
+func compactUsd(_ value: Double) -> String {
+    let v = abs(value)
+    let sign = value < 0 ? "-" : ""
+    if v >= 1_000_000 {
+        return String(format: "%@$%.1fM", sign, v / 1_000_000)
+    }
+    if v >= 1_000 {
+        return String(format: "%@$%.1fK", sign, v / 1_000)
+    }
+    return String(format: "%@$%.0f", sign, v)
 }
 
 enum RiskStatus {

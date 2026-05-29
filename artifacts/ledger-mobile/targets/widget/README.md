@@ -17,7 +17,9 @@ Expo app (JS)          App Group container          Widget extension (Swift)
                          key: "ledger.snapshot.v1"     HomeWidget / LockWidget
 ```
 
-The JS side calls `writeWidgetSnapshot(buildSnapshot(loans))` on the dashboard after each data refresh. In Expo Go it's a no-op. In a dev / TestFlight build it writes through `react-native-shared-group-preferences`.
+The JS side calls `writeWidgetSnapshot(buildSnapshot(loans, targetLtv, accounts))` on the dashboard after each data refresh. It writes through `ExtensionStorage` (from `@bacons/apple-targets`) into the shared App Group and then calls `ExtensionStorage.reloadWidget()`, which invokes `WidgetCenter.shared.reloadAllTimelines()` so the widget updates immediately instead of waiting for its own ~15-minute timeline tick. In Expo Go / on Android the native module is absent, so it's a safe no-op.
+
+The snapshot carries the aggregate LTV, total debt/collateral/equity, loan count, the loan closest to liquidation, and a per-account (Personal / Trust container) breakdown used by the large widget.
 
 ## Build integration (automated)
 

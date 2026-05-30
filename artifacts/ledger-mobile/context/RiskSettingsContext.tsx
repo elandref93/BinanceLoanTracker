@@ -13,6 +13,7 @@ import {
   subscribe,
   type StoredContainer,
 } from "@/lib/accountStore";
+import { pushSettings, subscribeSettings } from "@/lib/settingsStore";
 import { DEFAULT_TARGET_LTV, WARNING_LTV } from "@/utils/risk";
 
 interface RiskSettingsCtx {
@@ -53,7 +54,7 @@ export function RiskSettingsProvider({ children }: { children: React.ReactNode }
   const [overrides, setOverrides] = useState<Record<string, number>>({});
   const [containers, setContainers] = useState<StoredContainer[]>([]);
 
-  useEffect(() => {
+  const reloadSettings = useCallback(() => {
     AsyncStorage.getItem(KEY).then((v) => {
       const n = v ? Number(v) : NaN;
       if (Number.isFinite(n) && n >= MIN_TARGET_LTV && n <= MAX_TARGET_LTV) {
@@ -70,6 +71,13 @@ export function RiskSettingsProvider({ children }: { children: React.ReactNode }
       }
     });
   }, []);
+
+  // Load on mount AND whenever a remote settings hydrate replaces local
+  // storage, so a second device reflects the synced targets.
+  useEffect(() => {
+    reloadSettings();
+    return subscribeSettings(reloadSettings);
+  }, [reloadSettings]);
 
   const refreshContainers = useCallback(async () => {
     setContainers(await listContainers());
@@ -88,14 +96,18 @@ export function RiskSettingsProvider({ children }: { children: React.ReactNode }
   const setTargetLtv = useCallback((n: number) => {
     const clamped = clampTarget(n);
     setLocal(clamped);
-    AsyncStorage.setItem(KEY, String(clamped));
+    AsyncStorage.setItem(KEY, String(clamped)).then(() => {
+      void pushSettings();
+    });
   }, []);
 
   const setTargetForContainer = useCallback((containerId: string, n: number) => {
     const clamped = clampTarget(n);
     setOverrides((prev) => {
       const next = { ...prev, [containerId]: clamped };
-      AsyncStorage.setItem(OVERRIDES_KEY, JSON.stringify(next));
+      AsyncStorage.setItem(OVERRIDES_KEY, JSON.stringify(next)).then(() => {
+        void pushSettings();
+      });
       return next;
     });
   }, []);

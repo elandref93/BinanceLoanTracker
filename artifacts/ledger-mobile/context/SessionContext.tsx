@@ -17,6 +17,8 @@ import {
 } from "@/lib/session";
 import { hydrateFromServer } from "@/lib/accountStore";
 import { setSyncTokenGetter } from "@/lib/accountSync";
+import { hydrateSettings } from "@/lib/settingsStore";
+import { setSettingsTokenGetter } from "@/lib/settingsSync";
 import { checkAndApplyUpdate } from "@/lib/otaUpdates";
 
 interface SessionContextValue {
@@ -73,11 +75,14 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   // signed-in user changes (sign-in, sign-out, or initial hydrate).
   useEffect(() => {
     setSyncTokenGetter(getToken);
+    setSettingsTokenGetter(getToken);
     if (session) {
       void hydrateFromServer();
+      void hydrateSettings();
     }
     return () => {
       setSyncTokenGetter(null);
+      setSettingsTokenGetter(null);
     };
   }, [session, getToken]);
 

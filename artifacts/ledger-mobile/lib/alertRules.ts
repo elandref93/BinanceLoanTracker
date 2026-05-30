@@ -1,5 +1,7 @@
 import * as SecureStore from "expo-secure-store";
 
+import { pushSettings } from "./settingsStore";
+
 const KEY = "ledger.alertRules.v1";
 const SEEDED_KEY = "ledger.alertRules.seeded.v1";
 
@@ -46,6 +48,9 @@ export async function listAlertRules(): Promise<AlertRule[]> {
 
 async function writeRules(rules: AlertRule[]): Promise<void> {
   await SecureStore.setItemAsync(KEY, JSON.stringify(rules));
+  // Sync the updated rule set to other devices. Fire-and-forget — a failed
+  // push is reconciled by the next push or sign-in hydrate.
+  void pushSettings();
 }
 
 export async function upsertAlertRule(rule: AlertRule): Promise<AlertRule[]> {

@@ -47,12 +47,14 @@ The api-server needs these at runtime:
 ```bash
 az webapp config appsettings set -g $RG -n $APP --settings \
   WEBSITES_PORT=8080 \
+  WEBSITES_ENABLE_APP_SERVICE_STORAGE=true \
   APPLE_BUNDLE_ID='com.ubuntu.life.ledger' \
   SESSION_JWT_SECRET="$(openssl rand -hex 32)" \
   NODE_ENV=production
 ```
 
 - `WEBSITES_PORT=8080` tells Azure which port the container listens on (matches `EXPOSE 8080` in the Dockerfile; the app reads `PORT` which Azure sets to 8080 by default for Linux containers).
+- `WEBSITES_ENABLE_APP_SERVICE_STORAGE=true` is **required for cross-device sync to work**. The api-server persists each user's synced accounts and settings to disk under `/home/data/account_sync`. On Azure Linux containers the filesystem is otherwise **ephemeral** — wiped on every restart/redeploy — so without this setting a second device (e.g. iPad) signing into the same Apple ID would pull an empty list. `/home` is the only path Azure persists, and only when this flag is on. The app auto-targets `/home/data/account_sync` when it detects it's running on Azure (`WEBSITE_INSTANCE_ID`); override the location with `ACCOUNT_SYNC_DIR` if needed.
 - `APPLE_BUNDLE_ID` must exactly match the `bundleIdentifier` in `artifacts/ledger-mobile/app.json`. Apple sets the `aud` claim of every identity token to the requesting app's bundle ID, and the backend rejects any token whose `aud` doesn't match this env.
 - `SESSION_JWT_SECRET` is the HMAC key used to sign session JWTs. Must be at least 32 characters of high-entropy randomness. **Never** commit it; **never** reuse the value from another environment. Rotating it invalidates every in-flight session and forces users to sign in again — which is the right behaviour after a suspected leak.
 

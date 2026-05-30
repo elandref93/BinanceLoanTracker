@@ -1,4 +1,5 @@
 - [pnpm packageManager pin vs Replit nix pnpm](pnpm-package-manager-pin.md) — pnpm pinned to an older version than the container ships SIGABRT-loops on every invocation; bump the pin to match.
+- [Azure container ephemeral storage](azure-container-ephemeral-storage.md) — api-server disk is wiped on restart; per-user sync blobs must live under /home with WEBSITES_ENABLE_APP_SERVICE_STORAGE=true.
 - [external_url screenshot caching](external-url-screenshot-cache.md) — pixel-identical screenshots after a code fix mean a cached capture; append `?v=N` to force a fresh render.
 - [TestFlight builds firing by themselves](testflight-run-button-autobuild.md) — the "Project" run button runs all workflow.run children on every start; never put eas build / deploy commands there. configureWorkflow always adds to "Project".
 - [Apple Sign In backend env](apple-signin-backend-env.md) — /api/auth/apple 500s unless APPLE_BUNDLE_ID + SESSION_JWT_SECRET are set; fresh Replit dev env has neither. Check /api/healthz.

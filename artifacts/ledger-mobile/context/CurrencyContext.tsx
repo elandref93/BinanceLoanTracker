@@ -8,6 +8,8 @@ import React, {
   useState,
 } from "react";
 
+import { pushSettings, subscribeSettings } from "@/lib/settingsStore";
+
 export type Currency = "USD" | "ZAR";
 
 interface CurrencyCtx {
@@ -22,15 +24,24 @@ const KEY = "ledger.currency";
 export function CurrencyProvider({ children }: { children: React.ReactNode }) {
   const [currency, setCurrency] = useState<Currency>("USD");
 
-  useEffect(() => {
+  const reload = useCallback(() => {
     AsyncStorage.getItem(KEY).then((v) => {
       if (v === "USD" || v === "ZAR") setCurrency(v);
     });
   }, []);
 
+  // Load on mount AND whenever a remote settings hydrate replaces local
+  // storage, so a second device reflects the synced currency.
+  useEffect(() => {
+    reload();
+    return subscribeSettings(reload);
+  }, [reload]);
+
   const set = useCallback((c: Currency) => {
     setCurrency(c);
-    AsyncStorage.setItem(KEY, c);
+    AsyncStorage.setItem(KEY, c).then(() => {
+      void pushSettings();
+    });
   }, []);
 
   const toggle = useCallback(() => {

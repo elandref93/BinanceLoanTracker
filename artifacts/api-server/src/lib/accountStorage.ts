@@ -7,45 +7,68 @@ import { logger } from "./logger";
 // and the user *is* the only reader. We store the raw JSON blob the mobile app
 // sends. Filename is sha256(sub) so we never write a user identifier (which
 // could contain unexpected characters) onto the filesystem.
+//
+// Persistence: Azure App Service Linux *containers* have an ephemeral
+// filesystem — anything written under the app dir is wiped on every restart
+// or redeploy, which silently destroyed cross-device sync (a second device
+// would pull and get 404). Azure persists ONLY `/home`, and only when the app
+// setting WEBSITES_ENABLE_APP_SERVICE_STORAGE=true. So when we detect we're on
+// Azure (WEBSITE_INSTANCE_ID is injected there) we default the data dir under
+// `/home`. An explicit ACCOUNT_SYNC_DIR always wins. See AZURE.md.
 
-const DATA_DIR =
-  process.env.ACCOUNT_SYNC_DIR ?? path.resolve(process.cwd(), "data", "account_sync");
+function resolveDataDir(): string {
+  if (process.env.ACCOUNT_SYNC_DIR) return process.env.ACCOUNT_SYNC_DIR;
+  if (process.env.WEBSITE_INSTANCE_ID) {
+    return "/home/data/account_sync";
+  }
+  return path.resolve(process.cwd(), "data", "account_sync");
+}
 
-export type SyncBlob = {
-  /** ISO timestamp of the writing device's last local mutation. */
-  updatedAt: string;
-  /** Opaque payload — the mobile app owns this shape. */
-  containers: unknown;
-};
+const DATA_DIR = resolveDataDir();
 
-function fileFor(sub: string): string {
+/** Distinct per-user blobs. Each maps to its own file so they sync independently. */
+export type SyncKind = "accounts" | "settings";
+
+export type StoredRecord = { updatedAt: string } & Record<string, unknown>;
+
+function fileFor(sub: string, kind: SyncKind): string {
   const hash = crypto.createHash("sha256").update(sub).digest("hex");
-  return path.join(DATA_DIR, `${hash}.json`);
+  // "accounts" keeps the original bare filename for backwards compatibility
+  // with blobs already on disk; other kinds get a suffix.
+  const name = kind === "accounts" ? `${hash}.json` : `${hash}.${kind}.json`;
+  return path.join(DATA_DIR, name);
 }
 
 async function ensureDir(): Promise<void> {
   await fs.mkdir(DATA_DIR, { recursive: true });
 }
 
-export async function readSyncBlob(sub: string): Promise<SyncBlob | null> {
+export async function readRecord(
+  sub: string,
+  kind: SyncKind,
+): Promise<StoredRecord | null> {
   try {
-    const raw = await fs.readFile(fileFor(sub), "utf8");
-    const parsed = JSON.parse(raw) as SyncBlob;
+    const raw = await fs.readFile(fileFor(sub, kind), "utf8");
+    const parsed = JSON.parse(raw) as StoredRecord;
     if (typeof parsed?.updatedAt !== "string") return null;
     return parsed;
   } catch (err) {
     const code = (err as NodeJS.ErrnoException).code;
     if (code === "ENOENT") return null;
-    logger.warn({ err, code }, "accountStorage: read failed");
+    logger.warn({ err, code, kind }, "accountStorage: read failed");
     return null;
   }
 }
 
-export async function writeSyncBlob(sub: string, blob: SyncBlob): Promise<void> {
+export async function writeRecord(
+  sub: string,
+  kind: SyncKind,
+  rec: StoredRecord,
+): Promise<void> {
   await ensureDir();
-  const target = fileFor(sub);
+  const target = fileFor(sub, kind);
   const tmp = `${target}.${crypto.randomBytes(6).toString("hex")}.tmp`;
-  const body = JSON.stringify(blob);
+  const body = JSON.stringify(rec);
   await fs.writeFile(tmp, body, { encoding: "utf8", mode: 0o600 });
   await fs.rename(tmp, target);
 }

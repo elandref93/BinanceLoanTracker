@@ -18,7 +18,13 @@ error) when its required env vars are missing. Two vars gate a successful login:
 **Why this bites:** a fresh Replit dev environment for this project has NO env vars set
 (only DB/Clerk/Replit-managed secrets exist by default). Production runs on Azure with
 its own env (see `artifacts/api-server/AZURE.md`), so the Replit dev backend needs these
-set separately as `shared` env vars.
+set separately.
+
+**Storage rule (security):** `SESSION_JWT_SECRET` must live in **Replit Secrets** (global,
+never committed), NOT as a `[userenv.shared]` entry in `.replit` — that file is committed to
+source control, so a JWT key placed there leaks in plaintext + git history. `APPLE_BUNDLE_ID`
+is non-sensitive and fine as a shared env var. Rule of thumb: signing keys / tokens / passwords
+→ Secrets (`requestEnvVar`, user enters value); non-sensitive config → `setEnvVars` shared.
 
 **Fast diagnosis:** `curl https://$REPLIT_DEV_DOMAIN/api/healthz` — the health route
 lists exactly these missing vars (503 "degraded" with a `missing` array) when unset,

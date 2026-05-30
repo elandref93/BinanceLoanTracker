@@ -31,16 +31,22 @@ import { useListAccounts, useListLoans } from "@workspace/api-client-react";
 export default function AlertRuleScreen() {
   const colors = useColors();
   const router = useRouter();
-  const { id, loanId: presetLoanId } = useLocalSearchParams<{
-    id?: string;
-    loanId?: string;
-  }>();
+  const { id, loanId: presetLoanId, containerId: presetContainerId } =
+    useLocalSearchParams<{
+      id?: string;
+      loanId?: string;
+      containerId?: string;
+    }>();
   const isEdit = Boolean(id);
 
   const [ltvStr, setLtvStr] = useState("70");
   const [label, setLabel] = useState("");
   const [scope, setScope] = useState<AlertScope>(
-    presetLoanId ? { loanId: presetLoanId } : "any",
+    presetLoanId
+      ? { loanId: presetLoanId }
+      : presetContainerId
+        ? { containerId: presetContainerId }
+        : "any",
   );
   const [busy, setBusy] = useState(false);
 

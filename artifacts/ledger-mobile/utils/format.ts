@@ -1,3 +1,18 @@
+/**
+ * Format a number with a regular space as the thousands separator and a dot
+ * as the decimal point — e.g. 1315000 → "1 315 000", 1234.5 → "1 234.50".
+ * We do the grouping by hand instead of relying on a locale: Hermes' Intl is
+ * inconsistent across iOS versions and some locales emit a narrow no-break
+ * space that renders oddly. A plain space is predictable everywhere.
+ */
+function groupWithSpaces(value: number, dp: number): string {
+  const sign = value < 0 ? "-" : "";
+  const fixed = Math.abs(value).toFixed(dp);
+  const [intPart, frac] = fixed.split(".");
+  const grouped = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, " ");
+  return `${sign}${grouped}${frac ? `.${frac}` : ""}`;
+}
+
 export function fmtUsd(
   value: number,
   opts: { compact?: boolean; whole?: boolean } = {},
@@ -6,10 +21,7 @@ export function fmtUsd(
     return `$${(value / 1000).toFixed(1)}k`;
   }
   const dp = opts.whole ? 0 : 2;
-  return `$${value.toLocaleString("en-US", {
-    minimumFractionDigits: dp,
-    maximumFractionDigits: dp,
-  })}`;
+  return `$${groupWithSpaces(value, dp)}`;
 }
 
 export function fmtPct(value: number, dp = 1): string {
@@ -44,10 +56,7 @@ export function fmtMoney(
     return `R${(zar / 1000).toFixed(1)}k`;
   }
   const dp = opts.whole ? 0 : 2;
-  return `R${zar.toLocaleString("en-ZA", {
-    minimumFractionDigits: dp,
-    maximumFractionDigits: dp,
-  })}`;
+  return `R${groupWithSpaces(zar, dp)}`;
 }
 
 /**
@@ -73,7 +82,5 @@ export function fmtCompactMoney(
   if (abs >= 1_000_000_000) return fmt(abs / 1_000_000_000, "B");
   if (abs >= 1_000_000) return fmt(abs / 1_000_000, "M");
   if (abs >= 1_000) return fmt(abs / 1_000, "K");
-  return `${sign}${symbol}${Math.round(abs).toLocaleString(
-    currency === "USD" ? "en-US" : "en-ZA",
-  )}`;
+  return `${sign}${symbol}${groupWithSpaces(Math.round(abs), 0)}`;
 }

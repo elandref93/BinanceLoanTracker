@@ -282,7 +282,6 @@ export default function AssetDetailScreen() {
               </View>
               <Sparkline
                 values={btcSeries}
-                width={320}
                 height={48}
                 reference={btcSeries[0]}
               />

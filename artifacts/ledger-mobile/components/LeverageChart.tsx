@@ -1,8 +1,20 @@
-import { View } from "react-native";
+import { useState } from "react";
+import {
+  type GestureResponderEvent,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import Svg, { Circle, Defs, Line, LinearGradient, Polygon, Polyline, Stop } from "react-native-svg";
 
 import { useColors } from "@/hooks/useColors";
 import type { Snap } from "@/lib/leverageSim";
+
+function fmtNet(n: number): string {
+  if (n >= 1_000_000) return `R ${(n / 1_000_000).toFixed(2)}M`;
+  if (n >= 1_000) return `R ${(n / 1_000).toFixed(0)}k`;
+  return `R ${Math.round(n)}`;
+}
 
 interface Props {
   snapsA: Snap[];
@@ -25,6 +37,7 @@ interface Props {
  */
 export function LeverageChart({ snapsA, snapsB, width, height = 180, years, marker }: Props) {
   const colors = useColors();
+  const [active, setActive] = useState<number | null>(null);
   if (snapsA.length < 2 || snapsB.length < 2) return null;
 
   const cMax = Math.max(
@@ -48,8 +61,26 @@ export function LeverageChart({ snapsA, snapsB, width, height = 180, years, mark
   const colorA = colors.primary;
   const colorB = "#7c6aef";
 
+  const onScrub = (e: GestureResponderEvent) => {
+    const x = e.nativeEvent.locationX;
+    const idx = Math.max(0, Math.min(n - 1, Math.round(x / Math.max(1, stepX))));
+    setActive(idx);
+  };
+
+  const aPt = active != null ? snapsA[active] : null;
+  const bPt = active != null ? snapsB[active] : null;
+  const ax = active != null ? active * stepX : 0;
+
   return (
-    <View>
+    <View
+      style={{ width: innerW }}
+      onStartShouldSetResponder={() => true}
+      onMoveShouldSetResponder={() => true}
+      onResponderGrant={onScrub}
+      onResponderMove={onScrub}
+      onResponderRelease={() => setActive(null)}
+      onResponderTerminate={() => setActive(null)}
+    >
       <Svg width={innerW} height={innerH}>
         <Defs>
           <LinearGradient id="gA" x1="0" y1="0" x2="0" y2="1">
@@ -119,7 +150,48 @@ export function LeverageChart({ snapsA, snapsB, width, height = 180, years, mark
             </>
           );
         })() : null}
+
+        {aPt && bPt ? (
+          <>
+            <Line x1={ax} x2={ax} y1={0} y2={innerH} stroke={colors.foreground} strokeDasharray="2,3" strokeWidth={1} opacity={0.5} />
+            <Circle cx={ax} cy={innerH - (aPt.net / cMax) * (innerH - 4)} r={4} fill={colors.background} stroke={colorA} strokeWidth={2} />
+            <Circle cx={ax} cy={innerH - (bPt.net / cMax) * (innerH - 4)} r={4} fill={colors.background} stroke={colorB} strokeWidth={2} />
+          </>
+        ) : null}
       </Svg>
+      {aPt && bPt ? (
+        <View style={styles.readout}>
+          <Text style={[styles.readoutText, { color: colorA }]}>
+            A {fmtNet(aPt.net)}
+          </Text>
+          <Text style={[styles.readoutMeta, { color: colors.mutedForeground }]}>
+            {(aPt.month / 12).toFixed(1)}y
+          </Text>
+          <Text style={[styles.readoutText, { color: colorB }]}>
+            B {fmtNet(bPt.net)}
+          </Text>
+        </View>
+      ) : null}
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  readout: {
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    gap: 10,
+    marginTop: 4,
+  },
+  readoutText: {
+    fontSize: 11,
+    fontFamily: "Inter_600SemiBold",
+    fontVariant: ["tabular-nums"],
+  },
+  readoutMeta: {
+    fontSize: 10,
+    fontFamily: "Inter_500Medium",
+    fontVariant: ["tabular-nums"],
+  },
+});

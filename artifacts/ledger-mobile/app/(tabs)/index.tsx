@@ -458,7 +458,7 @@ export default function DashboardScreen() {
             value={fmtMoney(
               overTarget ? totalShortfall : totalHeadroom,
               currency,
-              { compact: true },
+              { whole: true },
             )}
             hint={overTarget ? "add collateral" : "buffer"}
             tone={overTarget ? "warn" : "ok"}
@@ -467,7 +467,7 @@ export default function DashboardScreen() {
         ) : (
           <Tile
             label="Collateral"
-            value={fmtMoney(totalColUsd, currency, { compact: true })}
+            value={fmtMoney(totalColUsd, currency, { whole: true })}
             hint="total value"
             style={{ flex: 1 }}
           />
@@ -584,7 +584,7 @@ function LunoReadyToDeployTile({
         >
           {btc.toFixed(8)} BTC
           {fiat > 0
-            ? `  ·  ≈ ${fmtMoney(fiat, currency, { compact: true })}`
+            ? `  ·  ≈ ${fmtMoney(fiat, currency, { whole: true })}`
             : ""}
         </Text>
       </View>

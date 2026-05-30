@@ -279,7 +279,6 @@ export default function CryptoScreen() {
             </View>
             <Sparkline
               values={history.map((s) => s.fiat)}
-              width={320}
               height={48}
               reference={history[0].fiat}
             />

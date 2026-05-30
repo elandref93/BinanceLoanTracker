@@ -156,7 +156,18 @@ export default function LoanDetailScreen() {
   const liqPrice = priceAtLtv(loan, LIQ_LTV);
   const warnDrop = priceDropPctTo(loan, WARNING_LTV);
   const liqDrop = priceDropPctTo(loan, LIQ_LTV);
-  const hourly = loan.debt * loan.hourlyInterestRate;
+  // Binance sometimes returns a 0/absent hourly rate even when the loan's APR
+  // is known (the two ship on different endpoints). Derive the hourly rate
+  // from the reliable APR in that case so the "Hourly rate" row and the
+  // debt-growth projections never collapse to a misleading 0.
+  const HOURS_PER_YEAR = 365 * 24;
+  const effectiveHourlyRate =
+    loan.hourlyInterestRate > 0
+      ? loan.hourlyInterestRate
+      : loan.apr > 0
+        ? loan.apr / 100 / HOURS_PER_YEAR
+        : 0;
+  const hourly = loan.debt * effectiveHourlyRate;
   const daily = hourly * 24;
 
   const byLoan = interestQ.data?.byLoan.find((b) => b.loanId === loan.id);
@@ -265,7 +276,6 @@ export default function LoanDetailScreen() {
           <View style={{ marginVertical: 4 }}>
             <Sparkline
               values={sparkValues}
-              width={300}
               height={48}
               reference={avg30}
             />
@@ -292,7 +302,11 @@ export default function LoanDetailScreen() {
             Building rate history locally — 30d stats appear after a few refreshes.
           </Text>
         )}
-        <Row label="Hourly rate" value={`${(loan.hourlyInterestRate * 100).toFixed(5)}%`} />
+        <Row
+          label="Hourly rate"
+          value={`${(effectiveHourlyRate * 100).toFixed(5)}%`}
+        />
+        <Row label="Hourly interest" value={fmtMoney(hourly, currency)} />
       </Card>
 
       <Card title="Drop simulator">

@@ -90,6 +90,14 @@ export default function RootLayout() {
                         options={{ headerShown: false }}
                       />
                       <Stack.Screen
+                        name="accounts"
+                        options={{ title: "Accounts", presentation: "card" }}
+                      />
+                      <Stack.Screen
+                        name="account/[id]"
+                        options={{ title: "Account", presentation: "card" }}
+                      />
+                      <Stack.Screen
                         name="loan/[id]"
                         options={{ title: "Loan", presentation: "card" }}
                       />

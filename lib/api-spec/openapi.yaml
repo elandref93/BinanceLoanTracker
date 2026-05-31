@@ -141,6 +141,53 @@ paths:
                       $ref: "#/components/schemas/InterestRow"
                 required: [totalUsd, weightedApr, projected30dUsd, byLoan, byAsset, rows]
 
+  /rate-history:
+    get:
+      operationId: getRateHistory
+      tags: [binance]
+      summary: Historical interest-rate series for a single loan
+      description: >
+        Real per-day APR for MARGIN loans (cross + isolated), derived from
+        Binance's per-accrual margin interest history. Crypto loans (flexible /
+        fixed) have no rate-history endpoint, so `source` is `flat` and the
+        series repeats the current APR.
+      parameters:
+        - in: query
+          name: loanId
+          required: true
+          schema: { type: string }
+        - in: query
+          name: days
+          required: false
+          description: Look-back window in days
+          schema: { type: integer, enum: [30, 90], default: 30 }
+      responses:
+        "200":
+          description: Rate history
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RateHistoryResponse"
+
+  /holdings:
+    get:
+      operationId: listHoldings
+      tags: [binance]
+      summary: Unified per-asset Binance holdings across spot, funding & collateral
+      description: >
+        Per-asset Binance balances merged across all linked accounts. Each
+        asset splits its quantity into `spot` (free + locked spot wallet),
+        `funding` (funding/earn wallet) and `collateral` (cross + isolated
+        margin wallet balances plus crypto-loan collateral). `byAccount`
+        preserves the per-account breakdown for the asset detail view.
+      responses:
+        "200":
+          description: Holdings list (highest USD value first)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HoldingsResponse"
+
   /luno/wallets:
     get:
       operationId: listLunoWallets
@@ -365,6 +412,72 @@ components:
         ts: { type: string, format: date-time }
         apr: { type: number, description: APR % at that timestamp }
       required: [ts, apr]
+
+    RateHistoryResponse:
+      type: object
+      properties:
+        loanId: { type: string }
+        days: { type: integer }
+        source:
+          type: string
+          enum: [margin, flat]
+          description: >-
+            margin = real per-accrual rates from Binance margin interest
+            history; flat = current APR repeated (crypto loans have no
+            rate-history endpoint).
+        points:
+          type: array
+          items:
+            $ref: "#/components/schemas/RatePoint"
+        avg30dApr: { type: number }
+        min30dApr: { type: number }
+        max30dApr: { type: number }
+      required:
+        - loanId
+        - days
+        - source
+        - points
+        - avg30dApr
+        - min30dApr
+        - max30dApr
+
+    HoldingByAccount:
+      type: object
+      properties:
+        accountId: { type: string }
+        accountName: { type: string }
+        spot: { type: number }
+        funding: { type: number }
+        collateral: { type: number }
+        total: { type: number }
+      required: [accountId, accountName, spot, funding, collateral, total]
+
+    Holding:
+      type: object
+      properties:
+        asset: { type: string }
+        spot: { type: number, description: Free + locked spot balance }
+        funding: { type: number, description: Funding/earn wallet balance }
+        collateral:
+          type: number
+          description: Margin wallet balances + crypto-loan collateral
+        total: { type: number }
+        usd: { type: number, description: total valued at current spot price }
+        byAccount:
+          type: array
+          items:
+            $ref: "#/components/schemas/HoldingByAccount"
+      required: [asset, spot, funding, collateral, total, usd, byAccount]
+
+    HoldingsResponse:
+      type: object
+      properties:
+        asOf: { type: string, format: date-time }
+        holdings:
+          type: array
+          items:
+            $ref: "#/components/schemas/Holding"
+      required: [asOf, holdings]
 
     InterestByLoan:
       type: object

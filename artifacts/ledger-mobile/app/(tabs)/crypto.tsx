@@ -30,12 +30,23 @@ import { fmtMoney } from "@/utils/format";
 
 import {
   useGetLunoTickers,
+  useGetPrices,
+  useListHoldings,
   useListLunoPending,
   useListLunoTransactions,
   useListLunoWallets,
+  type Holding,
   type LunoTransaction,
   type LunoWallet,
 } from "@workspace/api-client-react";
+
+type MergedHolding = {
+  symbol: string;
+  binance?: Holding;
+  binanceQty: number;
+  lunoQty: number;
+  usd: number;
+};
 
 function fmtCrypto(n: number, asset: string): string {
   const sym = displayAsset(asset);
@@ -62,10 +73,12 @@ export default function CryptoScreen() {
   const walletsQ = useListLunoWallets();
   const pendingQ = useListLunoPending();
   const txQ = useListLunoTransactions({ limit: 30 });
+  const holdingsQ = useListHoldings();
 
   const wallets = walletsQ.data?.wallets ?? [];
   const transactions = txQ.data?.transactions ?? [];
   const pending = pendingQ.data?.withdrawals ?? [];
+  const binanceHoldings = holdingsQ.data?.holdings ?? [];
 
   // Pair coverage: derive the set of pairs we need to quote from the
   // assets the user actually holds, against their display currency.
@@ -105,6 +118,72 @@ export default function CryptoScreen() {
   const btcReadyFiat = perAssetFiat.get("XBT") ?? 0;
   const zarCashFiat = perAssetFiat.get("ZAR") ?? 0;
 
+  // Unified holdings: merge Binance (spot + funding + collateral, valued
+  // server-side in USD) with Luno per asset. Luno is valued in USD via
+  // Binance spot prices so the two exchanges share one denominator —
+  // crypto's natural currency. Pure-fiat cash (ZAR) is excluded; it lives
+  // in the Luno cash tile above. Stablecoins count at $1.
+  const lunoCryptoSymbols = useMemo(() => {
+    const s = new Set<string>();
+    for (const [asset] of grouped) {
+      const sym = displayAsset(asset);
+      if (sym === "ZAR" || sym === currency) continue;
+      if (sym === "USDT" || sym === "USDC" || sym === "USD") continue;
+      s.add(sym);
+    }
+    return Array.from(s);
+  }, [grouped, currency]);
+
+  const pricesQ = useGetPrices(
+    { assets: lunoCryptoSymbols.join(",") },
+    { query: { enabled: lunoCryptoSymbols.length > 0 } as never },
+  );
+  const usdPriceMap = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const p of pricesQ.data?.prices ?? []) m.set(p.asset.toUpperCase(), p.usd);
+    return m;
+  }, [pricesQ.data]);
+
+  const merged = useMemo<MergedHolding[]>(() => {
+    const map = new Map<string, MergedHolding>();
+    for (const h of binanceHoldings) {
+      const sym = h.asset.toUpperCase();
+      map.set(sym, {
+        symbol: sym,
+        binance: h,
+        binanceQty: h.total,
+        lunoQty: 0,
+        usd: h.usd,
+      });
+    }
+    for (const [asset, agg] of grouped) {
+      const sym = displayAsset(asset);
+      if (sym === "ZAR" || sym === currency) continue;
+      const qty = agg.totalBalance + agg.totalReserved;
+      if (qty <= 0) continue;
+      const usd =
+        sym === "USDT" || sym === "USDC" || sym === "USD"
+          ? qty
+          : qty * (usdPriceMap.get(sym) ?? 0);
+      const ex = map.get(sym);
+      if (ex) {
+        ex.lunoQty += qty;
+        ex.usd += usd;
+      } else {
+        map.set(sym, { symbol: sym, binanceQty: 0, lunoQty: qty, usd });
+      }
+    }
+    return Array.from(map.values())
+      .filter((m) => m.binanceQty > 0 || m.lunoQty > 0)
+      .sort((a, b) => b.usd - a.usd);
+  }, [binanceHoldings, grouped, usdPriceMap, currency]);
+
+  const combinedUsd = useMemo(
+    () => merged.reduce((s, m) => s + m.usd, 0),
+    [merged],
+  );
+  const hasBinance = binanceHoldings.length > 0;
+
   // Record a history sample on every fresh, successful render where we
   // actually have a usable fiat figure. Skipping when totalFiat=0
   // prevents a spurious "zero" sample landing during a cold start while
@@ -136,20 +215,26 @@ export default function CryptoScreen() {
       pendingQ.refetch(),
       txQ.refetch(),
       tickersQ.refetch(),
-    ]).then(([w, p, t, k]) => {
-      if (w.isError || p.isError || t.isError || k.isError) haptic.error();
+      holdingsQ.refetch(),
+      pricesQ.refetch(),
+    ]).then((res) => {
+      if (res.some((r) => r.isError)) haptic.error();
       else haptic.success();
     });
   };
 
   const loading =
-    walletsQ.isLoading && pendingQ.isLoading && txQ.isLoading && tickersQ.isLoading;
+    walletsQ.isLoading &&
+    pendingQ.isLoading &&
+    txQ.isLoading &&
+    tickersQ.isLoading &&
+    holdingsQ.isLoading;
   const allError =
     walletsQ.isError && pendingQ.isError && txQ.isError && tickersQ.isError;
 
-  if (loading) return <ScreenLoader hint="Reading Luno…" />;
-  if (allError && wallets.length === 0) {
-    return <ErrorView message="Couldn't reach Luno. Pull to retry." />;
+  if (loading) return <ScreenLoader hint="Reading exchanges…" />;
+  if (allError && wallets.length === 0 && !hasBinance) {
+    return <ErrorView message="Couldn't reach your exchanges. Pull to retry." />;
   }
 
   const noLunoLinked = !walletsQ.isLoading && wallets.length === 0 && !walletsQ.isError;
@@ -356,12 +441,21 @@ export default function CryptoScreen() {
           </View>
         ) : null}
 
-        {/* Wallets */}
-        {wallets.length > 0 ? (
+        {/* Unified holdings — Binance + Luno merged per asset, valued in USD */}
+        {merged.length > 0 ? (
           <View style={{ gap: 8 }}>
-            <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>
-              WALLETS
-            </Text>
+            <View style={styles.sparkHeader}>
+              <Text
+                style={[styles.sectionLabel, { color: colors.mutedForeground }]}
+              >
+                HOLDINGS · BINANCE + LUNO
+              </Text>
+              {combinedUsd > 0 ? (
+                <Text style={[styles.sparkDelta, { color: colors.foreground }]}>
+                  {fmtMoney(combinedUsd, "USD")}
+                </Text>
+              ) : null}
+            </View>
             <View
               style={[
                 styles.card,
@@ -372,24 +466,22 @@ export default function CryptoScreen() {
                 },
               ]}
             >
-              {wallets
-                .filter((w) => w.balance > 0 || w.reserved > 0 || w.unconfirmed > 0)
-                .map((w, i) => (
-                  <View key={`${w.walletId}_${w.accountId}`}>
-                    {i > 0 ? (
-                      <View
-                        style={[styles.divider, { backgroundColor: colors.border }]}
-                      />
-                    ) : null}
-                    <WalletRow
-                      w={w}
-                      onPress={() => {
-                        haptic.tap();
-                        router.push(`/crypto/${displayAsset(w.asset)}`);
-                      }}
+              {merged.map((m, i) => (
+                <View key={m.symbol}>
+                  {i > 0 ? (
+                    <View
+                      style={[styles.divider, { backgroundColor: colors.border }]}
                     />
-                  </View>
-                ))}
+                  ) : null}
+                  <HoldingRow
+                    m={m}
+                    onPress={() => {
+                      haptic.tap();
+                      router.push(`/crypto/${m.symbol}`);
+                    }}
+                  />
+                </View>
+              ))}
             </View>
           </View>
         ) : null}
@@ -434,34 +526,62 @@ export default function CryptoScreen() {
   );
 }
 
-function WalletRow({
-  w,
+function HoldingRow({
+  m,
   onPress,
 }: {
-  w: LunoWallet;
+  m: MergedHolding;
   onPress?: () => void;
 }) {
   const colors = useColors();
+  const totalQty = m.binanceQty + m.lunoQty;
   return (
     <Pressable
       onPress={onPress}
       style={({ pressed }) => [styles.txRow, { opacity: pressed ? 0.6 : 1 }]}
     >
-      <AssetIcon asset={w.asset} size={32} />
-      <View style={{ flex: 1 }}>
+      <AssetIcon asset={m.symbol} size={32} />
+      <View style={{ flex: 1, gap: 4 }}>
         <Text style={[styles.txTitle, { color: colors.foreground }]}>
-          {fmtCrypto(w.balance, w.asset)}
+          {fmtCrypto(totalQty, m.symbol)}
         </Text>
-        <Text style={[styles.txSub, { color: colors.mutedForeground }]}>
-          {w.accountName}
-          {w.reserved > 0 ? ` · ${fmtCrypto(w.reserved, w.asset)} reserved` : ""}
-          {w.unconfirmed > 0
-            ? ` · ${fmtCrypto(w.unconfirmed, w.asset)} unconfirmed`
-            : ""}
-        </Text>
+        <View style={styles.badgeRow}>
+          {m.binanceQty > 0 ? (
+            <ExchangeBadge label="Binance" qty={fmtCrypto(m.binanceQty, m.symbol)} />
+          ) : null}
+          {m.lunoQty > 0 ? (
+            <ExchangeBadge label="Luno" qty={fmtCrypto(m.lunoQty, m.symbol)} />
+          ) : null}
+        </View>
       </View>
-      <Feather name="chevron-right" size={16} color={colors.mutedForeground} />
+      <View style={{ alignItems: "flex-end", gap: 2 }}>
+        {m.usd > 0 ? (
+          <Text style={[styles.txTitle, { color: colors.foreground }]}>
+            {fmtMoney(m.usd, "USD")}
+          </Text>
+        ) : null}
+        <Feather name="chevron-right" size={16} color={colors.mutedForeground} />
+      </View>
     </Pressable>
+  );
+}
+
+function ExchangeBadge({ label, qty }: { label: string; qty: string }) {
+  const colors = useColors();
+  return (
+    <View
+      style={[
+        styles.badge,
+        { backgroundColor: colors.secondary, borderColor: colors.border },
+      ]}
+    >
+      <Text style={[styles.badgeLabel, { color: colors.foreground }]}>
+        {label}
+      </Text>
+      <Text style={[styles.badgeQty, { color: colors.mutedForeground }]}>
+        {qty}
+      </Text>
+    </View>
   );
 }
 
@@ -594,6 +714,26 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   divider: { height: StyleSheet.hairlineWidth },
+  badgeRow: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
+  badge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 6,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  badgeLabel: {
+    fontSize: 10,
+    fontFamily: "Inter_600SemiBold",
+    letterSpacing: 0.3,
+  },
+  badgeQty: {
+    fontSize: 10,
+    fontFamily: "Inter_400Regular",
+    fontVariant: ["tabular-nums"],
+  },
   empty: {
     fontSize: 12,
     fontFamily: "Inter_400Regular",

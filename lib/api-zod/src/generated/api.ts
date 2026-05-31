@@ -130,6 +130,58 @@ export const ListInterestResponse = zod.object({
 
 
 /**
+ * Real per-day APR for MARGIN loans (cross + isolated), derived from Binance's per-accrual margin interest history. Crypto loans (flexible / fixed) have no rate-history endpoint, so `source` is `flat` and the series repeats the current APR.
+
+ * @summary Historical interest-rate series for a single loan
+ */
+export const getRateHistoryQueryDaysDefault = 30;
+
+export const GetRateHistoryQueryParams = zod.object({
+  "loanId": zod.coerce.string(),
+  "days": zod.union([zod.literal(30),zod.literal(90)]).default(getRateHistoryQueryDaysDefault).describe('Look-back window in days')
+})
+
+export const GetRateHistoryResponse = zod.object({
+  "loanId": zod.string(),
+  "days": zod.number(),
+  "source": zod.enum(['margin', 'flat']).describe('margin = real per-accrual rates from Binance margin interest history; flat = current APR repeated (crypto loans have no rate-history endpoint).'),
+  "points": zod.array(zod.object({
+  "ts": zod.coerce.date(),
+  "apr": zod.number().describe('APR % at that timestamp')
+})),
+  "avg30dApr": zod.number(),
+  "min30dApr": zod.number(),
+  "max30dApr": zod.number()
+})
+
+
+/**
+ * Per-asset Binance balances merged across all linked accounts. Each asset splits its quantity into `spot` (free + locked spot wallet), `funding` (funding/earn wallet) and `collateral` (cross + isolated margin wallet balances plus crypto-loan collateral). `byAccount` preserves the per-account breakdown for the asset detail view.
+
+ * @summary Unified per-asset Binance holdings across spot, funding & collateral
+ */
+export const ListHoldingsResponse = zod.object({
+  "asOf": zod.coerce.date(),
+  "holdings": zod.array(zod.object({
+  "asset": zod.string(),
+  "spot": zod.number().describe('Free + locked spot balance'),
+  "funding": zod.number().describe('Funding\/earn wallet balance'),
+  "collateral": zod.number().describe('Margin wallet balances + crypto-loan collateral'),
+  "total": zod.number(),
+  "usd": zod.number().describe('total valued at current spot price'),
+  "byAccount": zod.array(zod.object({
+  "accountId": zod.string(),
+  "accountName": zod.string(),
+  "spot": zod.number(),
+  "funding": zod.number(),
+  "collateral": zod.number(),
+  "total": zod.number()
+}))
+}))
+})
+
+
+/**
  * @summary List Luno wallets (balances) across all linked Luno accounts
  */
 export const ListLunoWalletsResponse = zod.object({

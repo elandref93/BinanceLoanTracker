@@ -54,6 +54,31 @@ export interface BinancePrice {
   usd: number;
 }
 
+export interface BinanceHoldingByAccount {
+  accountId: string;
+  accountName: string;
+  spot: number;
+  funding: number;
+  collateral: number;
+  total: number;
+}
+
+/**
+ * A single asset's holdings at Binance, split across the three wallets we
+ * surface: free SPOT balance, FUNDING (earn) wallet, and COLLATERAL (assets
+ * held in the cross/isolated margin wallets plus crypto-loan collateral).
+ * `total` = spot + funding + collateral; `usd` values it at current spot.
+ */
+export interface BinanceHolding {
+  asset: string;
+  spot: number;
+  funding: number;
+  collateral: number;
+  total: number;
+  usd: number;
+  byAccount: BinanceHoldingByAccount[];
+}
+
 export interface BinanceClient {
   listAccounts(): Promise<BinanceAccount[]>;
   listLoans(accountId?: string): Promise<BinanceLoan[]>;
@@ -72,6 +97,11 @@ export interface BinanceClient {
   getLifetimeInterestUsd(
     loanId: string,
   ): Promise<{ lifetimeInterestUsd: number; loanAgeDays: number }>;
+  /**
+   * Per-asset crypto holdings across spot, funding and collateral wallets.
+   * Used by the unified crypto view alongside Luno balances.
+   */
+  getHoldings(): Promise<BinanceHolding[]>;
 }
 
 function hourlyToApr(hourly: number): number {
@@ -337,6 +367,9 @@ export function createMockBinanceClient(): BinanceClient {
         loanAgeDays,
       };
     },
+    async getHoldings() {
+      return [];
+    },
   };
 }
 
@@ -412,6 +445,44 @@ async function binanceSignedGet<T = unknown>(
   }
 }
 
+async function binanceSignedPost<T = unknown>(
+  creds: BinanceCredentials,
+  path: string,
+  params: Record<string, string | number> = {},
+): Promise<T> {
+  const qs = new URLSearchParams({
+    ...Object.fromEntries(
+      Object.entries(params).map(([k, v]) => [k, String(v)]),
+    ),
+    timestamp: String(Date.now()),
+    recvWindow: "5000",
+  });
+  const signature = signQuery(creds.apiSecret, qs.toString());
+  qs.append("signature", signature);
+  const res = await fetch(`${BINANCE_BASE}${path}?${qs.toString()}`, {
+    method: "POST",
+    headers: { "X-MBX-APIKEY": creds.apiKey },
+  });
+  const body = await res.text();
+  if (!res.ok) {
+    let code: number | null = null;
+    let msg = res.statusText || "request failed";
+    try {
+      const parsed = JSON.parse(body) as { code?: unknown; msg?: unknown };
+      if (typeof parsed.code === "number") code = parsed.code;
+      if (typeof parsed.msg === "string") msg = parsed.msg;
+    } catch {
+      // non-JSON; keep the statusText fallback
+    }
+    throw new BinanceApiError(path, res.status, code, msg);
+  }
+  try {
+    return JSON.parse(body) as T;
+  } catch {
+    throw new BinanceApiError(path, res.status, null, "non-JSON response");
+  }
+}
+
 async function binancePublicGet<T = unknown>(
   path: string,
   params: Record<string, string | number> = {},
@@ -457,6 +528,36 @@ function rowsArray(payload: unknown): unknown[] {
     if (Array.isArray(rows)) return rows;
   }
   return [];
+}
+
+/**
+ * Parse a margin loan id into the fields needed to query
+ * `/sapi/v1/margin/interestHistory`. Loan ids are minted by the loan
+ * builders as `${accountId}_cross_${asset}` (cross margin, shared pool) or
+ * `${accountId}_iso_${symbol}_${asset}` (isolated, per-pair). Returns null
+ * for crypto-loan ids (`_flex_` / `_fixed_`) which have no rate-history
+ * endpoint. `asset` is the borrowed asset; `isolatedSymbol` is only set for
+ * isolated margin (omitted ⇒ Binance returns cross-margin rows).
+ */
+function parseMarginLoanRef(
+  loanId: string,
+): { asset: string; isolatedSymbol?: string } | null {
+  const isoIdx = loanId.indexOf("_iso_");
+  if (isoIdx >= 0) {
+    const rest = loanId.slice(isoIdx + "_iso_".length);
+    const parts = rest.split("_");
+    if (parts.length < 2) return null;
+    const asset = parts[parts.length - 1];
+    const isolatedSymbol = parts.slice(0, -1).join("_");
+    if (!asset || !isolatedSymbol) return null;
+    return { asset: asset.toUpperCase(), isolatedSymbol };
+  }
+  const crossIdx = loanId.indexOf("_cross_");
+  if (crossIdx >= 0) {
+    const asset = loanId.slice(crossIdx + "_cross_".length);
+    return asset ? { asset: asset.toUpperCase() } : null;
+  }
+  return null;
 }
 
 interface StableSymbolRate {
@@ -859,6 +960,161 @@ export function createRealBinanceClient(
     });
   }
 
+  // Real per-day APR series for a MARGIN loan, derived from the per-accrual
+  // `interestRate` rows in `/sapi/v1/margin/interestHistory`. The endpoint
+  // caps each request at a 30-day window and 100 rows/page, so we walk back
+  // in 30-day windows and paginate within each. PERIODIC (hourly) and
+  // ON_BORROW (first charge) rows carry the hourly rate; *_CONVERTED (BNB)
+  // and PORTFOLIO rows are skipped so BNB-settled duplicates don't skew the
+  // average. Rows are grouped by UTC day and averaged → hourly → APR%.
+  async function fetchMarginRatePoints(
+    ref: { asset: string; isolatedSymbol?: string },
+    days: number,
+  ): Promise<BinanceRatePoint[]> {
+    const DAY = 86_400_000;
+    const WINDOW = 30 * DAY;
+    const now = Date.now();
+    const rangeStart = now - days * DAY;
+    const KEEP = new Set(["PERIODIC", "ON_BORROW"]);
+    const byDay = new Map<number, { sum: number; count: number }>();
+
+    for (let winEnd = now; winEnd > rangeStart; winEnd -= WINDOW) {
+      const winStart = Math.max(rangeStart, winEnd - WINDOW + 1);
+      for (let current = 1; current <= 10; current++) {
+        const params: Record<string, string | number> = {
+          startTime: winStart,
+          endTime: winEnd,
+          current,
+          size: 100,
+          asset: ref.asset,
+        };
+        if (ref.isolatedSymbol) params["isolatedSymbol"] = ref.isolatedSymbol;
+        let raw: unknown;
+        try {
+          raw = await binanceSignedGet(
+            creds,
+            "/sapi/v1/margin/interestHistory",
+            params,
+          );
+        } catch (err) {
+          logger.warn(
+            { err, accountId, asset: ref.asset },
+            "margin interestHistory fetch failed",
+          );
+          break;
+        }
+        const rows = rowsArray(raw);
+        for (const r of rows) {
+          const row = r as Record<string, unknown>;
+          if (!KEEP.has(str(row["type"]))) continue;
+          if (str(row["asset"]).toUpperCase() !== ref.asset) continue;
+          const ts = num(row["interestAccuredTime"]);
+          const rate = num(row["interestRate"]);
+          if (ts <= 0 || rate <= 0) continue;
+          const day = Math.floor(ts / DAY) * DAY;
+          const cur = byDay.get(day) ?? { sum: 0, count: 0 };
+          cur.sum += rate;
+          cur.count += 1;
+          byDay.set(day, cur);
+        }
+        if (rows.length < 100) break;
+      }
+    }
+
+    return Array.from(byDay.keys())
+      .sort((a, b) => a - b)
+      .map((day) => {
+        const { sum, count } = byDay.get(day)!;
+        return {
+          ts: new Date(day).toISOString(),
+          apr: round(hourlyToApr(sum / count), 4),
+        };
+      });
+  }
+
+  // ── Holdings: free SPOT, FUNDING wallet, and COLLATERAL (margin wallets +
+  // crypto-loan collateral). Each returns a Map<assetUpper, qty>. ──────────
+  async function fetchSpotBalances(): Promise<Map<string, number>> {
+    const out = new Map<string, number>();
+    let acct: unknown;
+    try {
+      acct = await binanceSignedGet(creds, "/api/v3/account");
+    } catch (err) {
+      logger.warn({ err, accountId }, "spot balances fetch failed");
+      return out;
+    }
+    const a = (acct ?? {}) as Record<string, unknown>;
+    const balances = Array.isArray(a["balances"])
+      ? (a["balances"] as Array<Record<string, unknown>>)
+      : [];
+    for (const b of balances) {
+      const asset = str(b["asset"]).toUpperCase();
+      const qty = num(b["free"]) + num(b["locked"]);
+      if (asset && qty > 0) out.set(asset, (out.get(asset) ?? 0) + qty);
+    }
+    return out;
+  }
+
+  async function fetchFundingBalances(): Promise<Map<string, number>> {
+    const out = new Map<string, number>();
+    let raw: unknown;
+    try {
+      raw = await binanceSignedPost(creds, "/sapi/v1/asset/get-funding-asset");
+    } catch (err) {
+      logger.warn({ err, accountId }, "funding balances fetch failed");
+      return out;
+    }
+    for (const r of Array.isArray(raw) ? raw : []) {
+      const row = r as Record<string, unknown>;
+      const asset = str(row["asset"]).toUpperCase();
+      const qty = num(row["free"]) + num(row["locked"]) + num(row["freeze"]);
+      if (asset && qty > 0) out.set(asset, (out.get(asset) ?? 0) + qty);
+    }
+    return out;
+  }
+
+  // Assets held in the margin wallets (cross userAssets + isolated pair sides).
+  // These back the margin loans; crypto-loan collateral is folded in later.
+  async function fetchMarginCollateralBalances(): Promise<Map<string, number>> {
+    const out = new Map<string, number>();
+    const add = (asset: string, qty: number) => {
+      const a = asset.toUpperCase();
+      if (a && qty > 0) out.set(a, (out.get(a) ?? 0) + qty);
+    };
+    try {
+      const acct = (await binanceSignedGet(
+        creds,
+        "/sapi/v1/margin/account",
+      )) as Record<string, unknown>;
+      const userAssets = Array.isArray(acct["userAssets"])
+        ? (acct["userAssets"] as Array<Record<string, unknown>>)
+        : [];
+      for (const u of userAssets) {
+        add(str(u["asset"]), num(u["free"]) + num(u["locked"]));
+      }
+    } catch (err) {
+      logger.warn({ err, accountId }, "cross margin balances fetch failed");
+    }
+    try {
+      const acct = (await binanceSignedGet(
+        creds,
+        "/sapi/v1/margin/isolated/account",
+      )) as Record<string, unknown>;
+      const pairs = Array.isArray(acct["assets"])
+        ? (acct["assets"] as Array<Record<string, unknown>>)
+        : [];
+      for (const pair of pairs) {
+        for (const side of ["baseAsset", "quoteAsset"] as const) {
+          const s = (pair[side] ?? {}) as Record<string, unknown>;
+          add(str(s["asset"]), num(s["free"]) + num(s["locked"]));
+        }
+      }
+    } catch (err) {
+      logger.warn({ err, accountId }, "isolated margin balances fetch failed");
+    }
+    return out;
+  }
+
   return {
     async listAccounts() {
       // Each credential = one logical account from the device. We don't
@@ -1026,17 +1282,78 @@ export function createRealBinanceClient(
       // Margin loans: not derivable from public history endpoints.
       return { lifetimeInterestUsd: 0, loanAgeDays: 0 };
     },
-    async getRateHistory(_loanId, days) {
-      // Binance doesn't expose a per-loan historical APR series. We return
-      // a flat line at the current rate so the UI sparkline still renders.
+    async getRateHistory(loanId, days) {
+      // MARGIN loans expose a real per-accrual rate history — use it.
+      const ref = parseMarginLoanRef(loanId);
+      if (ref) {
+        const points = await fetchMarginRatePoints(ref, days);
+        if (points.length > 0) return points;
+      }
+      // Fallback for crypto loans (flex/fixed, no rate-history endpoint) and
+      // for margin loans too new to have accruals yet: a flat line at the
+      // current rate so the UI sparkline still renders.
       const loans = await this.listLoans();
-      const loan = loans.find((l) => l.id === _loanId);
+      const loan = loans.find((l) => l.id === loanId);
       if (!loan) return [];
       const startOfToday = Math.floor(Date.now() / 86_400_000) * 86_400_000;
       return Array.from({ length: days }, (_, i) => ({
         ts: new Date(startOfToday - (days - 1 - i) * 86_400_000).toISOString(),
         apr: round(loan.apr, 4),
       }));
+    },
+    async getHoldings() {
+      const [spot, funding, collateral, flexLoans, fixedLoans] =
+        await Promise.all([
+          fetchSpotBalances(),
+          fetchFundingBalances(),
+          fetchMarginCollateralBalances(),
+          fetchFlexibleLoans(),
+          fetchFixedLoans(),
+        ]);
+      // Crypto-loan collateral lives in the loan product, not a wallet, so
+      // fold each loan's collateral into the collateral bucket. Skip the
+      // cross-margin "POOL" pseudo-asset (already counted via margin wallet).
+      for (const loan of [...flexLoans, ...fixedLoans]) {
+        const a = loan.collateral.asset.toUpperCase();
+        if (a && a !== "POOL" && loan.collateral.qty > 0) {
+          collateral.set(a, (collateral.get(a) ?? 0) + loan.collateral.qty);
+        }
+      }
+      const assets = new Set<string>([
+        ...spot.keys(),
+        ...funding.keys(),
+        ...collateral.keys(),
+      ]);
+      if (assets.size === 0) return [];
+      const { prices } = await fetchUsdPrices(Array.from(assets));
+      const priceMap = new Map(prices.map((p) => [p.asset, p.usd]));
+      return Array.from(assets)
+        .map((asset) => {
+          const s = round(spot.get(asset) ?? 0, 8);
+          const f = round(funding.get(asset) ?? 0, 8);
+          const c = round(collateral.get(asset) ?? 0, 8);
+          const total = round(s + f + c, 8);
+          return {
+            asset,
+            spot: s,
+            funding: f,
+            collateral: c,
+            total,
+            usd: round(total * (priceMap.get(asset) ?? 0), 2),
+            byAccount: [
+              {
+                accountId,
+                accountName: account.name,
+                spot: s,
+                funding: f,
+                collateral: c,
+                total,
+              },
+            ],
+          };
+        })
+        .filter((h) => h.total > 0)
+        .sort((a, b) => b.usd - a.usd);
     },
   };
 }
@@ -1135,6 +1452,29 @@ export function createMultiplexBinanceClient(
         );
         return { lifetimeInterestUsd: 0, loanAgeDays: 0 };
       }
+    },
+    async getHoldings() {
+      const all = await fanOut(members, "getHoldings", (m) => {
+        const owner = members.find((mm) => mm.account.id === m.account.id)!;
+        return owner.client.getHoldings();
+      });
+      // Merge per asset across accounts (fanOut concatenates; holdings need
+      // summing). byAccount keeps the per-account split for the detail view.
+      const byAsset = new Map<string, BinanceHolding>();
+      for (const h of all) {
+        const cur = byAsset.get(h.asset);
+        if (!cur) {
+          byAsset.set(h.asset, { ...h, byAccount: [...h.byAccount] });
+        } else {
+          cur.spot = round(cur.spot + h.spot, 8);
+          cur.funding = round(cur.funding + h.funding, 8);
+          cur.collateral = round(cur.collateral + h.collateral, 8);
+          cur.total = round(cur.total + h.total, 8);
+          cur.usd = round(cur.usd + h.usd, 2);
+          cur.byAccount.push(...h.byAccount);
+        }
+      }
+      return Array.from(byAsset.values()).sort((a, b) => b.usd - a.usd);
     },
   };
 }

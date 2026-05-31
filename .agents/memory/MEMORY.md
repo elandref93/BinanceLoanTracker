@@ -1,4 +1,5 @@
 - [pnpm packageManager pin vs Replit nix pnpm](pnpm-package-manager-pin.md) — pnpm pinned to an older version than the container ships SIGABRT-loops on every invocation; bump the pin to match.
+- [orval query `enabled` cast](orval-query-enabled-cast.md) — generated React Query hooks need `{query:{...} as never}` or queryKey-required TS2741 fails.
 - [Azure container ephemeral storage](azure-container-ephemeral-storage.md) — api-server disk is wiped on restart; per-user sync blobs must live under /home with WEBSITES_ENABLE_APP_SERVICE_STORAGE=true.
 - [external_url screenshot caching](external-url-screenshot-cache.md) — pixel-identical screenshots after a code fix mean a cached capture; append `?v=N` to force a fresh render.
 - [TestFlight builds firing by themselves](testflight-run-button-autobuild.md) — the "Project" run button runs all workflow.run children on every start; never put eas build / deploy commands there. configureWorkflow always adds to "Project".

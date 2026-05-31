@@ -43,6 +43,7 @@ import {
   type LoanSnapshot,
 } from "@/lib/loanSnapshots";
 import {
+  useGetRateHistory,
   useListAccounts,
   useListInterest,
   useListLoans,
@@ -103,6 +104,12 @@ export default function LoanDetailScreen() {
   const loansQ = useListLoans();
   const accountsQ = useListAccounts();
   const interestQ = useListInterest();
+
+  const [rateWindow, setRateWindow] = useState<30 | 90>(30);
+  const rateHistQ = useGetRateHistory(
+    { loanId: id ?? "", days: rateWindow },
+    { query: { enabled: !!id } as never },
+  );
 
   const [rules, setRules] = useState<AlertRule[]>([]);
   const refreshRules = () => {
@@ -171,22 +178,58 @@ export default function LoanDetailScreen() {
   const daily = hourly * 24;
 
   const byLoan = interestQ.data?.byLoan.find((b) => b.loanId === loan.id);
-  // Prefer locally-recorded snapshots for 30d APR stats + sparkline. Binance
-  // exposes no historical-rate endpoint, so the server's avg/min/max collapse
-  // to today's APR (flat line). With ≥2 local snapshots we can show real
-  // movement; otherwise we fall back to the (flat) server values.
+
+  // Interest-rate history. The server now serves REAL per-day rates for margin
+  // loans (cross + isolated) from Binance's interest history; crypto loans have
+  // no such endpoint, so it returns a flat series. We overlay the app's own
+  // locally-recorded nominal-APR snapshots so "actual charged" vs "quoted" can
+  // be compared, and fall back to the local series entirely when the server is
+  // flat. 30d stats stay on a 30-day basis regardless of the chart window.
+  const rateData = rateHistQ.data;
+  const serverSeries = rateData?.points.map((p) => p.apr) ?? [];
+  const serverIsMargin =
+    rateData?.source === "margin" && serverSeries.length >= 2;
+
   const localStats = aprStatsFor(snapshots, loan.id, 30);
-  const localSeries = aprSeriesFor(snapshots, loan.id, 30);
-  const avg30 = localStats?.avg ?? byLoan?.avg30dApr ?? loan.apr;
-  const min30 = localStats?.min ?? byLoan?.min30dApr ?? loan.apr;
-  const max30 = localStats?.max ?? byLoan?.max30dApr ?? loan.apr;
-  const sparkValues =
-    localSeries.length >= 2
-      ? localSeries
-      : (byLoan?.rateHistory.map((p) => p.apr) ?? []);
-  const aprDelta =
-    avg30 > 0 ? ((loan.apr - avg30) / avg30) * 100 : 0;
-  const hasRealHistory = localStats !== null;
+  const localWindowSeries = aprSeriesFor(snapshots, loan.id, rateWindow);
+
+  const chartKind: "margin" | "local" | "flat" | null = serverIsMargin
+    ? "margin"
+    : localWindowSeries.length >= 2
+      ? "local"
+      : serverSeries.length >= 2
+        ? "flat"
+        : null;
+  const chartValues =
+    chartKind === "margin"
+      ? serverSeries
+      : chartKind === "local"
+        ? localWindowSeries
+        : chartKind === "flat"
+          ? serverSeries
+          : [];
+  const overlayValues =
+    serverIsMargin && localWindowSeries.length >= 2
+      ? localWindowSeries
+      : undefined;
+
+  const avg30 = serverIsMargin
+    ? rateData.avg30dApr
+    : (localStats?.avg ?? rateData?.avg30dApr ?? loan.apr);
+  const min30 = serverIsMargin
+    ? rateData.min30dApr
+    : (localStats?.min ?? rateData?.min30dApr ?? loan.apr);
+  const max30 = serverIsMargin
+    ? rateData.max30dApr
+    : (localStats?.max ?? rateData?.max30dApr ?? loan.apr);
+  // Server always returns a trailing-30d avg/min/max (real for margin, the
+  // current rate for flat-fallback products), so surface stats whenever we
+  // have *any* source — server flat data included, not just margin/local.
+  const hasStats = serverIsMargin || localStats !== null || rateData != null;
+  // A flat series collapses min===max; a "30d range: X – X" row is just noise.
+  const hasRange = min30 !== max30;
+  const aprDelta = avg30 > 0 ? ((loan.apr - avg30) / avg30) * 100 : 0;
+  const hasRealHistory = chartValues.length >= 2;
 
   const loanContainer = containerForAccountId(loan.accountId);
   const relevantRules = rules.filter((r) =>
@@ -250,18 +293,31 @@ export default function LoanDetailScreen() {
       <Card
         title="Interest rate"
         right={
-          aprDelta !== 0 && byLoan ? (
-            <Text
-              style={[
-                styles.delta,
-                {
-                  color: aprDelta > 0 ? colors.warn : colors.ok,
-                },
-              ]}
-            >
-              {aprDelta > 0 ? "▲" : "▼"} {Math.abs(aprDelta).toFixed(1)}% vs 30d
-            </Text>
-          ) : null
+          <View style={[styles.seg, { borderColor: colors.border }]}>
+            {([30, 90] as const).map((d) => {
+              const on = rateWindow === d;
+              return (
+                <Pressable
+                  key={d}
+                  onPress={() => setRateWindow(d)}
+                  hitSlop={6}
+                  style={[
+                    styles.segBtn,
+                    on && { backgroundColor: colors.primary + "22" },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.segText,
+                      { color: on ? colors.primary : colors.mutedForeground },
+                    ]}
+                  >
+                    {d}D
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
         }
       >
         <View style={styles.bigRow}>
@@ -271,37 +327,95 @@ export default function LoanDetailScreen() {
           <Text style={[styles.bigUnit, { color: colors.mutedForeground }]}>
             APR
           </Text>
+          {aprDelta !== 0 && hasStats ? (
+            <Text
+              style={[
+                styles.delta,
+                { color: aprDelta > 0 ? colors.warn : colors.ok },
+              ]}
+            >
+              {aprDelta > 0 ? "▲" : "▼"} {Math.abs(aprDelta).toFixed(1)}% vs 30d
+            </Text>
+          ) : null}
         </View>
-        {hasRealHistory && sparkValues.length >= 2 ? (
+        {rateHistQ.isLoading && !hasRealHistory ? (
+          <Text style={[styles.simHint, { color: colors.mutedForeground }]}>
+            Loading rate history…
+          </Text>
+        ) : hasRealHistory ? (
           <View style={{ marginVertical: 4 }}>
             <Sparkline
-              values={sparkValues}
-              height={48}
+              values={chartValues}
+              overlay={overlayValues}
+              height={56}
               reference={avg30}
+              formatValue={(v) => fmtPct(v, 2)}
             />
             <View style={styles.sparkAxis}>
-              <Text style={[styles.sparkAxisText, { color: colors.mutedForeground }]}>
-                30d ago
+              <Text
+                style={[styles.sparkAxisText, { color: colors.mutedForeground }]}
+              >
+                {rateWindow}d ago
               </Text>
-              <Text style={[styles.sparkAxisText, { color: colors.mutedForeground }]}>
+              <Text
+                style={[styles.sparkAxisText, { color: colors.mutedForeground }]}
+              >
                 today
               </Text>
             </View>
+            {overlayValues ? (
+              <View style={styles.legend}>
+                <View style={styles.legendItem}>
+                  <View
+                    style={[styles.legendDot, { backgroundColor: colors.primary }]}
+                  />
+                  <Text
+                    style={[styles.legendText, { color: colors.mutedForeground }]}
+                  >
+                    Actual charged
+                  </Text>
+                </View>
+                <View style={styles.legendItem}>
+                  <View
+                    style={[
+                      styles.legendDot,
+                      { backgroundColor: colors.mutedForeground },
+                    ]}
+                  />
+                  <Text
+                    style={[styles.legendText, { color: colors.mutedForeground }]}
+                  >
+                    Nominal (quoted)
+                  </Text>
+                </View>
+              </View>
+            ) : null}
           </View>
         ) : null}
-        {hasRealHistory ? (
+        {hasStats ? (
           <>
             <Row label="30d average" value={fmtPct(avg30, 2)} />
-            <Row
-              label="30d range"
-              value={`${fmtPct(min30, 2)} – ${fmtPct(max30, 2)}`}
-            />
+            {hasRange ? (
+              <Row
+                label="30d range"
+                value={`${fmtPct(min30, 2)} – ${fmtPct(max30, 2)}`}
+              />
+            ) : null}
           </>
         ) : (
           <Text style={[styles.simHint, { color: colors.mutedForeground }]}>
             Building rate history locally — 30d stats appear after a few refreshes.
           </Text>
         )}
+        {chartKind === "margin" ? (
+          <Text style={[styles.simHint, { color: colors.mutedForeground }]}>
+            Actual rate charged, from Binance interest history.
+          </Text>
+        ) : chartKind === "local" ? (
+          <Text style={[styles.simHint, { color: colors.mutedForeground }]}>
+            Nominal APR recorded by this app on each refresh.
+          </Text>
+        ) : null}
         <Row
           label="Hourly rate"
           value={`${(effectiveHourlyRate * 100).toFixed(5)}%`}
@@ -524,6 +638,27 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   sparkAxisText: { fontSize: 10, fontFamily: "Inter_400Regular" },
+  seg: {
+    flexDirection: "row",
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 7,
+    overflow: "hidden",
+  },
+  segBtn: { paddingHorizontal: 9, paddingVertical: 3 },
+  segText: {
+    fontSize: 11,
+    fontFamily: "Inter_600SemiBold",
+    letterSpacing: 0.3,
+  },
+  legend: {
+    flexDirection: "row",
+    gap: 14,
+    marginTop: 6,
+    justifyContent: "center",
+  },
+  legendItem: { flexDirection: "row", alignItems: "center", gap: 5 },
+  legendDot: { width: 8, height: 8, borderRadius: 4 },
+  legendText: { fontSize: 10, fontFamily: "Inter_400Regular" },
   ruleRow: {
     flexDirection: "row",
     alignItems: "center",

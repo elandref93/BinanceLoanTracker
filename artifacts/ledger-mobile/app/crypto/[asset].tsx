@@ -30,9 +30,12 @@ import { fmtMoney } from "@/utils/format";
 
 import {
   useGetLunoTickers,
+  useGetPrices,
+  useListHoldings,
   useListLunoPending,
   useListLunoTransactions,
   useListLunoWallets,
+  type Holding,
   type LunoTransaction,
   type LunoWallet,
 } from "@workspace/api-client-react";
@@ -56,6 +59,15 @@ export default function AssetDetailScreen() {
   // Bumped past the dashboard's 30 because this screen is the place
   // where someone goes specifically to scroll history for one asset.
   const txQ = useListLunoTransactions({ limit: 200 });
+  const holdingsQ = useListHoldings();
+
+  const binance = useMemo<Holding | undefined>(
+    () =>
+      (holdingsQ.data?.holdings ?? []).find(
+        (h) => h.asset.toUpperCase() === symbol,
+      ),
+    [holdingsQ.data, symbol],
+  );
 
   const allWallets = walletsQ.data?.wallets ?? [];
   const wallets = useMemo(
@@ -114,6 +126,26 @@ export default function AssetDetailScreen() {
   // For cash assets this is just 1 (USD↔USD is meaningless; ZAR in ZAR is 1).
   const unitPrice = quoteWalletInFiat(symbol, 1, tickerMap, currency);
 
+  // Cross-exchange totals. Binance holdings (spot + funding + collateral)
+  // are valued server-side in USD; Luno's per-asset quantity is added on
+  // top. The headline uses USD as the shared denominator so the two
+  // exchanges combine cleanly regardless of the display currency.
+  const lunoQty = totals.balance + totals.reserved + totals.unconfirmed;
+  const binanceQty = binance?.total ?? 0;
+  const combinedQty = lunoQty + binanceQty;
+  const isStable = symbol === "USDT" || symbol === "USDC" || symbol === "USD";
+  const usdPriceQ = useGetPrices(
+    { assets: symbol },
+    { query: { enabled: !isStable && symbol !== "ZAR" } as never },
+  );
+  const unitUsd = isStable
+    ? 1
+    : (usdPriceQ.data?.prices.find((p) => p.asset.toUpperCase() === symbol)
+        ?.usd ?? 0);
+  const lunoUsd = lunoQty * unitUsd;
+  const binanceUsd = binance?.usd ?? 0;
+  const combinedUsd = lunoUsd + binanceUsd;
+
   // BTC-only sparkline: reuse the recorded LunoSample.btc field from
   // the dashboard history. Other assets have no per-asset history yet,
   // so the chart card just doesn't render.
@@ -144,8 +176,10 @@ export default function AssetDetailScreen() {
       pendingQ.refetch(),
       txQ.refetch(),
       tickersQ.refetch(),
-    ]).then(([w, p, t, k]) => {
-      if (w.isError || p.isError || t.isError || k.isError) haptic.error();
+      holdingsQ.refetch(),
+      usdPriceQ.refetch(),
+    ]).then((res) => {
+      if (res.some((r) => r.isError)) haptic.error();
       else haptic.success();
     });
   };
@@ -220,9 +254,16 @@ export default function AssetDetailScreen() {
                 {symbol}
               </Text>
               <Text style={[styles.heroBalance, { color: colors.foreground }]}>
-                {fmtAsset(totals.balance, symbol)}
+                {fmtAsset(combinedQty, symbol)}
               </Text>
-              {fiatValue > 0 ? (
+              {combinedUsd > 0 ? (
+                <Text
+                  style={[styles.heroFiat, { color: colors.mutedForeground }]}
+                >
+                  ≈ {fmtMoney(combinedUsd, "USD")}
+                  {binanceQty > 0 && lunoQty > 0 ? " · Binance + Luno" : ""}
+                </Text>
+              ) : fiatValue > 0 ? (
                 <Text
                   style={[styles.heroFiat, { color: colors.mutedForeground }]}
                 >
@@ -285,6 +326,49 @@ export default function AssetDetailScreen() {
                 height={48}
                 reference={btcSeries[0]}
               />
+            </View>
+          ) : null}
+
+          {/* Sources — per-exchange split. Only shown once we know about
+              more than one source (or any Binance balance), so single-
+              exchange assets aren't padded with a redundant card. */}
+          {binanceQty > 0 ? (
+            <View style={{ gap: 8 }}>
+              <Text
+                style={[styles.sectionLabel, { color: colors.mutedForeground }]}
+              >
+                SOURCES
+              </Text>
+              <View
+                style={[
+                  styles.card,
+                  {
+                    backgroundColor: colors.card,
+                    borderColor: colors.border,
+                    borderRadius: colors.radius,
+                  },
+                ]}
+              >
+                <SourceRow
+                  label="Binance"
+                  qty={fmtAsset(binanceQty, symbol)}
+                  usd={binanceUsd > 0 ? fmtMoney(binanceUsd, "USD") : undefined}
+                  hint={binanceSplit(binance, symbol)}
+                />
+                {lunoQty > 0 ? (
+                  <>
+                    <View
+                      style={[styles.divider, { backgroundColor: colors.border }]}
+                    />
+                    <SourceRow
+                      label="Luno"
+                      qty={fmtAsset(lunoQty, symbol)}
+                      usd={lunoUsd > 0 ? fmtMoney(lunoUsd, "USD") : undefined}
+                      hint={lunoSplit(totals, symbol)}
+                    />
+                  </>
+                ) : null}
+              </View>
             </View>
           ) : null}
 
@@ -654,6 +738,68 @@ function TxRow({ t, symbol }: { t: LunoTransaction; symbol: string }) {
       </View>
     </View>
   );
+}
+
+function SourceRow({
+  label,
+  qty,
+  usd,
+  hint,
+}: {
+  label: string;
+  qty: string;
+  usd?: string;
+  hint?: string;
+}) {
+  const colors = useColors();
+  return (
+    <View style={styles.breakdownRow}>
+      <View style={{ flex: 1 }}>
+        <Text style={[styles.breakdownLabel, { color: colors.foreground }]}>
+          {label}
+        </Text>
+        {hint ? (
+          <Text style={[styles.txSub, { color: colors.mutedForeground }]}>
+            {hint}
+          </Text>
+        ) : null}
+      </View>
+      <View style={{ alignItems: "flex-end" }}>
+        <Text style={[styles.breakdownValue, { color: colors.foreground }]}>
+          {qty}
+        </Text>
+        {usd ? (
+          <Text style={[styles.txSub, { color: colors.mutedForeground }]}>
+            ≈ {usd}
+          </Text>
+        ) : null}
+      </View>
+    </View>
+  );
+}
+
+/** Compact "Spot · Funding · Collateral" hint for a Binance holding. */
+function binanceSplit(h: Holding | undefined, symbol: string): string {
+  if (!h) return "";
+  const parts: string[] = [];
+  if (h.spot > 0) parts.push(`Spot ${fmtAsset(h.spot, symbol)}`);
+  if (h.funding > 0) parts.push(`Funding ${fmtAsset(h.funding, symbol)}`);
+  if (h.collateral > 0)
+    parts.push(`Collateral ${fmtAsset(h.collateral, symbol)}`);
+  return parts.join(" · ");
+}
+
+/** Compact "Available · Reserved · Unconfirmed" hint for Luno. */
+function lunoSplit(
+  totals: { balance: number; reserved: number; unconfirmed: number },
+  symbol: string,
+): string {
+  const parts: string[] = [];
+  if (totals.balance > 0) parts.push(`Available ${fmtAsset(totals.balance, symbol)}`);
+  if (totals.reserved > 0) parts.push(`Reserved ${fmtAsset(totals.reserved, symbol)}`);
+  if (totals.unconfirmed > 0)
+    parts.push(`Unconfirmed ${fmtAsset(totals.unconfirmed, symbol)}`);
+  return parts.join(" · ");
 }
 
 function fmtAsset(n: number, symbol: string): string {

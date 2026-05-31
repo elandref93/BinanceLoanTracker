@@ -17,6 +17,14 @@ interface Props {
   height: number;
   color?: string;
   reference?: number;
+  /**
+   * Optional secondary series drawn as a muted dashed line, sharing the same
+   * y-domain and time window as `values`. Used to overlay the locally-recorded
+   * nominal APR against the real charged rate. Its own length is fine — it is
+   * spread across the full width independently of `values`.
+   */
+  overlay?: number[];
+  overlayColor?: string;
   /** Format the scrubbed value shown while dragging. Defaults to 2dp. */
   formatValue?: (v: number) => string;
 }
@@ -27,6 +35,8 @@ export function Sparkline({
   height,
   color,
   reference,
+  overlay,
+  overlayColor,
   formatValue,
 }: Props) {
   const colors = useColors();
@@ -44,20 +54,34 @@ export function Sparkline({
       <View onLayout={onLayout} style={{ width: "100%", height }} />
     ) : null;
   }
-  const min = Math.min(...values);
-  const max = Math.max(...values);
+  const hasOverlay = overlay != null && overlay.length >= 2;
+  const domainVals = [
+    ...values,
+    ...(hasOverlay ? overlay : []),
+    ...(reference != null ? [reference] : []),
+  ];
+  const min = Math.min(...domainVals);
+  const max = Math.max(...domainVals);
   const range = max - min || 1;
   const padY = 4;
   const innerH = height - padY * 2;
   const stepX = width / (values.length - 1);
+  const yOf = (v: number) => padY + innerH - ((v - min) / range) * innerH;
   const points = values.map((v, i) => {
     const x = i * stepX;
-    const y = padY + innerH - ((v - min) / range) * innerH;
-    return [x, y] as const;
+    return [x, yOf(v)] as const;
   });
   const d = points
     .map(([x, y], i) => (i === 0 ? `M${x},${y}` : `L${x},${y}`))
     .join(" ");
+  const overlayD = hasOverlay
+    ? overlay
+        .map((v, i) => {
+          const x = i * (width / (overlay.length - 1));
+          return `${i === 0 ? "M" : "L"}${x},${yOf(v)}`;
+        })
+        .join(" ")
+    : null;
   const refY =
     reference != null
       ? padY + innerH - ((reference - min) / range) * innerH
@@ -93,6 +117,16 @@ export function Sparkline({
             stroke={colors.mutedForeground}
             strokeDasharray="3,3"
             strokeWidth={1}
+          />
+        ) : null}
+        {overlayD ? (
+          <Path
+            d={overlayD}
+            stroke={overlayColor ?? colors.mutedForeground}
+            strokeWidth={1}
+            strokeDasharray="4,3"
+            fill="none"
+            opacity={0.7}
           />
         ) : null}
         <Path d={d} stroke={stroke} strokeWidth={1.5} fill="none" />

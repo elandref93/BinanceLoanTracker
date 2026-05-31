@@ -21,7 +21,9 @@ import type {
   GetLunoTickersParams,
   GetPrices200,
   GetPricesParams,
+  GetRateHistoryParams,
   HealthStatus,
+  HoldingsResponse,
   ListAccounts200,
   ListInterest200,
   ListInterestParams,
@@ -31,7 +33,8 @@ import type {
   ListLunoTransactionsParams,
   ListLunoWallets200,
   LoansResponse,
-  LunoTicker
+  LunoTicker,
+  RateHistoryResponse
 } from './api.schemas';
 
 import { customFetch } from '../custom-fetch';
@@ -441,6 +444,171 @@ export function useListInterest<TData = Awaited<ReturnType<typeof listInterest>>
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListInterestQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getGetRateHistoryUrl = (params: GetRateHistoryParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/rate-history?${stringifiedParams}` : `/api/rate-history`
+}
+
+/**
+ * Real per-day APR for MARGIN loans (cross + isolated), derived from Binance's per-accrual margin interest history. Crypto loans (flexible / fixed) have no rate-history endpoint, so `source` is `flat` and the series repeats the current APR.
+
+ * @summary Historical interest-rate series for a single loan
+ */
+export const getRateHistory = async (params: GetRateHistoryParams, options?: RequestInit): Promise<RateHistoryResponse> => {
+
+  return customFetch<RateHistoryResponse>(getGetRateHistoryUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetRateHistoryQueryKey = (params?: GetRateHistoryParams,) => {
+    return [
+    `/api/rate-history`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetRateHistoryQueryOptions = <TData = Awaited<ReturnType<typeof getRateHistory>>, TError = ErrorType<unknown>>(params: GetRateHistoryParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getRateHistory>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetRateHistoryQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getRateHistory>>> = ({ signal }) => getRateHistory(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getRateHistory>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetRateHistoryQueryResult = NonNullable<Awaited<ReturnType<typeof getRateHistory>>>
+export type GetRateHistoryQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Historical interest-rate series for a single loan
+ */
+
+export function useGetRateHistory<TData = Awaited<ReturnType<typeof getRateHistory>>, TError = ErrorType<unknown>>(
+ params: GetRateHistoryParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getRateHistory>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetRateHistoryQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getListHoldingsUrl = () => {
+
+
+
+
+  return `/api/holdings`
+}
+
+/**
+ * Per-asset Binance balances merged across all linked accounts. Each asset splits its quantity into `spot` (free + locked spot wallet), `funding` (funding/earn wallet) and `collateral` (cross + isolated margin wallet balances plus crypto-loan collateral). `byAccount` preserves the per-account breakdown for the asset detail view.
+
+ * @summary Unified per-asset Binance holdings across spot, funding & collateral
+ */
+export const listHoldings = async ( options?: RequestInit): Promise<HoldingsResponse> => {
+
+  return customFetch<HoldingsResponse>(getListHoldingsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListHoldingsQueryKey = () => {
+    return [
+    `/api/holdings`
+    ] as const;
+    }
+
+
+export const getListHoldingsQueryOptions = <TData = Awaited<ReturnType<typeof listHoldings>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listHoldings>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListHoldingsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listHoldings>>> = ({ signal }) => listHoldings({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listHoldings>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListHoldingsQueryResult = NonNullable<Awaited<ReturnType<typeof listHoldings>>>
+export type ListHoldingsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Unified per-asset Binance holdings across spot, funding & collateral
+ */
+
+export function useListHoldings<TData = Awaited<ReturnType<typeof listHoldings>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listHoldings>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListHoldingsQueryOptions(options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

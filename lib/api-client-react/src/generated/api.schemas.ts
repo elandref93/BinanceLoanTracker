@@ -79,6 +79,56 @@ export interface RatePoint {
   apr: number;
 }
 
+/**
+ * margin = real per-accrual rates from Binance margin interest history; flat = current APR repeated (crypto loans have no rate-history endpoint).
+ */
+export type RateHistoryResponseSource = typeof RateHistoryResponseSource[keyof typeof RateHistoryResponseSource];
+
+
+export const RateHistoryResponseSource = {
+  margin: 'margin',
+  flat: 'flat',
+} as const;
+
+export interface RateHistoryResponse {
+  loanId: string;
+  days: number;
+  /** margin = real per-accrual rates from Binance margin interest history; flat = current APR repeated (crypto loans have no rate-history endpoint). */
+  source: RateHistoryResponseSource;
+  points: RatePoint[];
+  avg30dApr: number;
+  min30dApr: number;
+  max30dApr: number;
+}
+
+export interface HoldingByAccount {
+  accountId: string;
+  accountName: string;
+  spot: number;
+  funding: number;
+  collateral: number;
+  total: number;
+}
+
+export interface Holding {
+  asset: string;
+  /** Free + locked spot balance */
+  spot: number;
+  /** Funding/earn wallet balance */
+  funding: number;
+  /** Margin wallet balances + crypto-loan collateral */
+  collateral: number;
+  total: number;
+  /** total valued at current spot price */
+  usd: number;
+  byAccount: HoldingByAccount[];
+}
+
+export interface HoldingsResponse {
+  asOf: string;
+  holdings: Holding[];
+}
+
 export interface InterestByLoan {
   loanId: string;
   accountId: string;
@@ -189,6 +239,22 @@ export type ListInterest200 = {
   byAsset: InterestByAsset[];
   rows: InterestRow[];
 };
+
+export type GetRateHistoryParams = {
+loanId: string;
+/**
+ * Look-back window in days
+ */
+days?: GetRateHistoryDays;
+};
+
+export type GetRateHistoryDays = typeof GetRateHistoryDays[keyof typeof GetRateHistoryDays];
+
+
+export const GetRateHistoryDays = {
+  NUMBER_30: 30,
+  NUMBER_90: 90,
+} as const;
 
 export type ListLunoWallets200 = {
   wallets: LunoWallet[];

@@ -1,6 +1,9 @@
 import { Router, type IRouter, type Request } from "express";
 import {
   GetPricesQueryParams,
+  GetRateHistoryQueryParams,
+  GetRateHistoryResponse,
+  ListHoldingsResponse,
   ListInterestQueryParams,
   ListLoansQueryParams,
   ListAccountsResponse,
@@ -50,6 +53,9 @@ const emptyClient: BinanceClient = {
   },
   async getLifetimeInterestUsd() {
     return { lifetimeInterestUsd: 0, loanAgeDays: 0 };
+  },
+  async getHoldings() {
+    return [];
   },
 };
 
@@ -290,6 +296,58 @@ router.get("/interest", async (req, res, next) => {
         byLoan,
         byAsset,
         rows,
+      }),
+    );
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get("/rate-history", async (req, res, next) => {
+  try {
+    const { loanId, days } = GetRateHistoryQueryParams.parse(req.query);
+    const window = days ?? 30;
+    const points = await clientFor(req).getRateHistory(loanId, window);
+    // `source` is authoritative, not just loanId-derived: the client falls
+    // back to a FLAT line (at the current rate) for crypto loans AND for
+    // margin loans too new to have accrual rows yet. We only advertise
+    // "margin" (real charged rate) when the loan is a margin ref *and* the
+    // returned series actually moves — a flat series carries no real
+    // history regardless of product, so it's labeled "flat".
+    const aprs = points.map((p) => p.apr);
+    const hasVariance =
+      aprs.length >= 2 && Math.min(...aprs) !== Math.max(...aprs);
+    const source =
+      /_cross_|_iso_/.test(loanId) && hasVariance ? "margin" : "flat";
+    // Stats over the trailing 30 days of the series (chart shows the full
+    // window, but "30-day average" is what the loan card advertises).
+    const last30 = points.slice(-30).map((p) => p.apr);
+    const avg30dApr = last30.length
+      ? round(last30.reduce((s, a) => s + a, 0) / last30.length, 3)
+      : 0;
+    res.json(
+      GetRateHistoryResponse.parse({
+        loanId,
+        days: window,
+        source,
+        points,
+        avg30dApr,
+        min30dApr: last30.length ? round(Math.min(...last30), 3) : 0,
+        max30dApr: last30.length ? round(Math.max(...last30), 3) : 0,
+      }),
+    );
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get("/holdings", async (req, res, next) => {
+  try {
+    const holdings = await clientFor(req).getHoldings();
+    res.json(
+      ListHoldingsResponse.parse({
+        asOf: new Date().toISOString(),
+        holdings,
       }),
     );
   } catch (err) {

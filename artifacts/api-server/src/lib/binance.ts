@@ -1073,6 +1073,52 @@ export function createRealBinanceClient(
     return out;
   }
 
+  // Assets parked in Binance Simple Earn (Flexible + Locked). Binance auto-
+  // subscribes some coins — notably BNB — into Earn, so these balances never
+  // show up in the spot or funding wallet calls. Folded into the funding/earn
+  // bucket so they're counted in net worth instead of silently vanishing.
+  async function fetchSimpleEarnBalances(): Promise<Map<string, number>> {
+    const out = new Map<string, number>();
+    const add = (asset: string, qty: number) => {
+      const a = str(asset).toUpperCase();
+      if (a && qty > 0) out.set(a, (out.get(a) ?? 0) + qty);
+    };
+    const products: Array<{ path: string; qtyKey: string; label: string }> = [
+      {
+        path: "/sapi/v1/simple-earn/flexible/position",
+        qtyKey: "totalAmount",
+        label: "flexible",
+      },
+      {
+        path: "/sapi/v1/simple-earn/locked/position",
+        qtyKey: "amount",
+        label: "locked",
+      },
+    ];
+    for (const { path, qtyKey, label } of products) {
+      // Paginate defensively; Binance caps size at 100 rows per page.
+      for (let current = 1; current <= 50; current++) {
+        let raw: unknown;
+        try {
+          raw = await binanceSignedGet(creds, path, { current, size: 100 });
+        } catch (err) {
+          logger.warn(
+            { err, accountId },
+            `simple-earn ${label} position fetch failed`,
+          );
+          break;
+        }
+        const rows = rowsArray(raw);
+        for (const r of rows) {
+          const row = r as Record<string, unknown>;
+          add(str(row["asset"]), num(row[qtyKey]));
+        }
+        if (rows.length < 100) break;
+      }
+    }
+    return out;
+  }
+
   // Assets held in the margin wallets (cross userAssets + isolated pair sides).
   // These back the margin loans; crypto-loan collateral is folded in later.
   async function fetchMarginCollateralBalances(): Promise<Map<string, number>> {
@@ -1302,14 +1348,20 @@ export function createRealBinanceClient(
       }));
     },
     async getHoldings() {
-      const [spot, funding, collateral, flexLoans, fixedLoans] =
+      const [spot, funding, earn, collateral, flexLoans, fixedLoans] =
         await Promise.all([
           fetchSpotBalances(),
           fetchFundingBalances(),
+          fetchSimpleEarnBalances(),
           fetchMarginCollateralBalances(),
           fetchFlexibleLoans(),
           fetchFixedLoans(),
         ]);
+      // Earn (Simple Earn flexible/locked) is part of the "funding/earn"
+      // wallet bucket in the holdings schema — merge it in.
+      for (const [asset, qty] of earn) {
+        funding.set(asset, (funding.get(asset) ?? 0) + qty);
+      }
       // Crypto-loan collateral lives in the loan product, not a wallet, so
       // fold each loan's collateral into the collateral bucket. Skip the
       // cross-margin "POOL" pseudo-asset (already counted via margin wallet).

@@ -22,7 +22,12 @@ router.get("/healthz", (_req, res) => {
   }
 
   const data = HealthCheckResponse.parse({ status: "ok" });
-  res.json(data);
+  // `version` is a deploy marker so we can confirm which build is actually
+  // live on Azure (the health schema only validates `status`; the extra field
+  // rides along in the JSON). Prefer the CI-injected commit, fall back to a
+  // hand-bumped tag that changes whenever the backend is meaningfully updated.
+  const version = process.env.GIT_COMMIT ?? "2026-05-31-holdings-earn-futures";
+  res.json({ ...data, version });
 });
 
 export default router;

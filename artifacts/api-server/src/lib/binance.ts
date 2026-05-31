@@ -409,6 +409,18 @@ async function binanceSignedGet<T = unknown>(
   path: string,
   params: Record<string, string | number> = {},
 ): Promise<T> {
+  return binanceSignedGetOn<T>(BINANCE_BASE, creds, path, params);
+}
+
+// Same signed-GET, but against an arbitrary Binance host. Spot/margin/earn/
+// loan endpoints live on api.binance.com; the futures wallets live on the
+// USDⓈ-M (fapi) and COIN-M (dapi) hosts, which use the identical HMAC scheme.
+async function binanceSignedGetOn<T = unknown>(
+  base: string,
+  creds: BinanceCredentials,
+  path: string,
+  params: Record<string, string | number> = {},
+): Promise<T> {
   const qs = new URLSearchParams({
     ...Object.fromEntries(
       Object.entries(params).map(([k, v]) => [k, String(v)]),
@@ -418,7 +430,7 @@ async function binanceSignedGet<T = unknown>(
   });
   const signature = signQuery(creds.apiSecret, qs.toString());
   qs.append("signature", signature);
-  const res = await fetch(`${BINANCE_BASE}${path}?${qs.toString()}`, {
+  const res = await fetch(`${base}${path}?${qs.toString()}`, {
     headers: { "X-MBX-APIKEY": creds.apiKey },
   });
   const body = await res.text();
@@ -1119,6 +1131,46 @@ export function createRealBinanceClient(
     return out;
   }
 
+  // Assets sitting in the Futures wallets (USDⓈ-M + COIN-M). These live on
+  // separate hosts (fapi/dapi) from everything else, so they're invisible to
+  // the spot/funding/earn calls. Folded into the funding/earn bucket so any
+  // balance parked in futures still counts toward net worth.
+  async function fetchFuturesBalances(): Promise<Map<string, number>> {
+    const out = new Map<string, number>();
+    const add = (asset: string, qty: number) => {
+      const a = str(asset).toUpperCase();
+      if (a && qty > 0) out.set(a, (out.get(a) ?? 0) + qty);
+    };
+    const sources: Array<{ base: string; path: string; label: string }> = [
+      {
+        base: "https://fapi.binance.com",
+        path: "/fapi/v2/balance",
+        label: "usdm",
+      },
+      {
+        base: "https://dapi.binance.com",
+        path: "/dapi/v1/balance",
+        label: "coinm",
+      },
+    ];
+    for (const { base, path, label } of sources) {
+      let raw: unknown;
+      try {
+        raw = await binanceSignedGetOn(base, creds, path);
+      } catch (err) {
+        logger.warn({ err, accountId }, `futures ${label} balances fetch failed`);
+        continue;
+      }
+      // Both endpoints return an array of { asset, balance } rows where
+      // `balance` is the wallet balance (margin + unrealised handled elsewhere).
+      for (const r of Array.isArray(raw) ? raw : []) {
+        const row = r as Record<string, unknown>;
+        add(str(row["asset"]), num(row["balance"]));
+      }
+    }
+    return out;
+  }
+
   // Assets held in the margin wallets (cross userAssets + isolated pair sides).
   // These back the margin loans; crypto-loan collateral is folded in later.
   async function fetchMarginCollateralBalances(): Promise<Map<string, number>> {
@@ -1348,18 +1400,23 @@ export function createRealBinanceClient(
       }));
     },
     async getHoldings() {
-      const [spot, funding, earn, collateral, flexLoans, fixedLoans] =
+      const [spot, funding, earn, futures, collateral, flexLoans, fixedLoans] =
         await Promise.all([
           fetchSpotBalances(),
           fetchFundingBalances(),
           fetchSimpleEarnBalances(),
+          fetchFuturesBalances(),
           fetchMarginCollateralBalances(),
           fetchFlexibleLoans(),
           fetchFixedLoans(),
         ]);
-      // Earn (Simple Earn flexible/locked) is part of the "funding/earn"
-      // wallet bucket in the holdings schema — merge it in.
+      // Earn (Simple Earn flexible/locked) and Futures (USDⓈ-M + COIN-M) are
+      // both folded into the "funding/earn" wallet bucket in the holdings
+      // schema so every off-spot balance still counts toward net worth.
       for (const [asset, qty] of earn) {
+        funding.set(asset, (funding.get(asset) ?? 0) + qty);
+      }
+      for (const [asset, qty] of futures) {
         funding.set(asset, (funding.get(asset) ?? 0) + qty);
       }
       // Crypto-loan collateral lives in the loan product, not a wallet, so

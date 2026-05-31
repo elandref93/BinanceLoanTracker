@@ -5,7 +5,7 @@
  * inconsistent across iOS versions and some locales emit a narrow no-break
  * space that renders oddly. A plain space is predictable everywhere.
  */
-function groupWithSpaces(value: number, dp: number): string {
+export function groupWithSpaces(value: number, dp: number): string {
   const sign = value < 0 ? "-" : "";
   const fixed = Math.abs(value).toFixed(dp);
   const [intPart, frac] = fixed.split(".");
@@ -15,11 +15,10 @@ function groupWithSpaces(value: number, dp: number): string {
 
 export function fmtUsd(
   value: number,
+  // `compact` is accepted for call-site compatibility but intentionally
+  // ignored — values are always shown in full (no "k"/"M" abbreviation).
   opts: { compact?: boolean; whole?: boolean } = {},
 ): string {
-  if (opts.compact && Math.abs(value) >= 1000) {
-    return `$${(value / 1000).toFixed(1)}k`;
-  }
   const dp = opts.whole ? 0 : 2;
   return `$${groupWithSpaces(value, dp)}`;
 }
@@ -43,44 +42,26 @@ export function fmtAge(iso: string): string {
   return `${Math.floor(hr / 24)}d ago`;
 }
 
-export const USD_TO_ZAR = 18.5;
+// Live USD→ZAR rate. Defaults to a sane fallback and is updated at runtime by
+// lib/fxRate.ts from the current exchange rate (and remembered across launches).
+let usdToZar = 18.5;
+
+export function getUsdToZar(): number {
+  return usdToZar;
+}
+
+export function setUsdToZar(rate: number): void {
+  if (Number.isFinite(rate) && rate > 0) usdToZar = rate;
+}
 
 export function fmtMoney(
   usd: number,
   currency: "USD" | "ZAR",
+  // `compact` accepted for compatibility but ignored — full numbers only.
   opts: { compact?: boolean; whole?: boolean } = {},
 ): string {
   if (currency === "USD") return fmtUsd(usd, opts);
-  const zar = usd * USD_TO_ZAR;
-  if (opts.compact && Math.abs(zar) >= 1000) {
-    return `R${(zar / 1000).toFixed(1)}k`;
-  }
+  const zar = usd * usdToZar;
   const dp = opts.whole ? 0 : 2;
   return `R${groupWithSpaces(zar, dp)}`;
-}
-
-/**
- * Compact value formatter for the strategy calculator: K (thousand),
- * M (million), B (billion). Keeps one decimal place where it carries
- * signal (e.g. 1.2M) and drops it for clean magnitudes (e.g. 100K).
- * Honours the active display currency for the symbol + ZAR conversion.
- */
-export function fmtCompactMoney(
-  usd: number,
-  currency: "USD" | "ZAR",
-): string {
-  const symbol = currency === "USD" ? "$" : "R";
-  const value = currency === "USD" ? usd : usd * USD_TO_ZAR;
-  const sign = value < 0 ? "-" : "";
-  const abs = Math.abs(value);
-  const fmt = (n: number, suffix: string) => {
-    // One decimal only when it adds information (not a whole magnitude).
-    const rounded = Math.round(n * 10) / 10;
-    const text = Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
-    return `${sign}${symbol}${text}${suffix}`;
-  };
-  if (abs >= 1_000_000_000) return fmt(abs / 1_000_000_000, "B");
-  if (abs >= 1_000_000) return fmt(abs / 1_000_000, "M");
-  if (abs >= 1_000) return fmt(abs / 1_000, "K");
-  return `${sign}${symbol}${groupWithSpaces(Math.round(abs), 0)}`;
 }

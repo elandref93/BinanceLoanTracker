@@ -8,12 +8,14 @@ import React, {
   useState,
 } from "react";
 
+import { initFxRate } from "@/lib/fxRate";
 import { pushSettings, subscribeSettings } from "@/lib/settingsStore";
 
 export type Currency = "USD" | "ZAR";
 
 interface CurrencyCtx {
   currency: Currency;
+  usdToZar: number;
   toggle: () => void;
   set: (c: Currency) => void;
 }
@@ -23,6 +25,7 @@ const KEY = "ledger.currency";
 
 export function CurrencyProvider({ children }: { children: React.ReactNode }) {
   const [currency, setCurrency] = useState<Currency>("USD");
+  const [usdToZar, setRate] = useState(18.5);
 
   const reload = useCallback(() => {
     AsyncStorage.getItem(KEY).then((v) => {
@@ -37,6 +40,12 @@ export function CurrencyProvider({ children }: { children: React.ReactNode }) {
     return subscribeSettings(reload);
   }, [reload]);
 
+  // Hydrate the live USD→ZAR rate (cached first, then fresh). Each applied
+  // value bumps state so money displays re-render with the latest rate.
+  useEffect(() => {
+    void initFxRate(setRate);
+  }, []);
+
   const set = useCallback((c: Currency) => {
     setCurrency(c);
     AsyncStorage.setItem(KEY, c).then(() => {
@@ -49,8 +58,8 @@ export function CurrencyProvider({ children }: { children: React.ReactNode }) {
   }, [currency, set]);
 
   const value = useMemo(
-    () => ({ currency, toggle, set }),
-    [currency, toggle, set],
+    () => ({ currency, usdToZar, toggle, set }),
+    [currency, usdToZar, toggle, set],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

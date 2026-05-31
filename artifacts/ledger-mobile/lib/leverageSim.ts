@@ -17,7 +17,7 @@
 
 import type { Loan } from "@workspace/api-client-react";
 
-import { USD_TO_ZAR } from "@/utils/format";
+import { getUsdToZar } from "@/utils/format";
 
 export type TaxMode = "personal" | "trust" | "taxfree";
 
@@ -351,7 +351,7 @@ export function snapshotFromLoans(
       : null;
 
   return {
-    collateralZar: collateralUsd * USD_TO_ZAR,
+    collateralZar: collateralUsd * getUsdToZar(),
     weightedAprPct: weightedApr,
     currentLtvPct: collateralUsd > 0 ? (debtUsd / collateralUsd) * 100 : null,
   };

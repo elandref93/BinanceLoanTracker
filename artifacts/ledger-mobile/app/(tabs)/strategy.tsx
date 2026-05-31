@@ -4,6 +4,8 @@ import * as Sharing from "expo-sharing";
 import { useEffect, useMemo, useState } from "react";
 import {
   Alert,
+  Dimensions,
+  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -33,7 +35,7 @@ import {
   useScenarios,
   type Scenario,
 } from "@/lib/leverageScenarios";
-import { fmtMoney, fmtPct, USD_TO_ZAR } from "@/utils/format";
+import { fmtMoney, fmtPct, getUsdToZar } from "@/utils/format";
 import { useListLoans } from "@workspace/api-client-react";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -42,13 +44,14 @@ import { useListLoans } from "@workspace/api-client-react";
 // ─────────────────────────────────────────────────────────────────────────────
 function fmtZ(zar: number, currency: "USD" | "ZAR"): string {
   if (!isFinite(zar)) return "—";
-  return fmtMoney(zar / USD_TO_ZAR, currency, { compact: true });
+  return fmtMoney(zar / getUsdToZar(), currency, { whole: true });
 }
 
 export default function StrategyScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { currency } = useCurrency();
+  const [expanded, setExpanded] = useState<null | "table" | "chart">(null);
+  const { currency, usdToZar } = useCurrency();
   const { user } = useSession();
   const userId = user?.sub ?? null;
   const wide = useWideScreen();
@@ -79,9 +82,11 @@ export default function StrategyScreen() {
     return loans.filter((l) => ids.has(l.accountId));
   }, [loansQ.data, accountFilter, containers]);
 
+  // usdToZar is a dependency because snapshotFromLoans() reads the live FX
+  // rate internally; recompute when the rate hydrates so ZAR figures refresh.
   const livePosition = useMemo(
     () => snapshotFromLoans(scopedLoans),
-    [scopedLoans],
+    [scopedLoans, usdToZar],
   );
 
   const { scenarios, loading: scenariosLoading } = useScenarios(userId);
@@ -256,8 +261,8 @@ export default function StrategyScreen() {
       (s, l) => s + (l.collateral?.valueUsd ?? 0) - (l.debtUsd ?? 0),
       0,
     );
-    return usd * USD_TO_ZAR;
-  }, [loansQ.data]);
+    return usd * getUsdToZar();
+  }, [loansQ.data, usdToZar]);
 
   const planMarker = useMemo(() => {
     if (!activeScenarioId || !activeCreatedAt || liveNetZar == null) return null;
@@ -1105,7 +1110,11 @@ export default function StrategyScreen() {
 
         {/* CHART */}
         <Card colors={colors}>
-          <SectionHead text="Net value over time" colors={colors} />
+          <CardHeadRow
+            text="Net value over time"
+            colors={colors}
+            onExpand={() => setExpanded("chart")}
+          />
           <ChartArea
             snapsA={snapsA}
             snapsB={snapsB}
@@ -1186,54 +1195,17 @@ export default function StrategyScreen() {
 
         {/* YEAR TABLE */}
         <Card colors={colors}>
-          <SectionHead text="Year by year" colors={colors} />
-          <View style={styles.tableHead}>
-            <ColH text="YR" colors={colors} flex={0.5} align="left" />
-            <ColH text="A NET" colors={colors} color={colors.primary} />
-            <ColH text="B NET" colors={colors} color="#7c6aef" />
-            <ColH text="A TAX" colors={colors} color={colors.danger} />
-            <ColH text="Δ" colors={colors} />
-          </View>
-          {rowsA.map((rA, i) => {
-            const rB = rowsB[i];
-            const d = rA.net - rB.net;
-            return (
-              <View
-                key={rA.year}
-                style={[
-                  styles.tableRow,
-                  { borderBottomColor: colors.border },
-                ]}
-              >
-                <ColC
-                  text={String(rA.year)}
-                  colors={colors}
-                  flex={0.5}
-                  align="left"
-                />
-                <ColC
-                  text={fmtZ(rA.net, currency)}
-                  colors={colors}
-                  color={colors.primary}
-                />
-                <ColC
-                  text={fmtZ(rB.net, currency)}
-                  colors={colors}
-                  color="#7c6aef"
-                />
-                <ColC
-                  text={fmtZ(rA.amcTax, currency)}
-                  colors={colors}
-                  color={colors.danger}
-                />
-                <ColC
-                  text={`${d >= 0 ? "+" : ""}${fmtZ(d, currency)}`}
-                  colors={colors}
-                  color={d >= 0 ? colors.primary : colors.danger}
-                />
-              </View>
-            );
-          })}
+          <CardHeadRow
+            text="Year by year"
+            colors={colors}
+            onExpand={() => setExpanded("table")}
+          />
+          <YearTable
+            rowsA={rowsA}
+            rowsB={rowsB}
+            currency={currency}
+            colors={colors}
+          />
         </Card>
 
         {/* DISCLAIMER */}
@@ -1247,9 +1219,22 @@ export default function StrategyScreen() {
             ⚠️ Planning tool, not advice. Does not model BTC volatility,
             liquidation cascades, AMC fees, forex, or Section 7C. Tax math
             assumes SA CGT rules (40% personal / 80% trust inclusion at 45%
-            marginal). Display currency converts at R{USD_TO_ZAR}/USD.
+            marginal). Display currency converts at R{getUsdToZar().toFixed(2)}/USD (live).
           </Text>
         </View>
+        <ExpandModal
+          mode={expanded}
+          onClose={() => setExpanded(null)}
+          insets={insets}
+          colors={colors}
+          rowsA={rowsA}
+          rowsB={rowsB}
+          snapsA={snapsA}
+          snapsB={snapsB}
+          years={inputs.years}
+          currency={currency}
+          marker={planMarker}
+        />
       </Container>
     </ScrollView>
   );
@@ -1532,6 +1517,7 @@ function ChartArea({
   currency,
   colors,
   marker,
+  chartHeight = 180,
 }: {
   snapsA: ReturnType<typeof compute>["snapsA"];
   snapsB: ReturnType<typeof compute>["snapsB"];
@@ -1539,6 +1525,7 @@ function ChartArea({
   currency: "USD" | "ZAR";
   colors: ReturnType<typeof useColors>;
   marker?: { month: number; net: number } | null;
+  chartHeight?: number;
 }) {
   const [w, setW] = useState(0);
   const cMax = Math.max(
@@ -1563,7 +1550,7 @@ function ChartArea({
             snapsA={snapsA}
             snapsB={snapsB}
             width={w}
-            height={180}
+            height={chartHeight}
             years={years}
             marker={marker}
           />
@@ -1620,18 +1607,23 @@ function ColH({
   color,
   flex,
   align,
+  width,
+  fontSize,
 }: {
   text: string;
   colors: ReturnType<typeof useColors>;
   color?: string;
   flex?: number;
   align?: "left" | "right";
+  width?: number;
+  fontSize?: number;
 }) {
   return (
     <Text
+      numberOfLines={1}
       style={{
-        flex: flex ?? 1,
-        fontSize: 9,
+        ...(width != null ? { width } : { flex: flex ?? 1 }),
+        fontSize: fontSize ?? 9,
         fontWeight: "700",
         letterSpacing: 0.6,
         color: color ?? colors.mutedForeground,
@@ -1649,18 +1641,23 @@ function ColC({
   color,
   flex,
   align,
+  width,
+  fontSize,
 }: {
   text: string;
   colors: ReturnType<typeof useColors>;
   color?: string;
   flex?: number;
   align?: "left" | "right";
+  width?: number;
+  fontSize?: number;
 }) {
   return (
     <Text
       style={{
-        flex: flex ?? 1,
-        fontSize: 11,
+        ...(width != null ? { width } : { flex: flex ?? 1 }),
+        fontSize: fontSize ?? 11,
+        fontVariant: ["tabular-nums"],
         color: color ?? colors.foreground,
         textAlign: align ?? "right",
       }}
@@ -1668,6 +1665,191 @@ function ColC({
     >
       {text}
     </Text>
+  );
+}
+
+function CardHeadRow({
+  text,
+  colors,
+  onExpand,
+}: {
+  text: string;
+  colors: ReturnType<typeof useColors>;
+  onExpand: () => void;
+}) {
+  return (
+    <View
+      style={{
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "space-between",
+        marginBottom: 12,
+      }}
+    >
+      <SectionHead text={text} colors={colors} noMargin />
+      <Pressable
+        onPress={onExpand}
+        hitSlop={10}
+        style={({ pressed }) => [
+          styles.expandBtn,
+          { borderColor: colors.border, opacity: pressed ? 0.55 : 1 },
+        ]}
+      >
+        <Feather name="maximize-2" size={12} color={colors.mutedForeground} />
+        <Text
+          style={{ fontSize: 11, fontWeight: "600", color: colors.mutedForeground }}
+        >
+          Expand
+        </Text>
+      </Pressable>
+    </View>
+  );
+}
+
+function YearTable({
+  rowsA,
+  rowsB,
+  currency,
+  colors,
+  large = false,
+}: {
+  rowsA: ReturnType<typeof compute>["rowsA"];
+  rowsB: ReturnType<typeof compute>["rowsB"];
+  currency: "USD" | "ZAR";
+  colors: ReturnType<typeof useColors>;
+  large?: boolean;
+}) {
+  const hfs = large ? 12 : 9;
+  const dfs = large ? 16 : 12;
+  const yrW = large ? 56 : 38;
+  const colW = large ? 158 : 116;
+  const total = yrW + colW * 4 + 6 * 4;
+  return (
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator
+      bounces={false}
+      contentContainerStyle={{ minWidth: total }}
+    >
+      <View style={{ minWidth: total }}>
+        <View style={[styles.tableHead, { borderBottomColor: colors.border }]}>
+          <ColH text="YR" colors={colors} width={yrW} align="left" fontSize={hfs} />
+          <ColH text="A NET" colors={colors} color={colors.primary} width={colW} fontSize={hfs} />
+          <ColH text="B NET" colors={colors} color="#7c6aef" width={colW} fontSize={hfs} />
+          <ColH text="A TAX" colors={colors} color={colors.danger} width={colW} fontSize={hfs} />
+          <ColH text="Δ" colors={colors} width={colW} fontSize={hfs} />
+        </View>
+        {rowsA.map((rA, i) => {
+          const rB = rowsB[i];
+          const d = rA.net - rB.net;
+          return (
+            <View
+              key={rA.year}
+              style={[styles.tableRow, { borderBottomColor: colors.border }]}
+            >
+              <ColC text={String(rA.year)} colors={colors} width={yrW} align="left" fontSize={dfs} />
+              <ColC text={fmtZ(rA.net, currency)} colors={colors} color={colors.primary} width={colW} fontSize={dfs} />
+              <ColC text={fmtZ(rB.net, currency)} colors={colors} color="#7c6aef" width={colW} fontSize={dfs} />
+              <ColC text={fmtZ(rA.amcTax, currency)} colors={colors} color={colors.danger} width={colW} fontSize={dfs} />
+              <ColC text={`${d >= 0 ? "+" : ""}${fmtZ(d, currency)}`} colors={colors} color={d >= 0 ? colors.primary : colors.danger} width={colW} fontSize={dfs} />
+            </View>
+          );
+        })}
+      </View>
+    </ScrollView>
+  );
+}
+
+function ExpandModal({
+  mode,
+  onClose,
+  insets,
+  colors,
+  rowsA,
+  rowsB,
+  snapsA,
+  snapsB,
+  years,
+  currency,
+  marker,
+}: {
+  mode: null | "table" | "chart";
+  onClose: () => void;
+  insets: { top: number; bottom: number };
+  colors: ReturnType<typeof useColors>;
+  rowsA: ReturnType<typeof compute>["rowsA"];
+  rowsB: ReturnType<typeof compute>["rowsB"];
+  snapsA: ReturnType<typeof compute>["snapsA"];
+  snapsB: ReturnType<typeof compute>["snapsB"];
+  years: number;
+  currency: "USD" | "ZAR";
+  marker?: { month: number; net: number } | null;
+}) {
+  return (
+    <Modal visible={mode !== null} animationType="slide" onRequestClose={onClose}>
+      <View
+        style={{
+          flex: 1,
+          backgroundColor: colors.background,
+          paddingTop: insets.top + 8,
+          paddingHorizontal: 16,
+          paddingBottom: insets.bottom + 8,
+        }}
+      >
+        <View
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            justifyContent: "space-between",
+            marginBottom: 6,
+          }}
+        >
+          <Text style={{ fontSize: 18, fontWeight: "700", color: colors.foreground }}>
+            {mode === "table" ? "Year by year" : "Net value over time"}
+          </Text>
+          <Pressable
+            onPress={onClose}
+            hitSlop={12}
+            style={({ pressed }) => [
+              styles.closeBtn,
+              { borderColor: colors.border, opacity: pressed ? 0.55 : 1 },
+            ]}
+          >
+            <Feather name="x" size={18} color={colors.foreground} />
+          </Pressable>
+        </View>
+        <Text
+          style={{ fontSize: 12, color: colors.mutedForeground, marginBottom: 14 }}
+        >
+          {mode === "table"
+            ? "Swipe sideways for every column · scroll for all years."
+            : "Drag across the chart to read exact values."}
+        </Text>
+        {mode === "table" ? (
+          <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator>
+            <YearTable
+              rowsA={rowsA}
+              rowsB={rowsB}
+              currency={currency}
+              colors={colors}
+              large
+            />
+          </ScrollView>
+        ) : mode === "chart" ? (
+          <View style={{ flex: 1, justifyContent: "center" }}>
+            <ChartArea
+              snapsA={snapsA}
+              snapsB={snapsB}
+              years={years}
+              currency={currency}
+              colors={colors}
+              marker={marker}
+              chartHeight={Math.min(440, Dimensions.get("window").height * 0.5)}
+            />
+          </View>
+        ) : null}
+      </View>
+    </Modal>
   );
 }
 
@@ -1852,4 +2034,21 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   disclaimer: { padding: 12, borderRadius: 10, borderWidth: 1, marginTop: 4 },
+  expandBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  closeBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 8,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
 });

@@ -11,9 +11,11 @@ import { useColors } from "@/hooks/useColors";
 import type { Snap } from "@/lib/leverageSim";
 
 function fmtNet(n: number): string {
-  if (n >= 1_000_000) return `R ${(n / 1_000_000).toFixed(2)}M`;
-  if (n >= 1_000) return `R ${(n / 1_000).toFixed(0)}k`;
-  return `R ${Math.round(n)}`;
+  // Full numbers, no abbreviation — grouped with spaces (e.g. "R 133 777 600").
+  const grouped = Math.round(n)
+    .toFixed(0)
+    .replace(/\B(?=(\d{3})+(?!\d))/g, " ");
+  return `R ${grouped}`;
 }
 
 interface Props {

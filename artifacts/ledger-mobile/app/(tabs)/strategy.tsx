@@ -1,7 +1,7 @@
 import { Feather } from "@expo/vector-icons";
 import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Dimensions,
@@ -29,6 +29,7 @@ import {
   type LeverageInputs,
   type TaxMode,
 } from "@/lib/leverageSim";
+import { loadDraft, saveDraft } from "@/lib/leverageDraft";
 import {
   deleteScenario,
   saveScenario,
@@ -103,13 +104,73 @@ export default function StrategyScreen() {
     setInputs((prev) => (prev.borrowCost === v ? prev : { ...prev, borrowCost: v }));
   }, [borrowAuto, livePosition.weightedAprPct]);
 
-  // Selecting an account also sets the matching tax entity (Personal/Trust).
+  // Account selection is the single source of truth for tax treatment. The
+  // effect below derives/locks taxMode from the selected account, so this just
+  // records the scope.
   const onSelectAccount = (id: string | null) => {
     haptic.tap();
     setAccountFilter(id);
-    const c = containers.find((x) => x.id === id);
-    if (c) set("taxMode", c.type === "trust" ? "trust" : "personal");
   };
+
+  // Tax follows the account: whenever a specific entity is scoped, force its
+  // tax mode to match the container type (Personal/Trust). Tax-Free is only a
+  // modeling lens available under "All", so it is never forced here.
+  useEffect(() => {
+    if (!accountFilter) return;
+    const c = containers.find((x) => x.id === accountFilter);
+    if (!c) {
+      // A restored scope can point at a since-deleted account. Once containers
+      // have loaded, fall back to "All" so scope, the tax UI, and the tax math
+      // stay consistent (otherwise the lock could show "Personal" while the
+      // engine still uses a stale taxfree mode).
+      if (containers.length > 0) setAccountFilter(null);
+      return;
+    }
+    const want: TaxMode = c.type === "trust" ? "trust" : "personal";
+    setInputs((prev) =>
+      prev.taxMode === want ? prev : { ...prev, taxMode: want },
+    );
+  }, [accountFilter, containers]);
+
+  // ── Remember the working draft per user ──────────────────────────────────
+  // The calculator inputs, scope, and borrow mode are persisted locally per
+  // signed-in user and restored on next sign-in, so an in-progress calculation
+  // is never lost. draftLoaded gates saving until the initial restore completes
+  // (and resets synchronously on user switch, before the save effect runs) so
+  // we never clobber a user's stored draft with defaults or another user's
+  // state.
+  const draftLoaded = useRef(false);
+  useEffect(() => {
+    draftLoaded.current = false;
+    let cancelled = false;
+    void loadDraft(userId).then((d) => {
+      if (cancelled) return;
+      if (d) {
+        setInputs({ ...DEFAULT_INPUTS, ...d.inputs });
+        setAccountFilter(d.accountFilter ?? null);
+        if (typeof d.borrowAuto === "boolean") setBorrowAuto(d.borrowAuto);
+      } else {
+        // No draft for this user — reset to a clean baseline so we never leave
+        // the previous user's in-progress state on screen (or persist it under
+        // the new user's key).
+        setInputs(DEFAULT_INPUTS);
+        setAccountFilter(null);
+        setBorrowAuto(true);
+      }
+      draftLoaded.current = true;
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [userId]);
+
+  useEffect(() => {
+    if (!draftLoaded.current) return;
+    const t = setTimeout(() => {
+      void saveDraft(userId, { inputs, accountFilter, borrowAuto });
+    }, 400);
+    return () => clearTimeout(t);
+  }, [userId, inputs, accountFilter, borrowAuto]);
 
   const result = useMemo(() => compute(inputs), [inputs]);
   const {
@@ -690,45 +751,89 @@ export default function StrategyScreen() {
         {/* TAX ENTITY */}
         <Card colors={colors}>
           <SectionHead text="Tax entity" colors={colors} />
-          <View style={{ flexDirection: "row", gap: 8, marginBottom: 12 }}>
-            {(
-              [
-                { id: "personal", label: "Personal (18%)" },
-                { id: "trust", label: "Trust (36%)" },
-                { id: "taxfree", label: "Tax-Free (0%)" },
-              ] as const
-            ).map((t) => (
-              <Pressable
-                key={t.id}
-                onPress={() => {
-                  haptic.tap();
-                  set("taxMode", t.id as TaxMode);
+          {accountFilter == null ? (
+            <>
+              <Text
+                style={{
+                  color: colors.mutedForeground,
+                  fontSize: 11,
+                  marginBottom: 10,
                 }}
+              >
+                Modeling the whole book — pick a tax lens.
+              </Text>
+              <View style={{ flexDirection: "row", gap: 8, marginBottom: 12 }}>
+                {(
+                  [
+                    { id: "personal", label: "Personal (18%)" },
+                    { id: "trust", label: "Trust (36%)" },
+                    { id: "taxfree", label: "Tax-Free (0%)" },
+                  ] as const
+                ).map((t) => (
+                  <Pressable
+                    key={t.id}
+                    onPress={() => {
+                      haptic.tap();
+                      set("taxMode", t.id as TaxMode);
+                    }}
+                    style={[
+                      styles.tog,
+                      {
+                        backgroundColor:
+                          inputs.taxMode === t.id ? colors.primary : colors.card,
+                        borderColor:
+                          inputs.taxMode === t.id
+                            ? colors.primary
+                            : colors.border,
+                      },
+                    ]}
+                  >
+                    <Text
+                      style={{
+                        fontSize: 11,
+                        fontWeight: "700",
+                        color:
+                          inputs.taxMode === t.id
+                            ? colors.background
+                            : colors.mutedForeground,
+                      }}
+                    >
+                      {t.label}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+            </>
+          ) : (
+            <View style={{ marginBottom: 12 }}>
+              <View
                 style={[
-                  styles.tog,
-                  {
-                    backgroundColor:
-                      inputs.taxMode === t.id ? colors.primary : colors.card,
-                    borderColor:
-                      inputs.taxMode === t.id ? colors.primary : colors.border,
-                  },
+                  styles.lockedTax,
+                  { borderColor: colors.border, backgroundColor: colors.card },
                 ]}
               >
+                <Feather name="lock" size={12} color={colors.mutedForeground} />
                 <Text
                   style={{
-                    fontSize: 11,
+                    fontSize: 12,
                     fontWeight: "700",
-                    color:
-                      inputs.taxMode === t.id
-                        ? colors.background
-                        : colors.mutedForeground,
+                    color: colors.foreground,
                   }}
                 >
-                  {t.label}
+                  {inputs.taxMode === "trust" ? "Trust (36%)" : "Personal (18%)"}
                 </Text>
-              </Pressable>
-            ))}
-          </View>
+              </View>
+              <Text
+                style={{
+                  color: colors.mutedForeground,
+                  fontSize: 11,
+                  marginTop: 8,
+                }}
+              >
+                Tax treatment is set by the selected account.
+              </Text>
+            </View>
+          )}
           <View style={{ flexDirection: "row", gap: 8 }}>
             <MiniStat
               label="Inclusion"
@@ -2034,6 +2139,16 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   disclaimer: { padding: 12, borderRadius: 10, borderWidth: 1, marginTop: 4 },
+  lockedTax: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    alignSelf: "flex-start",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
   expandBtn: {
     flexDirection: "row",
     alignItems: "center",

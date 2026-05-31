@@ -14,6 +14,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { Container } from "@/components/Container";
 import { Divider, Row, Section } from "@/components/SettingsList";
+import { UpdateSettings } from "@/components/UpdateSettings";
 import { useCurrency } from "@/context/CurrencyContext";
 import { haptic } from "@/lib/haptics";
 import {
@@ -335,6 +336,8 @@ export default function SettingsScreen() {
         <View style={[styles.divider, { backgroundColor: colors.border }]} />
         <Row label="Sign out" destructive onPress={onSignOut} />
       </Section>
+
+      <UpdateSettings />
 
       <Text style={[styles.version, { color: colors.mutedForeground }]}>
         Ledger · v1.0.0 · TestFlight

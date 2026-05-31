@@ -16,6 +16,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { AppLockGate } from "@/components/AppLockGate";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { UpdateBanner } from "@/components/UpdateBanner";
 import { CurrencyProvider } from "@/context/CurrencyContext";
 import { RiskSettingsProvider } from "@/context/RiskSettingsContext";
 import { SessionProvider } from "@/context/SessionContext";
@@ -114,6 +115,7 @@ export default function RootLayout() {
                       />
                     </Stack>
                   </AppLockGate>
+                  <UpdateBanner />
                   </RiskSettingsProvider>
                 </CurrencyProvider>
               </KeyboardProvider>

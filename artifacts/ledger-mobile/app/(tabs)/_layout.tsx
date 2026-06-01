@@ -102,9 +102,9 @@ export default function TabLayout() {
       <Tabs.Screen
         name="crypto"
         options={{
-          title: "Crypto",
+          title: "Portfolio",
           tabBarIcon: ({ color }) => (
-            <Feather name="trending-up" size={22} color={color} />
+            <Feather name="pie-chart" size={22} color={color} />
           ),
         }}
       />

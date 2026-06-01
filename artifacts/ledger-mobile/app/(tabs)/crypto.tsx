@@ -1,6 +1,6 @@
 import { Feather } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Pressable,
   RefreshControl,
@@ -13,6 +13,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AssetIcon } from "@/components/AssetIcon";
 import { Container } from "@/components/Container";
+import { DonutChart, type DonutSegment } from "@/components/DonutChart";
 import { ErrorView } from "@/components/ErrorView";
 import { ScreenLoader } from "@/components/ScreenLoader";
 import { Sparkline } from "@/components/Sparkline";
@@ -47,6 +48,30 @@ type MergedHolding = {
   lunoQty: number;
   usd: number;
 };
+
+// Allocation colours, assigned by descending value so the largest holding
+// always takes the lead (Binance gold) colour. Cycles if a user holds more
+// assets than the palette — fine for the handful any of these accounts carry.
+const ALLOC_PALETTE = [
+  "#F0B90B",
+  "#3B82F6",
+  "#10B981",
+  "#8B5CF6",
+  "#EF4444",
+  "#14B8A6",
+  "#F59E0B",
+  "#EC4899",
+  "#0EA5E9",
+  "#64748B",
+];
+
+function allocColor(index: number): string {
+  return ALLOC_PALETTE[index % ALLOC_PALETTE.length];
+}
+
+function fmtPct(value: number, dp = 1): string {
+  return `${value.toFixed(dp)}%`;
+}
 
 function fmtCrypto(n: number, asset: string): string {
   const sym = displayAsset(asset);
@@ -158,7 +183,10 @@ export default function CryptoScreen() {
     }
     for (const [asset, agg] of grouped) {
       const sym = displayAsset(asset);
-      if (sym === "ZAR" || sym === currency) continue;
+      // Exclude only true fiat cash (Luno's ZAR wallet) — it's surfaced in the
+      // Luno cash tile. Composition must NOT depend on the display currency, or
+      // a USD-denominated holding would vanish from totals when viewing in USD.
+      if (sym === "ZAR") continue;
       const qty = agg.totalBalance + agg.totalReserved;
       if (qty <= 0) continue;
       const usd =
@@ -183,6 +211,24 @@ export default function CryptoScreen() {
     [merged],
   );
   const hasBinance = binanceHoldings.length > 0;
+
+  // Stable colour per asset (by descending value, since `merged` is sorted),
+  // shared by the donut and the per-row swatch so the legend reads cleanly.
+  const colorBySymbol = useMemo(() => {
+    const m = new Map<string, string>();
+    merged.forEach((h, i) => m.set(h.symbol, allocColor(i)));
+    return m;
+  }, [merged]);
+  const donutSegments = useMemo<DonutSegment[]>(
+    () =>
+      merged
+        .filter((m) => m.usd > 0)
+        .map((m) => ({
+          value: m.usd,
+          color: colorBySymbol.get(m.symbol) ?? allocColor(0),
+        })),
+    [merged, colorBySymbol],
+  );
 
   // Record a history sample on every fresh, successful render where we
   // actually have a usable fiat figure. Skipping when totalFiat=0
@@ -259,7 +305,107 @@ export default function CryptoScreen() {
       }
     >
       <Container style={{ gap: 16 }}>
-        <Text style={[styles.title, { color: colors.foreground }]}>Crypto</Text>
+        <Text style={[styles.title, { color: colors.foreground }]}>
+          Portfolio
+        </Text>
+
+        {/* Consolidated portfolio — total value, allocation donut, and the
+            per-asset list (each row expands to its Binance/Luno split). */}
+        {merged.length > 0 ? (
+          <View style={{ gap: 16 }}>
+            <View style={{ gap: 2 }}>
+              <Text
+                style={[styles.sectionLabel, { color: colors.mutedForeground }]}
+              >
+                TOTAL · BINANCE + LUNO
+              </Text>
+              <Text style={[styles.heroValue, { color: colors.foreground }]}>
+                {fmtMoney(combinedUsd, currency)}
+              </Text>
+            </View>
+
+            {donutSegments.length > 0 ? (
+              <View style={styles.donutWrap}>
+                <DonutChart segments={donutSegments} size={168} strokeWidth={22}>
+                  <Text
+                    style={[
+                      styles.donutCenterValue,
+                      { color: colors.foreground },
+                    ]}
+                  >
+                    {merged.length}
+                  </Text>
+                  <Text
+                    style={[
+                      styles.donutCenterLabel,
+                      { color: colors.mutedForeground },
+                    ]}
+                  >
+                    {merged.length === 1 ? "asset" : "assets"}
+                  </Text>
+                </DonutChart>
+                <View style={styles.legend}>
+                  {merged.map((m, i) => (
+                    <View key={m.symbol} style={styles.legendRow}>
+                      <View
+                        style={[
+                          styles.legendDot,
+                          { backgroundColor: allocColor(i) },
+                        ]}
+                      />
+                      <Text
+                        style={[styles.legendSym, { color: colors.foreground }]}
+                        numberOfLines={1}
+                      >
+                        {m.symbol}
+                      </Text>
+                      <Text
+                        style={[
+                          styles.legendPct,
+                          { color: colors.mutedForeground },
+                        ]}
+                      >
+                        {combinedUsd > 0
+                          ? fmtPct((m.usd / combinedUsd) * 100)
+                          : "—"}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            ) : null}
+
+            <View
+              style={[
+                styles.card,
+                {
+                  backgroundColor: colors.card,
+                  borderColor: colors.border,
+                  borderRadius: colors.radius,
+                },
+              ]}
+            >
+              {merged.map((m, i) => (
+                <View key={m.symbol}>
+                  {i > 0 ? (
+                    <View
+                      style={[styles.divider, { backgroundColor: colors.border }]}
+                    />
+                  ) : null}
+                  <HoldingRow
+                    m={m}
+                    pct={combinedUsd > 0 ? (m.usd / combinedUsd) * 100 : 0}
+                    currency={currency}
+                    onViewTransactions={() => {
+                      haptic.tap();
+                      router.push(`/crypto/${m.symbol}`);
+                    }}
+                  />
+                </View>
+              ))}
+            </View>
+          </View>
+        ) : null}
 
         {noLunoLinked ? (
           <View
@@ -441,56 +587,13 @@ export default function CryptoScreen() {
           </View>
         ) : null}
 
-        {/* Unified holdings — Binance + Luno merged per asset, valued in USD */}
-        {merged.length > 0 ? (
-          <View style={{ gap: 8 }}>
-            <View style={styles.sparkHeader}>
-              <Text
-                style={[styles.sectionLabel, { color: colors.mutedForeground }]}
-              >
-                HOLDINGS · BINANCE + LUNO
-              </Text>
-              {combinedUsd > 0 ? (
-                <Text style={[styles.sparkDelta, { color: colors.foreground }]}>
-                  {fmtMoney(combinedUsd, "USD")}
-                </Text>
-              ) : null}
-            </View>
-            <View
-              style={[
-                styles.card,
-                {
-                  backgroundColor: colors.card,
-                  borderColor: colors.border,
-                  borderRadius: colors.radius,
-                },
-              ]}
-            >
-              {merged.map((m, i) => (
-                <View key={m.symbol}>
-                  {i > 0 ? (
-                    <View
-                      style={[styles.divider, { backgroundColor: colors.border }]}
-                    />
-                  ) : null}
-                  <HoldingRow
-                    m={m}
-                    onPress={() => {
-                      haptic.tap();
-                      router.push(`/crypto/${m.symbol}`);
-                    }}
-                  />
-                </View>
-              ))}
-            </View>
-          </View>
-        ) : null}
-
-        {/* Transactions */}
+        {/* Transactions — Luno only. Binance has no general transaction
+            history endpoint (only interest), so every row here is a Luno
+            wallet movement; the badge makes the source explicit. */}
         {transactions.length > 0 ? (
           <View style={{ gap: 8 }}>
             <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>
-              RECENT TRANSACTIONS
+              ALL TRANSACTIONS · LUNO
             </Text>
             <View
               style={[
@@ -528,59 +631,123 @@ export default function CryptoScreen() {
 
 function HoldingRow({
   m,
-  onPress,
+  pct,
+  currency,
+  onViewTransactions,
 }: {
   m: MergedHolding;
-  onPress?: () => void;
+  pct: number;
+  currency: "USD" | "ZAR";
+  onViewTransactions?: () => void;
 }) {
   const colors = useColors();
+  const [open, setOpen] = useState(false);
   const totalQty = m.binanceQty + m.lunoQty;
+  // Split the combined USD value back into its two sources. Binance is valued
+  // server-side (m.binance.usd); whatever's left of the merged total is Luno.
+  const binanceUsd = m.binance?.usd ?? 0;
+  const lunoUsd = Math.max(0, m.usd - binanceUsd);
+
   return (
-    <Pressable
-      onPress={onPress}
-      style={({ pressed }) => [styles.txRow, { opacity: pressed ? 0.6 : 1 }]}
-    >
-      <AssetIcon asset={m.symbol} size={32} />
-      <View style={{ flex: 1, gap: 4 }}>
-        <Text style={[styles.txTitle, { color: colors.foreground }]}>
-          {fmtCrypto(totalQty, m.symbol)}
-        </Text>
-        <View style={styles.badgeRow}>
+    <View>
+      <Pressable
+        onPress={() => {
+          haptic.tap();
+          setOpen((o) => !o);
+        }}
+        style={({ pressed }) => [styles.txRow, { opacity: pressed ? 0.6 : 1 }]}
+      >
+        <AssetIcon asset={m.symbol} size={32} />
+        <View style={{ flex: 1, gap: 4 }}>
+          <Text style={[styles.txTitle, { color: colors.foreground }]}>
+            {fmtCrypto(totalQty, m.symbol)}
+          </Text>
+          <Text style={[styles.txSub, { color: colors.mutedForeground }]}>
+            {m.symbol}
+            {pct > 0 ? ` · ${fmtPct(pct)} of portfolio` : ""}
+          </Text>
+        </View>
+        <View style={{ alignItems: "flex-end", gap: 2 }}>
+          {m.usd > 0 ? (
+            <Text style={[styles.txTitle, { color: colors.foreground }]}>
+              {fmtMoney(m.usd, currency)}
+            </Text>
+          ) : null}
+          <Feather
+            name={open ? "chevron-up" : "chevron-down"}
+            size={16}
+            color={colors.mutedForeground}
+          />
+        </View>
+      </Pressable>
+
+      {open ? (
+        <View style={styles.splitWrap}>
           {m.binanceQty > 0 ? (
-            <ExchangeBadge label="Binance" qty={fmtCrypto(m.binanceQty, m.symbol)} />
+            <SourceSplitRow
+              label="Binance"
+              qty={fmtCrypto(m.binanceQty, m.symbol)}
+              value={binanceUsd > 0 ? fmtMoney(binanceUsd, currency) : null}
+            />
           ) : null}
           {m.lunoQty > 0 ? (
-            <ExchangeBadge label="Luno" qty={fmtCrypto(m.lunoQty, m.symbol)} />
+            <Pressable
+              onPress={onViewTransactions}
+              style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
+            >
+              <SourceSplitRow
+                label="Luno"
+                qty={fmtCrypto(m.lunoQty, m.symbol)}
+                value={lunoUsd > 0 ? fmtMoney(lunoUsd, currency) : null}
+                chevron
+              />
+            </Pressable>
+          ) : null}
+          {m.lunoQty > 0 ? (
+            <Text style={[styles.splitHint, { color: colors.mutedForeground }]}>
+              Tap Luno to see its transactions.
+            </Text>
           ) : null}
         </View>
-      </View>
-      <View style={{ alignItems: "flex-end", gap: 2 }}>
-        {m.usd > 0 ? (
-          <Text style={[styles.txTitle, { color: colors.foreground }]}>
-            {fmtMoney(m.usd, "USD")}
-          </Text>
-        ) : null}
-        <Feather name="chevron-right" size={16} color={colors.mutedForeground} />
-      </View>
-    </Pressable>
+      ) : null}
+    </View>
   );
 }
 
-function ExchangeBadge({ label, qty }: { label: string; qty: string }) {
+function SourceSplitRow({
+  label,
+  qty,
+  value,
+  chevron,
+}: {
+  label: string;
+  qty: string;
+  value: string | null;
+  chevron?: boolean;
+}) {
   const colors = useColors();
+  const dotColor = label === "Binance" ? "#F0B90B" : colors.primary;
   return (
-    <View
-      style={[
-        styles.badge,
-        { backgroundColor: colors.secondary, borderColor: colors.border },
-      ]}
-    >
-      <Text style={[styles.badgeLabel, { color: colors.foreground }]}>
+    <View style={styles.splitRow}>
+      <View style={[styles.sourceDot, { backgroundColor: dotColor }]} />
+      <Text style={[styles.splitLabel, { color: colors.foreground }]}>
         {label}
       </Text>
-      <Text style={[styles.badgeQty, { color: colors.mutedForeground }]}>
-        {qty}
-      </Text>
+      <View style={{ flex: 1, alignItems: "flex-end" }}>
+        <Text style={[styles.splitQty, { color: colors.foreground }]}>
+          {qty}
+        </Text>
+        {value ? (
+          <Text style={[styles.txSub, { color: colors.mutedForeground }]}>
+            {value}
+          </Text>
+        ) : null}
+      </View>
+      {chevron ? (
+        <Feather name="chevron-right" size={15} color={colors.mutedForeground} />
+      ) : (
+        <View style={{ width: 15 }} />
+      )}
     </View>
   );
 }
@@ -604,7 +771,8 @@ function TxRow({ t }: { t: LunoTransaction }) {
           style={[styles.txSub, { color: colors.mutedForeground }]}
           numberOfLines={1}
         >
-          {t.description || (inflow ? "Inflow" : "Outflow")} · {fmtTime(t.ts)}
+          Luno · {t.description || (inflow ? "Inflow" : "Outflow")} ·{" "}
+          {fmtTime(t.ts)}
         </Text>
       </View>
     </View>
@@ -714,26 +882,6 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   divider: { height: StyleSheet.hairlineWidth },
-  badgeRow: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
-  badge: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 5,
-    paddingHorizontal: 7,
-    paddingVertical: 2,
-    borderRadius: 6,
-    borderWidth: StyleSheet.hairlineWidth,
-  },
-  badgeLabel: {
-    fontSize: 10,
-    fontFamily: "Inter_600SemiBold",
-    letterSpacing: 0.3,
-  },
-  badgeQty: {
-    fontSize: 10,
-    fontFamily: "Inter_400Regular",
-    fontVariant: ["tabular-nums"],
-  },
   empty: {
     fontSize: 12,
     fontFamily: "Inter_400Regular",
@@ -749,5 +897,80 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontFamily: "Inter_500Medium",
     fontVariant: ["tabular-nums"],
+  },
+  heroValue: {
+    fontSize: 32,
+    fontFamily: "Inter_700Bold",
+    letterSpacing: -1,
+    fontVariant: ["tabular-nums"],
+  },
+  donutWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 18,
+  },
+  donutCenterValue: {
+    fontSize: 26,
+    fontFamily: "Inter_700Bold",
+    letterSpacing: -0.5,
+    fontVariant: ["tabular-nums"],
+  },
+  donutCenterLabel: {
+    fontSize: 11,
+    fontFamily: "Inter_500Medium",
+    marginTop: -2,
+  },
+  legend: {
+    flex: 1,
+    gap: 9,
+  },
+  legendRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  legendDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+  },
+  legendSym: {
+    flex: 1,
+    fontSize: 13,
+    fontFamily: "Inter_600SemiBold",
+  },
+  legendPct: {
+    fontSize: 13,
+    fontFamily: "Inter_500Medium",
+    fontVariant: ["tabular-nums"],
+  },
+  splitWrap: {
+    paddingLeft: 44,
+    paddingBottom: 12,
+    gap: 8,
+  },
+  splitRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  sourceDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  splitLabel: {
+    fontSize: 13,
+    fontFamily: "Inter_600SemiBold",
+  },
+  splitQty: {
+    fontSize: 13,
+    fontFamily: "Inter_500Medium",
+    fontVariant: ["tabular-nums"],
+  },
+  splitHint: {
+    fontSize: 11,
+    fontFamily: "Inter_400Regular",
+    paddingLeft: 16,
   },
 });

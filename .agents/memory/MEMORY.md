@@ -1,4 +1,5 @@
 - [pnpm packageManager pin vs Replit nix pnpm](pnpm-package-manager-pin.md) — pnpm pinned to an older version than the container ships SIGABRT-loops on every invocation; bump the pin to match.
+- [Ledger portfolio data constraints](portfolio-data-constraints.md) — Binance has no general tx endpoint (Luno-only tx list); portfolio merge must exclude only ZAR cash, never by display currency; spot needs Azure redeploy.
 - [Per-user local state](per-user-local-state.md) — restoring per-user AsyncStorage drafts must reset to baseline when the new user has none, and gate saves behind a sync `loaded` ref, or prior user's state leaks/persists.
 - [USD->ZAR hidden mutable global](fx-rate-hidden-global.md) — getUsdToZar() reads inside useMemo go stale; add `usdToZar` from useCurrency() to deps.
 - [EAS Update (OTA) publishing](eas-update-publishing.md) — publish OTA via a managed workflow (background shells get SIGKILLed); inline EXPO_PUBLIC_DOMAIN; first OTA lands silently on next cold launch.

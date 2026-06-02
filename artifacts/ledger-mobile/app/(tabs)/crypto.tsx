@@ -14,6 +14,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AssetIcon } from "@/components/AssetIcon";
 import { Container } from "@/components/Container";
 import { DonutChart, type DonutSegment } from "@/components/DonutChart";
+import { ExchangeLogo } from "@/components/ExchangeLogo";
 import { ErrorView } from "@/components/ErrorView";
 import { ScreenLoader } from "@/components/ScreenLoader";
 import { Sparkline } from "@/components/Sparkline";
@@ -703,11 +704,6 @@ function HoldingRow({
               />
             </Pressable>
           ) : null}
-          {m.lunoQty > 0 ? (
-            <Text style={[styles.splitHint, { color: colors.mutedForeground }]}>
-              Tap Luno to see its transactions.
-            </Text>
-          ) : null}
         </View>
       ) : null}
     </View>
@@ -726,14 +722,13 @@ function SourceSplitRow({
   chevron?: boolean;
 }) {
   const colors = useColors();
-  const dotColor = label === "Binance" ? "#F0B90B" : colors.primary;
   return (
     <View style={styles.splitRow}>
-      <View style={[styles.sourceDot, { backgroundColor: dotColor }]} />
+      <ExchangeLogo exchange={label} size={22} />
       <Text style={[styles.splitLabel, { color: colors.foreground }]}>
         {label}
       </Text>
-      <View style={{ flex: 1, alignItems: "flex-end" }}>
+      <View style={{ flex: 1, alignItems: "flex-end", justifyContent: "center" }}>
         <Text style={[styles.splitQty, { color: colors.foreground }]}>
           {qty}
         </Text>
@@ -954,11 +949,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 8,
   },
-  sourceDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
   splitLabel: {
     fontSize: 13,
     fontFamily: "Inter_600SemiBold",
@@ -967,10 +957,5 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontFamily: "Inter_500Medium",
     fontVariant: ["tabular-nums"],
-  },
-  splitHint: {
-    fontSize: 11,
-    fontFamily: "Inter_400Regular",
-    paddingLeft: 16,
   },
 });

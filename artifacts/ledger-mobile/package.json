@@ -76,6 +76,7 @@
     "expo-apple-authentication": "^8.0.8",
     "expo-background-fetch": "^14.0.9",
     "expo-camera": "^17.0.10",
+    "expo-clipboard": "~8.0.8",
     "expo-local-authentication": "~17.0.8",
     "expo-print": "~15.0.8",
     "expo-sharing": "~14.0.8",

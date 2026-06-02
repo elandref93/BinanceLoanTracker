@@ -423,10 +423,23 @@ export default function LoanDetailScreen() {
         <Row label="Hourly interest" value={fmtMoney(hourly, currency)} />
       </Card>
 
-      <Card title="Drop simulator">
-        <Text style={[styles.simHint, { color: colors.mutedForeground }]}>
-          If {loan.collateral.asset} falls from{" "}
-          {fmtMoney(loan.collateral.valueUsd / loan.collateral.qty, currency)}…
+      <Card title="Price simulator">
+        <View style={styles.simPriceRow}>
+          <Text style={[styles.simPriceLabel, { color: colors.mutedForeground }]}>
+            {loan.collateral.asset} price now
+          </Text>
+          <Text style={[styles.simPriceValue, { color: colors.foreground }]}>
+            {loan.collateral.qty > 0
+              ? fmtMoney(
+                  loan.collateral.valueUsd / loan.collateral.qty,
+                  currency,
+                )
+              : "—"}
+          </Text>
+        </View>
+
+        <Text style={[styles.simCaption, { color: colors.mutedForeground }]}>
+          If {loan.collateral.asset} falls
         </Text>
         <View style={styles.simRow}>
           {[5, 10, 20, 30, 40].map((pct) => {
@@ -444,10 +457,7 @@ export default function LoanDetailScreen() {
                 key={pct}
                 style={[
                   styles.simCell,
-                  {
-                    borderColor: colors.border,
-                    borderRadius: 8,
-                  },
+                  { borderColor: colors.border, borderRadius: 8 },
                 ]}
               >
                 <Text
@@ -462,6 +472,41 @@ export default function LoanDetailScreen() {
             );
           })}
         </View>
+
+        <Text style={[styles.simCaption, { color: colors.mutedForeground }]}>
+          If {loan.collateral.asset} rises
+        </Text>
+        <View style={styles.simRow}>
+          {[5, 10, 20, 30, 40].map((pct) => {
+            const projectedLtv = loan.ltv / (1 + pct / 100);
+            const projectedStatus = statusFromLtv(projectedLtv, targetLtv);
+            const tone =
+              projectedStatus === "ok"
+                ? colors.ok
+                : projectedStatus === "warn"
+                  ? colors.warn
+                  : colors.danger;
+            return (
+              <View
+                key={pct}
+                style={[
+                  styles.simCell,
+                  { borderColor: colors.border, borderRadius: 8 },
+                ]}
+              >
+                <Text
+                  style={[styles.simPct, { color: colors.mutedForeground }]}
+                >
+                  +{pct}%
+                </Text>
+                <Text style={[styles.simLtv, { color: tone }]}>
+                  {fmtPct(projectedLtv, 0)}
+                </Text>
+              </View>
+            );
+          })}
+        </View>
+
         <Text style={[styles.simFoot, { color: colors.mutedForeground }]}>
           Liquidation at {fmtPct(LIQ_LTV, 0)} LTV
         </Text>
@@ -672,6 +717,25 @@ const styles = StyleSheet.create({
   ruleScope: { fontSize: 11, fontFamily: "Inter_400Regular", marginTop: 2 },
   empty: { fontSize: 12, fontFamily: "Inter_400Regular", paddingVertical: 4 },
   simHint: { fontSize: 12, fontFamily: "Inter_400Regular", marginBottom: 4 },
+  simPriceRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "baseline",
+    marginBottom: 12,
+  },
+  simPriceLabel: { fontSize: 12, fontFamily: "Inter_500Medium" },
+  simPriceValue: {
+    fontSize: 16,
+    fontFamily: "Inter_700Bold",
+    fontVariant: ["tabular-nums"],
+  },
+  simCaption: {
+    fontSize: 11,
+    fontFamily: "Inter_600SemiBold",
+    letterSpacing: 0.3,
+    marginTop: 10,
+    marginBottom: 6,
+  },
   simRow: { flexDirection: "row", gap: 6 },
   simCell: {
     flex: 1,

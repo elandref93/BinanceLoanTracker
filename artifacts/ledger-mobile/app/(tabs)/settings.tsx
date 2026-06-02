@@ -1,11 +1,13 @@
 import { Feather } from "@expo/vector-icons";
 import {
   Alert,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
   View,
 } from "react-native";
+import * as Clipboard from "expo-clipboard";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useFocusEffect, useRouter } from "expo-router";
@@ -339,9 +341,18 @@ export default function SettingsScreen() {
 
       <UpdateSettings />
 
-      <Text style={[styles.version, { color: colors.mutedForeground }]}>
-        Ledger · v1.0.0 · TestFlight
-      </Text>
+      <Pressable
+        hitSlop={10}
+        onPress={async () => {
+          await Clipboard.setStringAsync("Ledger · v1.0.0 · TestFlight");
+          haptic.tap();
+          Alert.alert("Copied", "Build info copied to clipboard.");
+        }}
+      >
+        <Text style={[styles.version, { color: colors.mutedForeground }]}>
+          Ledger · v1.0.0 · TestFlight
+        </Text>
+      </Pressable>
       </Container>
     </ScrollView>
   );

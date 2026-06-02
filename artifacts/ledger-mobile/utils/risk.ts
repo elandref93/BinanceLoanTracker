@@ -31,15 +31,23 @@ export function statusLabel(s: Status): string {
  */
 export function priceAtLtv(loan: Loan, targetLtv: number): number {
   // ltv = debt / (qty * price) * 100 => price = debt / qty / (targetLtv/100)
-  return loan.debtUsd / loan.collateral.qty / (targetLtv / 100);
+  // Guard divide-by-zero: a cross-margin / pooled-collateral loan can report a
+  // 0 collateral qty, which would yield Infinity and crash the SVG charts that
+  // consume this value. Treat it as "no derivable price" (0).
+  const qty = loan.collateral.qty;
+  if (qty <= 0 || targetLtv <= 0) return 0;
+  return loan.debtUsd / qty / (targetLtv / 100);
 }
 
 export function currentCollateralPrice(loan: Loan): number {
-  return loan.collateral.valueUsd / loan.collateral.qty;
+  const qty = loan.collateral.qty;
+  if (qty <= 0) return 0;
+  return loan.collateral.valueUsd / qty;
 }
 
 export function priceDropPctTo(loan: Loan, targetLtv: number): number {
   const now = currentCollateralPrice(loan);
+  if (now <= 0) return 0;
   const target = priceAtLtv(loan, targetLtv);
   return ((now - target) / now) * 100;
 }

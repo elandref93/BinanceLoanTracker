@@ -5,7 +5,16 @@
  * inconsistent across iOS versions and some locales emit a narrow no-break
  * space that renders oddly. A plain space is predictable everywhere.
  */
+// Guards every formatter against non-finite input (NaN / Infinity / undefined).
+// Bad numbers reach here from divide-by-zero risk math or a transiently missing
+// API field; without this they render as "NaN" / "$Infinity" or, worse, crash
+// the screen via `undefined.toFixed`. Formatters return "—" for invalid values.
+function isFiniteNum(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
 export function groupWithSpaces(value: number, dp: number): string {
+  if (!isFiniteNum(value)) value = 0;
   const sign = value < 0 ? "-" : "";
   const fixed = Math.abs(value).toFixed(dp);
   const [intPart, frac] = fixed.split(".");
@@ -19,15 +28,18 @@ export function fmtUsd(
   // ignored — values are always shown in full (no "k"/"M" abbreviation).
   opts: { compact?: boolean; whole?: boolean } = {},
 ): string {
+  if (!isFiniteNum(value)) return "—";
   const dp = opts.whole ? 0 : 2;
   return `$${groupWithSpaces(value, dp)}`;
 }
 
 export function fmtPct(value: number, dp = 1): string {
+  if (!isFiniteNum(value)) return "—";
   return `${value.toFixed(dp)}%`;
 }
 
 export function fmtQty(value: number, asset: string): string {
+  if (!isFiniteNum(value)) return `— ${asset}`;
   const dp = asset === "BTC" ? 4 : asset === "ETH" ? 3 : 2;
   return `${value.toFixed(dp)} ${asset}`;
 }
@@ -60,6 +72,7 @@ export function fmtMoney(
   // `compact` accepted for compatibility but ignored — full numbers only.
   opts: { compact?: boolean; whole?: boolean } = {},
 ): string {
+  if (!isFiniteNum(usd)) return "—";
   if (currency === "USD") return fmtUsd(usd, opts);
   const zar = usd * usdToZar;
   const dp = opts.whole ? 0 : 2;

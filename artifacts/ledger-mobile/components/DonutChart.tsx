@@ -33,7 +33,8 @@ export function DonutChart({
   children,
   trackColor = "rgba(127,127,127,0.15)",
 }: Props) {
-  const total = segments.reduce((s, x) => s + Math.max(0, x.value), 0);
+  const safe = (n: number) => (Number.isFinite(n) ? Math.max(0, n) : 0);
+  const total = segments.reduce((s, x) => s + safe(x.value), 0);
   const r = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * r;
   const half = size / 2;
@@ -60,7 +61,7 @@ export function DonutChart({
           />
           {total > 0
             ? segments.map((seg, i) => {
-                const frac = Math.max(0, seg.value) / total;
+                const frac = safe(seg.value) / total;
                 if (frac <= 0) return null;
                 const dash = circumference * frac;
                 const node = (

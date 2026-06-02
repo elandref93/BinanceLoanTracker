@@ -16,3 +16,4 @@
 - [EAS Update runtimeVersion policy](eas-update-runtime-version-policy.md) — use appVersion not fingerprint; fingerprint hashes pnpm node_modules paths that differ local vs EAS and fails the build.
 - [expo-secure-store iCloud sync](expo-secure-store-icloud-sync.md) — expo-secure-store does not expose kSecAttrSynchronizable; cross-device sync must go through your own backend, not iCloud Keychain.
 - [Server LWW conflict resolution](server-lww-conflict-resolution.md) — node single-thread is NOT a serialization guarantee; per-user async mutex required around read-compare-write, and client timestamps must be process-monotonic to survive clock skew.
+- [react-native-svg NaN crash](rn-svg-nan-native-crash.md) — NaN/Infinity in any SVG coord crashes natively (JS error boundary can't catch); sanitize at the edge in formatters, risk math, and chart components.

@@ -12,10 +12,13 @@ interface Props {
   target?: number;
 }
 
-export function RiskGauge({ ltv, size = 220, target }: Props) {
+export function RiskGauge({ ltv: rawLtv, size = 220, target }: Props) {
   const colors = useColors();
   const defaultTarget = useTargetLtv();
   const targetLtv = target ?? defaultTarget;
+  // Guard against NaN/Infinity reaching the SVG dash math (a native crash that
+  // the JS error boundary can't catch) or the LTV readout.
+  const ltv = Number.isFinite(rawLtv) ? rawLtv : 0;
   const status = statusFromLtv(ltv, targetLtv);
   const tone =
     status === "ok"

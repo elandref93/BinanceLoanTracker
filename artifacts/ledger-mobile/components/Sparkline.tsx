@@ -30,16 +30,25 @@ interface Props {
 }
 
 export function Sparkline({
-  values,
+  values: rawValues,
   width: fixedWidth,
   height,
   color,
-  reference,
-  overlay,
+  reference: rawReference,
+  overlay: rawOverlay,
   overlayColor,
   formatValue,
 }: Props) {
   const colors = useColors();
+  // react-native-svg crashes natively (bypassing the JS error boundary) when a
+  // path coordinate is NaN/Infinity. Drop any non-finite samples so one bad
+  // data point from the rate history can't take the whole app down.
+  const values = rawValues.filter((v) => Number.isFinite(v));
+  const overlay = rawOverlay?.filter((v) => Number.isFinite(v));
+  const reference =
+    rawReference != null && Number.isFinite(rawReference)
+      ? rawReference
+      : undefined;
   const [active, setActive] = useState<number | null>(null);
   const [measured, setMeasured] = useState(0);
   const stroke = color ?? colors.primary;

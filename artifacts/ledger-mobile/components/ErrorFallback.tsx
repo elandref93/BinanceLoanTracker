@@ -1,6 +1,8 @@
 import { Feather } from "@expo/vector-icons";
 import { reloadAppAsync } from "expo";
-import React, { useState } from "react";
+import * as Clipboard from "expo-clipboard";
+import { router } from "expo-router";
+import React, { useEffect, useState } from "react";
 import {
   Modal,
   Platform,
@@ -13,6 +15,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useColors } from "@/hooks/useColors";
+import { reportFatal } from "@/lib/crashReporting";
 
 export type ErrorFallbackProps = {
   error: Error;
@@ -24,6 +27,15 @@ export function ErrorFallback({ error, resetError }: ErrorFallbackProps) {
   const insets = useSafeAreaInsets();
 
   const [isModalVisible, setIsModalVisible] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  // Persist the error to the on-device crash buffer the moment the boundary
+  // renders this fallback. The boundary's onError also reports, but doing it
+  // here too guarantees capture regardless of how the boundary is wired — and
+  // double-reporting is harmless (the buffer is a small ring).
+  useEffect(() => {
+    reportFatal(error, { source: "ErrorFallback" });
+  }, [error]);
 
   const handleRestart = async () => {
     try {
@@ -42,6 +54,28 @@ export function ErrorFallback({ error, resetError }: ErrorFallbackProps) {
     return details;
   };
 
+  const handleCopy = async () => {
+    try {
+      await Clipboard.setStringAsync(formatErrorDetails());
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Clipboard is best-effort; the text is still selectable on screen.
+    }
+  };
+
+  const handleOpenDiagnostics = () => {
+    setIsModalVisible(false);
+    // Reset the boundary first so the navigator can mount the next screen,
+    // then route to the full Diagnostics history.
+    resetError();
+    try {
+      router.replace("/diagnostics");
+    } catch {
+      // If routing fails for any reason, the reload button remains.
+    }
+  };
+
   const monoFont = Platform.select({
     ios: "Menlo",
     android: "monospace",
@@ -50,31 +84,14 @@ export function ErrorFallback({ error, resetError }: ErrorFallbackProps) {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      {__DEV__ ? (
-        <Pressable
-          onPress={() => setIsModalVisible(true)}
-          accessibilityLabel="View error details"
-          accessibilityRole="button"
-          style={({ pressed }) => [
-            styles.topButton,
-            {
-              top: insets.top + 16,
-              backgroundColor: colors.card,
-              opacity: pressed ? 0.8 : 1,
-            },
-          ]}
-        >
-          <Feather name="alert-circle" size={20} color={colors.foreground} />
-        </Pressable>
-      ) : null}
-
       <View style={styles.content}>
         <Text style={[styles.title, { color: colors.foreground }]}>
           Something went wrong
         </Text>
 
         <Text style={[styles.message, { color: colors.mutedForeground }]}>
-          Please reload the app to continue.
+          The app hit an unexpected error. Tap “View error details” and send it
+          to the developer, then reload to continue.
         </Text>
 
         <Pressable
@@ -89,84 +106,125 @@ export function ErrorFallback({ error, resetError }: ErrorFallbackProps) {
           ]}
         >
           <Text
-            style={[
-              styles.buttonText,
-              { color: colors.primaryForeground },
-            ]}
+            style={[styles.buttonText, { color: colors.primaryForeground }]}
           >
-            Try Again
+            Reload app
+          </Text>
+        </Pressable>
+
+        <Pressable
+          onPress={() => setIsModalVisible(true)}
+          accessibilityLabel="View error details"
+          accessibilityRole="button"
+          style={({ pressed }) => [
+            styles.secondaryButton,
+            { borderColor: colors.border, opacity: pressed ? 0.7 : 1 },
+          ]}
+        >
+          <Feather name="alert-circle" size={16} color={colors.foreground} />
+          <Text style={[styles.secondaryText, { color: colors.foreground }]}>
+            View error details
           </Text>
         </Pressable>
       </View>
 
-      {__DEV__ ? (
-        <Modal
-          visible={isModalVisible}
-          animationType="slide"
-          transparent={true}
-          onRequestClose={() => setIsModalVisible(false)}
-        >
-          <View style={styles.modalOverlay}>
+      <Modal
+        visible={isModalVisible}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setIsModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View
+            style={[
+              styles.modalContainer,
+              { backgroundColor: colors.background },
+            ]}
+          >
             <View
-              style={[
-                styles.modalContainer,
-                { backgroundColor: colors.background },
+              style={[styles.modalHeader, { borderBottomColor: colors.border }]}
+            >
+              <Text style={[styles.modalTitle, { color: colors.foreground }]}>
+                Error Details
+              </Text>
+              <Pressable
+                onPress={() => setIsModalVisible(false)}
+                accessibilityLabel="Close error details"
+                accessibilityRole="button"
+                style={({ pressed }) => [
+                  styles.closeButton,
+                  { opacity: pressed ? 0.6 : 1 },
+                ]}
+              >
+                <Feather name="x" size={24} color={colors.foreground} />
+              </Pressable>
+            </View>
+
+            <View
+              style={[styles.modalActions, { borderBottomColor: colors.border }]}
+            >
+              <Pressable
+                onPress={handleCopy}
+                style={({ pressed }) => [
+                  styles.modalActionBtn,
+                  { borderColor: colors.border, opacity: pressed ? 0.6 : 1 },
+                ]}
+              >
+                <Feather
+                  name={copied ? "check" : "copy"}
+                  size={14}
+                  color={copied ? colors.primary : colors.foreground}
+                />
+                <Text
+                  style={[
+                    styles.modalActionText,
+                    { color: copied ? colors.primary : colors.foreground },
+                  ]}
+                >
+                  {copied ? "Copied" : "Copy details"}
+                </Text>
+              </Pressable>
+              <Pressable
+                onPress={handleOpenDiagnostics}
+                style={({ pressed }) => [
+                  styles.modalActionBtn,
+                  { borderColor: colors.border, opacity: pressed ? 0.6 : 1 },
+                ]}
+              >
+                <Feather name="list" size={14} color={colors.foreground} />
+                <Text
+                  style={[styles.modalActionText, { color: colors.foreground }]}
+                >
+                  All crash logs
+                </Text>
+              </Pressable>
+            </View>
+
+            <ScrollView
+              style={styles.modalScrollView}
+              contentContainerStyle={[
+                styles.modalScrollContent,
+                { paddingBottom: insets.bottom + 16 },
               ]}
+              showsVerticalScrollIndicator
             >
               <View
-                style={[
-                  styles.modalHeader,
-                  { borderBottomColor: colors.border },
-                ]}
+                style={[styles.errorContainer, { backgroundColor: colors.card }]}
               >
-                <Text style={[styles.modalTitle, { color: colors.foreground }]}>
-                  Error Details
-                </Text>
-                <Pressable
-                  onPress={() => setIsModalVisible(false)}
-                  accessibilityLabel="Close error details"
-                  accessibilityRole="button"
-                  style={({ pressed }) => [
-                    styles.closeButton,
-                    { opacity: pressed ? 0.6 : 1 },
-                  ]}
-                >
-                  <Feather name="x" size={24} color={colors.foreground} />
-                </Pressable>
-              </View>
-
-              <ScrollView
-                style={styles.modalScrollView}
-                contentContainerStyle={[
-                  styles.modalScrollContent,
-                  { paddingBottom: insets.bottom + 16 },
-                ]}
-                showsVerticalScrollIndicator
-              >
-                <View
+                <Text
                   style={[
-                    styles.errorContainer,
-                    { backgroundColor: colors.card },
+                    styles.errorText,
+                    { color: colors.foreground, fontFamily: monoFont },
                   ]}
+                  selectable
                 >
-                  <Text
-                    style={[
-                      styles.errorText,
-                      {
-                        color: colors.foreground,
-                        fontFamily: monoFont,
-                      },
-                    ]}
-                    selectable
-                  >
-                    {formatErrorDetails()}
-                  </Text>
-                </View>
-              </ScrollView>
-            </View>
+                  {formatErrorDetails()}
+                </Text>
+              </View>
+            </ScrollView>
           </View>
-        </Modal>
-      ) : null}
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -198,17 +256,6 @@ const styles = StyleSheet.create({
     textAlign: "center",
     lineHeight: 24,
   },
-  topButton: {
-    position: "absolute",
-    right: 16,
-    width: 44,
-    height: 44,
-    borderRadius: 8,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    zIndex: 10,
-  },
   button: {
     paddingVertical: 16,
     borderRadius: 8,
@@ -227,6 +274,19 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     textAlign: "center",
     fontSize: 16,
+  },
+  secondaryButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  secondaryText: {
+    fontSize: 14,
+    fontWeight: "600",
   },
   modalOverlay: {
     flex: 1,
@@ -258,6 +318,23 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  modalActions: {
+    flexDirection: "row",
+    gap: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  modalActionBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 8,
+  },
+  modalActionText: { fontSize: 13, fontWeight: "600" },
   modalScrollView: {
     flex: 1,
   },

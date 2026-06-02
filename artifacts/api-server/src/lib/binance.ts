@@ -584,16 +584,43 @@ async function fetchUsdPrices(
   const stables = new Set(["USDT", "USDC", "BUSD", "FDUSD", "DAI", "TUSD"]);
   const needPrice = unique.filter((a) => !stables.has(a));
 
-  let tickerRows: StableSymbolRate[] = [];
-  if (needPrice.length > 0) {
-    const symbols = needPrice.map((a) => `${a}USDT`);
-    const raw = await binancePublicGet<unknown>("/api/v3/ticker/price", {
-      symbols: JSON.stringify(symbols),
-    });
-    tickerRows = (Array.isArray(raw) ? raw : []).map((r) => ({
+  const toRows = (raw: unknown): StableSymbolRate[] =>
+    (Array.isArray(raw) ? raw : []).map((r) => ({
       symbol: str((r as Record<string, unknown>)["symbol"]),
       price: num((r as Record<string, unknown>)["price"]),
     }));
+
+  let tickerRows: StableSymbolRate[] = [];
+  if (needPrice.length > 0) {
+    const symbols = needPrice.map((a) => `${a}USDT`);
+    try {
+      const raw = await binancePublicGet<unknown>("/api/v3/ticker/price", {
+        symbols: JSON.stringify(symbols),
+      });
+      tickerRows = toRows(raw);
+    } catch (err) {
+      // Binance rejects the WHOLE batch with HTTP 400 (-1121 "Invalid symbol")
+      // if even one requested `<ASSET>USDT` pair doesn't exist — a delisted
+      // coin, an Earn-only token, or dust in the holdings set. An unguarded
+      // throw here used to bubble up and fail the entire `getHoldings`
+      // response, blanking every Binance asset in the app while loans (which
+      // only price BTC/ETH/USDT) kept working. Fall back to the full ticker
+      // list (a single call with no per-symbol validation) so one obscure
+      // asset can't nuke the whole portfolio.
+      logger.warn(
+        { err, count: symbols.length },
+        "batch ticker price failed — falling back to full ticker list",
+      );
+      try {
+        const all = await binancePublicGet<unknown>("/api/v3/ticker/price");
+        tickerRows = toRows(all);
+      } catch (err2) {
+        logger.warn(
+          { err: err2 },
+          "full ticker price fallback also failed — prices default to 0",
+        );
+      }
+    }
   }
   const map = new Map(tickerRows.map((r) => [r.symbol, r.price]));
   return {

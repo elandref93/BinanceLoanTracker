@@ -1,6 +1,6 @@
 import * as Updates from "expo-updates";
 import { useCallback, useState } from "react";
-import { ActivityIndicator, Text, View } from "react-native";
+import { ActivityIndicator, Alert, Text, View } from "react-native";
 
 import { Divider, Row, Section } from "@/components/SettingsList";
 import { useColors } from "@/hooks/useColors";
@@ -81,19 +81,19 @@ export function UpdateSettings() {
     }
   }, [updateContext]);
 
-  const onRestart = useCallback(async () => {
+  // We deliberately do NOT call Updates.reloadAsync() here. On this build
+  // (New Architecture + expo-updates 29 / RN 0.81) a forced reload crashes the
+  // app natively, which a JS try/catch cannot prevent. The downloaded update is
+  // already staged and applies automatically on the next cold launch
+  // (checkAutomatically=ON_LOAD, fallbackToCacheTimeout=0), so we just tell the
+  // user to fully close and reopen.
+  const onRestart = useCallback(() => {
     haptic.impact();
-    try {
-      // reloadAsync normally never returns (the app reloads). If it rejects,
-      // capture it instead of leaving an unhandled rejection / silent failure.
-      await Updates.reloadAsync();
-    } catch (e) {
-      reportError(e, updateContext("UpdateSettings.reloadAsync"));
-      setErrorMsg(e instanceof Error ? e.message : String(e));
-      setState("error");
-      haptic.error();
-    }
-  }, [updateContext]);
+    Alert.alert(
+      "Update downloaded",
+      "Fully close Ledger (swipe it away in the app switcher), then reopen it to finish updating.",
+    );
+  }, []);
 
   if (!Updates.isEnabled) {
     return (
@@ -141,7 +141,7 @@ export function UpdateSettings() {
       {state === "ready" ? (
         <Row
           label="Update downloaded"
-          value="Tap to restart"
+          value="Close & reopen to apply"
           onPress={onRestart}
         />
       ) : (

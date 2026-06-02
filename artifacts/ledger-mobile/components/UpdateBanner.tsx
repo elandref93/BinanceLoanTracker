@@ -18,8 +18,8 @@ import { haptic } from "@/lib/haptics";
  * Floating top banner that makes over-the-air updates visible. It surfaces the
  * otherwise-silent update lifecycle: a brief "Checking…" on launch, a
  * "Downloading…" spinner while a new JS bundle pulls down, and — once a bundle
- * is staged — a one-tap "Update ready" pill that restarts straight into the new
- * version (instead of the default silent apply-on-next-launch).
+ * is staged — an "Update ready" pill telling the user to fully close and reopen
+ * Ledger to finish updating.
  *
  * Renders nothing when updates are disabled (Expo Go / development) or when
  * nothing is happening, so it stays out of the way until it has something to say.
@@ -29,16 +29,16 @@ export function UpdateBanner() {
   const insets = useSafeAreaInsets();
   const { isChecking, isDownloading, isUpdatePending } = Updates.useUpdates();
 
-  const onRestart = useCallback(async () => {
+  // Do NOT call Updates.reloadAsync(): on this build (New Architecture +
+  // expo-updates 29 / RN 0.81) a forced reload crashes the app natively, which
+  // a JS try/catch can't prevent. The staged update applies on the next cold
+  // launch on its own, so we just guide the user to quit and reopen.
+  const onRestart = useCallback(() => {
     haptic.impact();
-    try {
-      await Updates.reloadAsync();
-    } catch {
-      Alert.alert(
-        "Couldn't restart",
-        "The update is downloaded and will apply next time you fully close and reopen Ledger.",
-      );
-    }
+    Alert.alert(
+      "Update ready",
+      "Fully close Ledger (swipe it away in the app switcher), then reopen it to finish updating.",
+    );
   }, []);
 
   if (!Updates.isEnabled) return null;
@@ -55,7 +55,7 @@ export function UpdateBanner() {
       >
         <Feather name="download" size={14} color="#06090C" />
         <Text style={[styles.text, { color: "#06090C" }]}>
-          Update ready — tap to restart
+          Update ready — close & reopen
         </Text>
       </Pressable>
     );

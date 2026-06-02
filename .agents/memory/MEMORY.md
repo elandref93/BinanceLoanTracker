@@ -1,4 +1,5 @@
 - [pnpm packageManager pin vs Replit nix pnpm](pnpm-package-manager-pin.md) — pnpm pinned to an older version than the container ships SIGABRT-loops on every invocation; bump the pin to match.
+- [expo-updates reloadAsync native crash](expo-updates-reload-crash.md) — never call Updates.reloadAsync() on this SDK54/new-arch build; it crashes natively; let OTAs apply on next cold launch.
 - [Binance batch ticker pricing](binance-batch-ticker-pricing.md) — one invalid `<ASSET>USDT` symbol makes Binance reject the whole batch (400 -1121); guard it or it blanks the entire holdings response.
 - [Fetching brand logos in sandbox](fetching-brand-logos-in-sandbox.md) — Google favicon service works for square brand marks; Clearbit fails; bundle + require relative path in Expo.
 - [Ledger portfolio data constraints](portfolio-data-constraints.md) — Binance has no general tx endpoint (Luno-only tx list); portfolio merge must exclude only ZAR cash, never by display currency; spot needs Azure redeploy.

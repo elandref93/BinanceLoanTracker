@@ -17,3 +17,4 @@
 - [expo-secure-store iCloud sync](expo-secure-store-icloud-sync.md) — expo-secure-store does not expose kSecAttrSynchronizable; cross-device sync must go through your own backend, not iCloud Keychain.
 - [Server LWW conflict resolution](server-lww-conflict-resolution.md) — node single-thread is NOT a serialization guarantee; per-user async mutex required around read-compare-write, and client timestamps must be process-monotonic to survive clock skew.
 - [react-native-svg NaN crash](rn-svg-nan-native-crash.md) — NaN/Infinity in any SVG coord crashes natively (JS error boundary can't catch); sanitize at the edge in formatters, risk math, and chart components.
+- [Crash diagnostics channel](crash-diagnostics-channel.md) — no remote logs (Azure/TestFlight); on-device persisted crash buffer + in-app Diagnostics screen (Settings→Diagnostics) is the way to see crashes; backend /api/diag mirrors to Azure log stream.

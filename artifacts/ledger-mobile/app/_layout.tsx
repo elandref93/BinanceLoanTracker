@@ -21,7 +21,7 @@ import { CurrencyProvider } from "@/context/CurrencyContext";
 import { RiskSettingsProvider } from "@/context/RiskSettingsContext";
 import { SessionProvider } from "@/context/SessionContext";
 import { registerBackgroundRefresh } from "@/lib/backgroundTask";
-import { initCrashReporting } from "@/lib/crashReporting";
+import { initCrashReporting, reportFatal } from "@/lib/crashReporting";
 
 initCrashReporting();
 
@@ -61,7 +61,11 @@ export default function RootLayout() {
   return (
     <SessionProvider>
       <SafeAreaProvider>
-        <ErrorBoundary>
+        <ErrorBoundary
+          onError={(error, componentStack) =>
+            reportFatal(error, { componentStack })
+          }
+        >
           <QueryClientProvider client={queryClient}>
             <GestureHandlerRootView
               style={{ flex: 1, backgroundColor: "#06090C" }}
@@ -105,6 +109,10 @@ export default function RootLayout() {
                       <Stack.Screen
                         name="crypto/[asset]"
                         options={{ title: "Asset", presentation: "card" }}
+                      />
+                      <Stack.Screen
+                        name="diagnostics"
+                        options={{ title: "Diagnostics", presentation: "card" }}
                       />
                       <Stack.Screen
                         name="add-account"

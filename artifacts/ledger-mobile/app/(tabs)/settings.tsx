@@ -333,6 +333,14 @@ export default function SettingsScreen() {
         />
       </Section>
 
+      <Section title="Diagnostics">
+        <Row
+          label="Crash logs"
+          value="View recent errors"
+          onPress={() => router.push("/diagnostics")}
+        />
+      </Section>
+
       <Section title="Account">
         <Row label="Email" value={email ?? ""} />
         <View style={[styles.divider, { backgroundColor: colors.border }]} />

@@ -29,7 +29,7 @@ feeds a chart happens to be bad.
   values via a local `safe()`.
 Prefer a single shared `finiteOr` helper if a new SVG component is added.
 
-Production crash visibility is limited: `lib/crashReporting.ts` is a console-only
-shim (no Sentry DSN wired), and the backend runs on Azure (not Replit), so
-`fetch_deployment_logs` is empty. Native SVG crashes won't surface anywhere
-remotely — the fix is prevention, not reporting.
+Production crash visibility: see [crash diagnostics channel](crash-diagnostics-channel.md).
+`lib/crashReporting.ts` now persists JS errors on-device and surfaces them in an
+in-app Diagnostics screen — but a *native* SVG crash kills the process before JS
+runs, so it still won't be captured. For SVG the fix is prevention, not reporting.

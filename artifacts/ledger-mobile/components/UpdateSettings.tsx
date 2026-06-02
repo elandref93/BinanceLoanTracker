@@ -4,6 +4,7 @@ import { ActivityIndicator, Text, View } from "react-native";
 
 import { Divider, Row, Section } from "@/components/SettingsList";
 import { useColors } from "@/hooks/useColors";
+import { reportError } from "@/lib/crashReporting";
 import { haptic } from "@/lib/haptics";
 
 type CheckState =
@@ -40,10 +41,26 @@ export function UpdateSettings() {
   const colors = useColors();
   const { currentlyRunning } = Updates.useUpdates();
   const [state, setState] = useState<CheckState>("idle");
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  // Snapshot of the update runtime, attached to any captured error so a
+  // Diagnostics entry can be correlated to the exact bundle/channel/runtime.
+  const updateContext = useCallback(
+    (source: string) => ({
+      source,
+      channel: Updates.channel ?? null,
+      runtimeVersion: Updates.runtimeVersion ?? null,
+      updateId: Updates.updateId ?? null,
+      isEmbeddedLaunch: Updates.isEmbeddedLaunch ?? null,
+      isEnabled: Updates.isEnabled ?? null,
+    }),
+    [],
+  );
 
   const onCheck = useCallback(async () => {
     haptic.tap();
     try {
+      setErrorMsg(null);
       setState("checking");
       const res = await Updates.checkForUpdateAsync();
       if (res.isAvailable) {
@@ -54,16 +71,29 @@ export function UpdateSettings() {
       } else {
         setState("current");
       }
-    } catch {
+    } catch (e) {
+      // Don't swallow: surface the real reason so it's visible here AND lands
+      // in Diagnostics (Settings → Diagnostics) for copy/paste.
+      reportError(e, updateContext("UpdateSettings.checkForUpdate"));
+      setErrorMsg(e instanceof Error ? e.message : String(e));
       setState("error");
       haptic.error();
     }
-  }, []);
+  }, [updateContext]);
 
-  const onRestart = useCallback(() => {
+  const onRestart = useCallback(async () => {
     haptic.impact();
-    void Updates.reloadAsync();
-  }, []);
+    try {
+      // reloadAsync normally never returns (the app reloads). If it rejects,
+      // capture it instead of leaving an unhandled rejection / silent failure.
+      await Updates.reloadAsync();
+    } catch (e) {
+      reportError(e, updateContext("UpdateSettings.reloadAsync"));
+      setErrorMsg(e instanceof Error ? e.message : String(e));
+      setState("error");
+      haptic.error();
+    }
+  }, [updateContext]);
 
   if (!Updates.isEnabled) {
     return (
@@ -101,7 +131,9 @@ export function UpdateSettings() {
     state === "current"
       ? "Up to date"
       : state === "error"
-        ? "Check failed — retry"
+        ? errorMsg
+          ? `Failed: ${errorMsg}`
+          : "Check failed — retry"
         : undefined;
 
   return (

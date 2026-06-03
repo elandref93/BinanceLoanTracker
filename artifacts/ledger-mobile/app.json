@@ -35,15 +35,22 @@
       "buildNumber": "1",
       "usesAppleSignIn": true,
       "entitlements": {
-        "com.apple.security.application-groups": ["group.com.ledger.shared"]
+        "com.apple.security.application-groups": [
+          "group.com.ledger.shared"
+        ]
       },
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSFaceIDUsageDescription": "Unlock Ledger and your stored Binance API keys with Face ID.",
         "NSCameraUsageDescription": "Scan a QR code from Binance to import an API key without typing it.",
-        "UIBackgroundModes": ["fetch", "processing"],
+        "UIBackgroundModes": [
+          "fetch",
+          "processing"
+        ],
         "NSSupportsLiveActivities": true,
-        "BGTaskSchedulerPermittedIdentifiers": ["com.ubuntu.life.ledger.refresh"]
+        "BGTaskSchedulerPermittedIdentifiers": [
+          "com.ubuntu.life.ledger.refresh"
+        ]
       }
     },
     "android": {},
@@ -77,7 +84,15 @@
       "expo-background-fetch",
       "expo-task-manager",
       "@bacons/apple-targets",
-      "./plugins/withSyncedExtensionBuildNumbers"
+      "./plugins/withSyncedExtensionBuildNumbers",
+      [
+        "@sentry/react-native",
+        {
+          "organization": "eap-k2",
+          "project": "react-native",
+          "url": "https://sentry.io/"
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

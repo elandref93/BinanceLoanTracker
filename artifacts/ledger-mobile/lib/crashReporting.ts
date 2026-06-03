@@ -19,6 +19,30 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { loadStoredSession } from "@/lib/session";
+import { Sentry } from "@/lib/sentry";
+
+type SentryLevel = "fatal" | "error" | "info";
+
+// Forward a report into Sentry's cloud dashboard alongside the on-device ring
+// buffer. Must never throw.
+function captureToSentry(
+  err: unknown,
+  context: Record<string, unknown> | undefined,
+  level: SentryLevel,
+): void {
+  try {
+    const error =
+      err instanceof Error
+        ? err
+        : new Error(typeof err === "string" ? err : JSON.stringify(err));
+    Sentry.captureException(error, {
+      level,
+      extra: context,
+    });
+  } catch {
+    // never throw from the reporter
+  }
+}
 
 const STORAGE_KEY = "ledger.crashes.v1";
 const MAX_ENTRIES = 25;
@@ -154,6 +178,7 @@ export function reportError(
     // eslint-disable-next-line no-console
     console.error("[crashReporting]", message, context ?? {});
     void store(makeEntry(message, stack, context, false));
+    captureToSentry(err, context, "error");
   } catch {
     // never throw
   }
@@ -168,6 +193,7 @@ export function reportFatal(
     // eslint-disable-next-line no-console
     console.error("[crashReporting][FATAL]", message, context ?? {});
     void store(makeEntry(message, stack, context, true));
+    captureToSentry(err, context, "fatal");
   } catch {
     // never throw
   }
@@ -181,6 +207,11 @@ export function reportMessage(
     // eslint-disable-next-line no-console
     console.warn("[crashReporting]", message, context ?? {});
     void store(makeEntry(message, undefined, context, false));
+    try {
+      Sentry.captureMessage(message, { level: "info", extra: context });
+    } catch {
+      // never throw from the reporter
+    }
   } catch {
     // never throw
   }

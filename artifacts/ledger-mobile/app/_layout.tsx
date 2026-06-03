@@ -22,7 +22,11 @@ import { RiskSettingsProvider } from "@/context/RiskSettingsContext";
 import { SessionProvider } from "@/context/SessionContext";
 import { registerBackgroundRefresh } from "@/lib/backgroundTask";
 import { initCrashReporting, reportFatal } from "@/lib/crashReporting";
+import { initSentry, Sentry } from "@/lib/sentry";
 
+// Initialise Sentry first so its global handlers are in place; the on-device
+// reporter then chains on top of them.
+initSentry();
 initCrashReporting();
 
 SplashScreen.preventAutoHideAsync();
@@ -38,7 +42,7 @@ const queryClient = new QueryClient({
   },
 });
 
-export default function RootLayout() {
+function RootLayout() {
   const [fontsLoaded, fontError] = useFonts({
     Inter_400Regular,
     Inter_500Medium,
@@ -134,3 +138,6 @@ export default function RootLayout() {
     </SessionProvider>
   );
 }
+
+// Wrap the root so Sentry can attach routing/component context to events.
+export default Sentry.wrap(RootLayout);

@@ -74,6 +74,7 @@ catalog:
 autoInstallPeers: false
 
 onlyBuiltDependencies:
+  - '@sentry/cli'
   - '@swc/core'
   - esbuild
   - msw

@@ -7,8 +7,17 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Container } from "@/components/Container";
 import { Divider, Row, Section, TypeBadge } from "@/components/SettingsList";
 import { useColors } from "@/hooks/useColors";
+import { useSession } from "@/context/SessionContext";
 import { listContainers, type StoredContainer } from "@/lib/accountStore";
+import { listAccountsWithSecrets } from "@/lib/binanceKeys";
+import { probeAccount, type ProbeResult } from "@/lib/keyHealth";
 import { fmtAge } from "@/utils/format";
+
+const baseUrl = process.env.EXPO_PUBLIC_DOMAIN
+  ? `https://${process.env.EXPO_PUBLIC_DOMAIN}`
+  : "";
+
+type LinkHealth = ProbeResult | { status: "checking" };
 
 function exchangeName(exchange: "binance" | "luno"): string {
   return exchange === "binance" ? "Binance" : "Luno";
@@ -18,7 +27,13 @@ export default function AccountsScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const { getToken } = useSession();
   const [containers, setContainers] = useState<StoredContainer[]>([]);
+  // Per-Binance-link health. A revoked/expired key is swallowed by the
+  // multiplexed dashboard call (it returns an empty list, so the asset just
+  // vanishes from the combined Binance + Luno view). Probing each key on its
+  // own surfaces the real failure here, where the user can replace it.
+  const [health, setHealth] = useState<Record<string, LinkHealth>>({});
 
   useFocusEffect(
     useCallback(() => {
@@ -26,10 +41,33 @@ export default function AccountsScreen() {
       listContainers().then((c) => {
         if (active) setContainers(c);
       });
+      if (baseUrl) {
+        void (async () => {
+          try {
+            const accts = await listAccountsWithSecrets();
+            if (!active || accts.length === 0) return;
+            setHealth((h) => {
+              const next = { ...h };
+              for (const a of accts) next[a.id] = { status: "checking" };
+              return next;
+            });
+            const token = await getToken();
+            await Promise.all(
+              accts.map(async (a) => {
+                const r = await probeAccount(a, baseUrl, token);
+                if (active) setHealth((h) => ({ ...h, [a.id]: r }));
+              }),
+            );
+          } catch {
+            // Probing is best-effort diagnostics; never let it crash the
+            // accounts screen. A failed probe simply shows no health badge.
+          }
+        })();
+      }
       return () => {
         active = false;
       };
-    }, []),
+    }, [getToken]),
   );
 
   return (
@@ -66,15 +104,44 @@ export default function AccountsScreen() {
                 {c.links.length === 0 ? (
                   <Row label="No exchanges linked yet" />
                 ) : (
-                  c.links.map((link, i) => (
-                    <View key={link.id}>
-                      {i > 0 ? <Divider /> : null}
-                      <Row
-                        label={exchangeName(link.exchange)}
-                        value={`${link.apiKeyMasked} · ${fmtAge(link.createdAt)}`}
-                      />
-                    </View>
-                  ))
+                  c.links.map((link, i) => {
+                    const hl =
+                      link.exchange === "binance" ? health[link.id] : undefined;
+                    return (
+                      <View key={link.id}>
+                        {i > 0 ? <Divider /> : null}
+                        <Row
+                          label={exchangeName(link.exchange)}
+                          value={`${link.apiKeyMasked} · ${fmtAge(link.createdAt)}`}
+                          right={
+                            hl?.status === "checking" ? (
+                              <Text
+                                style={[
+                                  styles.statusText,
+                                  { color: colors.mutedForeground },
+                                ]}
+                              >
+                                Checking…
+                              </Text>
+                            ) : undefined
+                          }
+                        />
+                        {hl?.status === "fail" ? (
+                          <Row
+                            label="Key not working — tap to replace"
+                            value={hl.reason}
+                            destructive
+                            onPress={() =>
+                              router.push({
+                                pathname: "/account/[id]",
+                                params: { id: c.id },
+                              })
+                            }
+                          />
+                        ) : null}
+                      </View>
+                    );
+                  })
                 )}
                 <Divider />
                 <Row
@@ -107,4 +174,5 @@ export default function AccountsScreen() {
 
 const styles = StyleSheet.create({
   intro: { fontSize: 13, fontFamily: "Inter_400Regular", lineHeight: 19 },
+  statusText: { fontSize: 12, fontFamily: "Inter_500Medium" },
 });

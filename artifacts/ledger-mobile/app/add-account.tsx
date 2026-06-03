@@ -117,12 +117,21 @@ export default function AddAccountScreen() {
       ? "container"
       : "credentials";
 
+  // Surface failures both inline (top banner, near the Save button) AND as an
+  // alert. The form scrolls, the Save button lives in the header, so an inline
+  // error rendered below the fold reads as "nothing happened" to the user.
+  const showError = (message: string, title = "Couldn't add account") => {
+    setError(message);
+    Alert.alert(title, message);
+  };
+
   const onScanned = (raw: string) => {
     setScanning(false);
     const { apiKey: k, apiSecret: s } = parseBinanceQR(raw);
     if (!k && !s) {
-      setError(
+      showError(
         "That QR code didn't contain a Binance API key. Enter it manually below.",
+        "Scan failed",
       );
       return;
     }
@@ -141,14 +150,14 @@ export default function AddAccountScreen() {
     // Credentials validation
     if (exchange === "binance") {
       const ke = validateBinanceKey(apiKey);
-      if (ke) return setError(ke);
+      if (ke) return showError(ke);
       const se = validateBinanceSecret(apiSecret);
-      if (se) return setError(se);
+      if (se) return showError(se);
     } else {
       const ke = validateLunoKeyId(apiKey);
-      if (ke) return setError(ke);
+      if (ke) return showError(ke);
       const se = validateLunoKeySecret(apiSecret);
-      if (se) return setError(se);
+      if (se) return showError(se);
     }
 
     setBusy(true);
@@ -171,9 +180,9 @@ export default function AddAccountScreen() {
       router.back();
     } catch (e) {
       if (e instanceof ProfileAlreadyHasLinkError) {
-        setError(e.message);
+        showError(e.message, "Already linked");
       } else {
-        setError(e instanceof Error ? e.message : "Could not save");
+        showError(e instanceof Error ? e.message : "Could not save");
       }
     } finally {
       setBusy(false);
@@ -240,6 +249,24 @@ export default function AddAccountScreen() {
           )}
         </View>
 
+        {error ? (
+          <View
+            style={[
+              styles.errorBanner,
+              {
+                backgroundColor: colors.card,
+                borderColor: colors.danger,
+                borderRadius: colors.radius,
+              },
+            ]}
+          >
+            <Feather name="alert-triangle" size={16} color={colors.danger} />
+            <Text style={[styles.error, { color: colors.danger, flex: 1 }]}>
+              {error}
+            </Text>
+          </View>
+        ) : null}
+
         {step === "exchange" ? (
           <ExchangePicker
             onPick={(e) => {
@@ -301,10 +328,6 @@ export default function AddAccountScreen() {
             }}
             scanInfo={scanInfo}
           />
-        ) : null}
-
-        {error ? (
-          <Text style={[styles.error, { color: colors.danger }]}>{error}</Text>
         ) : null}
       </ScrollView>
 
@@ -867,6 +890,13 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontFamily: "Inter_500Medium",
     textAlign: "center",
+  },
+  errorBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    padding: 12,
+    borderWidth: StyleSheet.hairlineWidth,
   },
   fine: {
     fontSize: 12,

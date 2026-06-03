@@ -1,5 +1,6 @@
 - [pnpm packageManager pin vs Replit nix pnpm](pnpm-package-manager-pin.md) — pnpm pinned to an older version than the container ships SIGABRT-loops on every invocation; bump the pin to match.
 - [Silent-failure UX patterns](silent-failure-patterns.md) — form errors below the fold read as no-ops; resilient multiplex clients hide dead exchange keys — probe per-key.
+- [OTA staleness diagnosis](ota-staleness-diagnosis.md) — "feature missing" but published = stale bundle; screenshot UI matching an old commit is the tell, not a code/data bug.
 - [expo-updates reloadAsync native crash](expo-updates-reload-crash.md) — never call Updates.reloadAsync() on this SDK54/new-arch build; it crashes natively; let OTAs apply on next cold launch.
 - [Binance batch ticker pricing](binance-batch-ticker-pricing.md) — one invalid `<ASSET>USDT` symbol makes Binance reject the whole batch (400 -1121); guard it or it blanks the entire holdings response.
 - [Fetching brand logos in sandbox](fetching-brand-logos-in-sandbox.md) — Google favicon service works for square brand marks; Clearbit fails; bundle + require relative path in Expo.

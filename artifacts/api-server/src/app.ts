@@ -133,13 +133,14 @@ app.use(
 
 app.use("/api", router);
 
-// Report unhandled errors to Sentry (default: 5xx only) before they reach the
-// sanitizing handler below, which still owns the client-facing response.
-app.use(Sentry.Handlers.errorHandler());
-
 // Last-resort error handler: sanitize so we never leak stack traces or
 // internal error messages to the client. Per-route handlers (e.g. binance)
 // still get first crack at their own errors.
+//
+// Sentry capture happens centrally via the logger's `logMethod` hook (see
+// lib/logger.ts), so this `logger.error` both records the structured log AND
+// reports the error to Sentry with the request scope set up by the
+// requestHandler above — no separate Sentry error middleware needed.
 app.use(
   (err: unknown, req: Request, res: Response, _next: NextFunction): void => {
     logger.error({ err, path: req.path }, "unhandled route error");

@@ -1,5 +1,6 @@
 - [pnpm packageManager pin vs Replit nix pnpm](pnpm-package-manager-pin.md) — pnpm pinned to an older version than the container ships SIGABRT-loops on every invocation; bump the pin to match.
 - [api-server Sentry / esbuild bundling](sentry-backend-bundling.md) — backend ships as one esbuild bundle with NO runtime node_modules; Sentry must be @sentry/node v7 (v8+ needs externalized OTel). Verify deps by running dist/ from an empty dir.
+- [Backend Sentry log mirroring](sentry-log-mirroring.md) — handled errors reach Sentry via a prod-only Pino logMethod hook; whitelist fields, gate init to prod, dedupe per-Error, skip op:diag.crash.
 - [EAS build from main agent](eas-build-in-main-agent.md) — main-agent sandbox blocks .git/ writes; `eas build` (tf:build) needs `EAS_NO_VCS=1` or it dies on .git/index.lock. Source-map token = EAS env var, visibility secret, production env.
 - [Silent-failure UX patterns](silent-failure-patterns.md) — form errors below the fold read as no-ops; resilient multiplex clients hide dead exchange keys — probe per-key.
 - [OTA staleness diagnosis](ota-staleness-diagnosis.md) — "feature missing" but published = stale bundle; screenshot UI matching an old commit is the tell, not a code/data bug.

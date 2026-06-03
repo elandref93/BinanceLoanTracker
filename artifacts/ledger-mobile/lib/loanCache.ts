@@ -1,6 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import type { Account, Loan } from "@workspace/api-client-react";
+import { reportError } from "@/lib/crashReporting";
 
 const LOANS_KEY = "ledger.cache.loans.v1";
 const ACCOUNTS_KEY = "ledger.cache.accounts.v1";
@@ -20,8 +21,7 @@ export async function writeLoanCache(loans: Loan[]): Promise<void> {
     const body: CachedLoans = { loans, cachedAt: new Date().toISOString() };
     await AsyncStorage.setItem(LOANS_KEY, JSON.stringify(body));
   } catch (err) {
-    // eslint-disable-next-line no-console
-    console.warn("[loanCache] failed to write loans cache", err);
+    reportError(err, { op: "loanCache.writeLoans" });
   }
 }
 
@@ -52,8 +52,7 @@ export async function writeAccountsCache(accounts: Account[]): Promise<void> {
     };
     await AsyncStorage.setItem(ACCOUNTS_KEY, JSON.stringify(body));
   } catch (err) {
-    // eslint-disable-next-line no-console
-    console.warn("[loanCache] failed to write accounts cache", err);
+    reportError(err, { op: "loanCache.writeAccounts" });
   }
 }
 

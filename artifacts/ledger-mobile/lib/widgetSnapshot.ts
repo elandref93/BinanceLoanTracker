@@ -2,6 +2,7 @@ import { Platform } from "react-native";
 import { ExtensionStorage } from "@bacons/apple-targets";
 
 import type { Loan } from "@workspace/api-client-react";
+import { reportError } from "@/lib/crashReporting";
 import { DEFAULT_TARGET_LTV, LIQ_LTV, priceDropPctTo } from "@/utils/risk";
 
 const APP_GROUP = "group.com.ledger.shared";
@@ -91,9 +92,8 @@ export async function writeWidgetSnapshot(
     // the snapshot now instead of waiting for the next timeline tick.
     ExtensionStorage.reloadWidget();
   } catch (err) {
-    // Don't crash the JS thread — widgets keep their last value — but log so a
-    // broken App Group entitlement is visible in dev instead of a stuck widget.
-    // eslint-disable-next-line no-console
-    console.warn("[widgetSnapshot] failed to write App Group snapshot", err);
+    // Don't crash the JS thread — widgets keep their last value — but report so
+    // a broken App Group entitlement is visible instead of a stuck widget.
+    reportError(err, { op: "widgetSnapshot.write" });
   }
 }

@@ -46,7 +46,96 @@ export function initSentry(): void {
 }
 
 // Initialise on import so the process-level uncaught-exception / unhandled-
-// rejection handlers are installed as early as possible.
-initSentry();
+// rejection handlers are installed as early as possible — but ONLY in production
+// (or when SENTRY_DSN is explicitly set, e.g. to test from dev). This keeps ALL
+// backend Sentry traffic out of local development by default, so the shared
+// Sentry project only ever sees real production events.
+if (process.env.NODE_ENV === "production" || process.env.SENTRY_DSN) {
+  initSentry();
+}
+
+// Scalar log fields that are safe to attach to a Sentry event. Deliberately a
+// whitelist: Pino's `redact` only scrubs Pino's OWN serialized output, so we
+// must never hand the raw log object to Sentry (it could carry headers, cookies
+// or bodies). None of these keys ever hold a secret.
+const SAFE_LOG_FIELDS = [
+  "op",
+  "endpoint",
+  "path",
+  "accountId",
+  "walletId",
+  "reason",
+  "code",
+  "statusCode",
+  "isIsolated",
+] as const;
+
+// Marks an Error as already sent to Sentry so the same object — logged at a low
+// level and then again by the final error handler after it rethrows — produces
+// exactly one Sentry event instead of two.
+const SENTRY_CAPTURED = Symbol.for("ledger.sentry.captured");
+
+/**
+ * Mirror a Pino error/fatal log into Sentry so that *handled* failures — caught,
+ * logged, and swallowed deep in the exchange clients (e.g. a single account's
+ * loan fetch failing and returning []) — surface in Sentry too, not just
+ * unhandled crashes. Wired in from the logger's `logMethod` hook (production
+ * only). Must never throw: telemetry can't be allowed to break logging.
+ */
+export function captureLogEvent(level: number, args: readonly unknown[]): void {
+  try {
+    const sentryLevel: Sentry.SeverityLevel = level >= 60 ? "fatal" : "error";
+    const first = args[0];
+    let err: unknown;
+    const extra: Record<string, unknown> = {};
+    let message: string | undefined;
+
+    // Pino call shapes: logger.error({ err, ...fields }, "message")
+    //                or logger.error("message")
+    if (first && typeof first === "object") {
+      const obj = first as Record<string, unknown>;
+      err = obj.err ?? obj.error;
+      for (const key of SAFE_LOG_FIELDS) {
+        if (obj[key] !== undefined) extra[key] = obj[key];
+      }
+      message = typeof args[1] === "string" ? args[1] : undefined;
+    } else if (typeof first === "string") {
+      message = first;
+    }
+    if (message) extra.message = message;
+
+    // Don't mirror mobile crash intake (`POST /api/diag/crash`): the app already
+    // reports those to Sentry directly, so mirroring the backend intake log
+    // would double-count every client crash. It's still logged for Azure.
+    if (extra.op === "diag.crash") return;
+
+    // Dedupe rethrow paths: a helper often logs an error then rethrows, so the
+    // same Error is logged again by the final error handler. Capture it once.
+    if (err instanceof Error) {
+      const tagged = err as Error & { [SENTRY_CAPTURED]?: true };
+      if (tagged[SENTRY_CAPTURED]) return;
+      try {
+        Object.defineProperty(tagged, SENTRY_CAPTURED, {
+          value: true,
+          enumerable: false,
+        });
+      } catch {
+        // Frozen error — fall through and capture anyway.
+      }
+    }
+
+    Sentry.withScope((scope) => {
+      scope.setLevel(sentryLevel);
+      if (Object.keys(extra).length > 0) scope.setContext("log", extra);
+      if (err instanceof Error) {
+        Sentry.captureException(err);
+      } else {
+        Sentry.captureMessage(message ?? "Logged error event");
+      }
+    });
+  } catch {
+    // Telemetry must never break logging.
+  }
+}
 
 export { Sentry };

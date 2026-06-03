@@ -66,7 +66,14 @@ router.post("/crash", (req: Request, res: Response) => {
     { op: "diag.crash", userId: entry.userId, fatal: Boolean(entry.fatal) },
     "client crash received",
   );
-  logger.error({ clientCrash: entry }, "client crash reported");
+  // `op: "diag.crash"` lets the Sentry log-mirror hook skip this line: the
+  // mobile app already reports these crashes to Sentry directly, so mirroring
+  // the intake log would double-count every crash. We still log at `error`
+  // level so it surfaces in the Azure log stream.
+  logger.error(
+    { clientCrash: entry, op: "diag.crash" },
+    "client crash reported",
+  );
   res.status(204).end();
 });
 

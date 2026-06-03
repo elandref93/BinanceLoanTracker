@@ -15,7 +15,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useColors } from "@/hooks/useColors";
-import { reportFatal } from "@/lib/crashReporting";
+import { reportError, reportFatal } from "@/lib/crashReporting";
 
 export type ErrorFallbackProps = {
   error: Error;
@@ -41,7 +41,7 @@ export function ErrorFallback({ error, resetError }: ErrorFallbackProps) {
     try {
       await reloadAppAsync();
     } catch (restartError) {
-      console.error("Failed to restart app:", restartError);
+      reportError(restartError, { op: "errorFallback.restart" });
       resetError();
     }
   };

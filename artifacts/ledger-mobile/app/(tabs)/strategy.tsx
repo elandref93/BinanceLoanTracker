@@ -21,6 +21,7 @@ import { useCurrency } from "@/context/CurrencyContext";
 import { useRiskSettings } from "@/context/RiskSettingsContext";
 import { useSession } from "@/context/SessionContext";
 import { useColors } from "@/hooks/useColors";
+import { reportError } from "@/lib/crashReporting";
 import { haptic } from "@/lib/haptics";
 import {
   compute,
@@ -378,6 +379,7 @@ export default function StrategyScreen() {
         Alert.alert("Saved", `PDF saved to ${uri}`);
       }
     } catch (err) {
+      reportError(err, { op: "strategy.exportPdf" });
       haptic.error();
       Alert.alert(
         "Couldn't export",

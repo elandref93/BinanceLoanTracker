@@ -8,12 +8,24 @@ import cors from "cors";
 import pinoHttp from "pino-http";
 import router from "./routes";
 import { logger } from "./lib/logger";
+import { Sentry } from "./lib/sentry";
 
 const app: Express = express();
 
 // Trust the Azure App Service / front-door proxy so req.ip reflects the real
 // client (used by the rate limiter below).
 app.set("trust proxy", 1);
+
+// Sentry request context must be the very first middleware. We extract only the
+// method + URL — never headers, cookies, query string or body — so session
+// tokens and Binance/Luno API keys are never sent to Sentry.
+app.use(
+  Sentry.Handlers.requestHandler({
+    request: ["method", "url"],
+    ip: false,
+    user: false,
+  }),
+);
 
 app.use(
   pinoHttp({
@@ -120,6 +132,10 @@ app.use(
 );
 
 app.use("/api", router);
+
+// Report unhandled errors to Sentry (default: 5xx only) before they reach the
+// sanitizing handler below, which still owns the client-facing response.
+app.use(Sentry.Handlers.errorHandler());
 
 // Last-resort error handler: sanitize so we never leak stack traces or
 // internal error messages to the client. Per-route handlers (e.g. binance)

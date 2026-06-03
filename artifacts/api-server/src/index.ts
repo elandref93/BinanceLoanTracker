@@ -1,3 +1,6 @@
+// Import first so Sentry initialises (and installs its process-level
+// uncaught-exception / unhandled-rejection handlers) before anything else.
+import "./lib/sentry";
 import app from "./app";
 import { logger } from "./lib/logger";
 

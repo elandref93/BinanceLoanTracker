@@ -183,6 +183,15 @@ async function migrateV1IfNeeded(): Promise<AccountContainer[] | null> {
       ],
     };
   });
+  // A concurrent hydrateFromServer() may have written V3 while we were
+  // building the migration. Migration is lock-free (see migrateLegacyOnce),
+  // so re-check and yield to an existing V3 rather than clobbering it with
+  // older legacy data.
+  const existing = await existingV3OrNull();
+  if (existing) {
+    await SecureStore.deleteItemAsync(V1_KEY);
+    return existing;
+  }
   await SecureStore.setItemAsync(V3_KEY, JSON.stringify(migrated));
   await SecureStore.deleteItemAsync(V1_KEY);
   return migrated;
@@ -199,9 +208,64 @@ async function migrateV2IfNeeded(): Promise<AccountContainer[] | null> {
     return null;
   }
   const upgraded = v2.map(upgradeV2Container);
+  // See migrateV1IfNeeded — yield to a concurrently-hydrated V3.
+  const existing = await existingV3OrNull();
+  if (existing) {
+    await SecureStore.deleteItemAsync(V2_KEY);
+    return existing;
+  }
   await SecureStore.setItemAsync(V3_KEY, JSON.stringify(upgraded));
   await SecureStore.deleteItemAsync(V2_KEY);
   return upgraded;
+}
+
+/**
+ * Read the current V3 blob, returning the parsed array or null when absent /
+ * unparseable. Used by the lock-free legacy migration to detect (and defer
+ * to) a V3 that a concurrent hydrate may have written mid-migration.
+ */
+async function existingV3OrNull(): Promise<AccountContainer[] | null> {
+  const raw = await SecureStore.getItemAsync(V3_KEY);
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? (parsed as AccountContainer[]) : null;
+  } catch {
+    return null;
+  }
+}
+
+// Legacy (v1/v2) → v3 migration. Runs AT MOST ONCE per process and is shared
+// across all concurrent first-reads via this cached promise, so two callers
+// mounting at the same time (e.g. settings + onboarding) can't both migrate
+// and clobber each other.
+//
+// Crucially this does NOT go through `withWriteLock`. `readAll()` is itself
+// called from inside mutators (addLink, createProfile, removeLink, …) that
+// ALREADY hold that lock, and `withWriteLock` is not reentrant — re-acquiring
+// it from within a held section deadlocks (the inner acquisition is queued
+// behind the outer one, which can't complete until the inner runs). For a
+// BRAND-NEW user the V3 key is absent, so every mutation took this branch and
+// hung forever (the classic symptom: the Add-account "Save" spinner never
+// stops). The single-flight promise gives the same "migrate once" guarantee
+// without touching the write lock.
+let migrationPromise: Promise<AccountContainer[]> | null = null;
+function migrateLegacyOnce(): Promise<AccountContainer[]> {
+  if (!migrationPromise) {
+    migrationPromise = (async () => {
+      const v2 = await migrateV2IfNeeded();
+      if (v2) return v2;
+      const v1 = await migrateV1IfNeeded();
+      return v1 ?? [];
+    })();
+    // Self-heal: if the one-time migration throws (e.g. a transient SecureStore
+    // failure), don't cache the rejection forever — clear it so the next read
+    // can retry instead of every subsequent readAll() falling into catch→[].
+    migrationPromise.catch(() => {
+      migrationPromise = null;
+    });
+  }
+  return migrationPromise;
 }
 
 async function readAll(): Promise<AccountContainer[]> {
@@ -217,21 +281,10 @@ async function readAll(): Promise<AccountContainer[]> {
         return upgradeV2Container(c as V2Container);
       });
     }
-    // Migration path — serialize via the write lock so two concurrent first
-    // reads (e.g. settings + onboarding mounting at the same time) can't
-    // both run the migration and step on each other's writes. The lock
-    // callback re-reads V3 first in case the other caller already finished.
-    return await withWriteLock(async () => {
-      const rawAgain = await SecureStore.getItemAsync(V3_KEY);
-      if (rawAgain) {
-        const parsed = JSON.parse(rawAgain);
-        return Array.isArray(parsed) ? (parsed as AccountContainer[]) : [];
-      }
-      const v2 = await migrateV2IfNeeded();
-      if (v2) return v2;
-      const v1 = await migrateV1IfNeeded();
-      return v1 ?? [];
-    });
+    // No v3 data yet — run (or join) the one-time legacy migration. Lock-free
+    // by design; see migrateLegacyOnce above for why re-entering the write
+    // lock here would deadlock mutators.
+    return await migrateLegacyOnce();
   } catch (e) {
     reportError(e, { op: "accounts.read" });
     return [];

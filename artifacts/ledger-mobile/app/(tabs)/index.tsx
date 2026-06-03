@@ -156,6 +156,12 @@ export default function DashboardScreen() {
     return [...loans].sort((a, b) => b.ltv - a.ltv)[0];
   }, [loans]);
 
+  // Which account the closest-to-liquidation loan belongs to. Mirrors the
+  // loan-list resolution so the card names the same account shown below.
+  const closestAccountName = closest
+    ? accounts.find((a) => a.id === closest.accountId)?.name ?? null
+    : null;
+
   // Aggregate signed distance to target across all loans. With the
   // corrected `headroomToTarget` semantics, POSITIVE values are real
   // headroom and NEGATIVE values are shortfall. Surface the worse of
@@ -426,9 +432,18 @@ export default function DashboardScreen() {
             <Text style={[styles.tileLabel, { color: colors.mutedForeground }]}>
               CLOSEST TO LIQUIDATION
             </Text>
-            <Text style={[styles.distAsset, { color: colors.foreground }]}>
-              {closest.collateral.asset}
-            </Text>
+            <View style={{ alignItems: "flex-end" }}>
+              <Text style={[styles.distAsset, { color: colors.foreground }]}>
+                {closest.collateral.asset}
+              </Text>
+              {closestAccountName ? (
+                <Text
+                  style={[styles.distAccount, { color: colors.mutedForeground }]}
+                >
+                  {closestAccountName}
+                </Text>
+              ) : null}
+            </View>
           </View>
           <Text style={[styles.distValue, { color: colors.danger }]}>
             {fmtPct(priceDropPctTo(closest, LIQ_LTV))}
@@ -643,6 +658,7 @@ const styles = StyleSheet.create({
   },
   tileLabel: { fontSize: 10, letterSpacing: 1, fontFamily: "Inter_600SemiBold" },
   distAsset: { fontSize: 11, fontFamily: "Inter_600SemiBold" },
+  distAccount: { fontSize: 11, fontFamily: "Inter_400Regular", marginTop: 1 },
   distValue: {
     fontSize: 28,
     fontFamily: "Inter_700Bold",

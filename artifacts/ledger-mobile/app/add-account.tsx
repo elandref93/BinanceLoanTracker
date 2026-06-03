@@ -34,6 +34,7 @@ import {
 } from "@/lib/binanceKeys";
 import { validateLunoKeyId, validateLunoKeySecret } from "@/lib/lunoKeys";
 import { parseBinanceQR } from "@/lib/parseBinanceQR";
+import { reportError, reportMessage } from "@/lib/crashReporting";
 
 type Step = "exchange" | "container" | "credentials";
 
@@ -147,17 +148,51 @@ export default function AddAccountScreen() {
     if (!exchange || !containerChoice) return;
     setError(null);
 
+    reportMessage("[add-account] save start", {
+      op: "addAccount.save",
+      provider: exchange,
+      target: containerChoice.kind,
+    });
+
     // Credentials validation
     if (exchange === "binance") {
       const ke = validateBinanceKey(apiKey);
-      if (ke) return showError(ke);
+      if (ke) {
+        reportError(new Error(ke), {
+          op: "addAccount.validate",
+          provider: exchange,
+          reason: "binance-key",
+        });
+        return showError(ke);
+      }
       const se = validateBinanceSecret(apiSecret);
-      if (se) return showError(se);
+      if (se) {
+        reportError(new Error(se), {
+          op: "addAccount.validate",
+          provider: exchange,
+          reason: "binance-secret",
+        });
+        return showError(se);
+      }
     } else {
       const ke = validateLunoKeyId(apiKey);
-      if (ke) return showError(ke);
+      if (ke) {
+        reportError(new Error(ke), {
+          op: "addAccount.validate",
+          provider: exchange,
+          reason: "luno-key",
+        });
+        return showError(ke);
+      }
       const se = validateLunoKeySecret(apiSecret);
-      if (se) return showError(se);
+      if (se) {
+        reportError(new Error(se), {
+          op: "addAccount.validate",
+          provider: exchange,
+          reason: "luno-secret",
+        });
+        return showError(se);
+      }
     }
 
     setBusy(true);
@@ -176,12 +211,26 @@ export default function AddAccountScreen() {
           credentials: { apiKey, apiSecret },
         },
       );
+      reportMessage("[add-account] save ok", {
+        op: "addAccount.save",
+        provider: exchange,
+      });
       haptic.success();
       router.back();
     } catch (e) {
       if (e instanceof ProfileAlreadyHasLinkError) {
+        reportError(e, {
+          op: "addAccount.save",
+          provider: exchange,
+          reason: "already-linked",
+        });
         showError(e.message, "Already linked");
       } else {
+        reportError(e, {
+          op: "addAccount.save",
+          provider: exchange,
+          reason: "save-failed",
+        });
         showError(e instanceof Error ? e.message : "Could not save");
       }
     } finally {

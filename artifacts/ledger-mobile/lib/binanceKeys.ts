@@ -11,6 +11,7 @@ import {
   listContainersWithSecrets,
   useStoredAccountsCount as useContainerCount,
 } from "@/lib/accountStore";
+import { reportMessage } from "@/lib/crashReporting";
 
 export type BinanceAccount = {
   /** link id (per-link, NOT container id). */
@@ -74,18 +75,48 @@ export const useStoredAccountsCount = useContainerCount;
 
 export function validateBinanceKey(apiKey: string): string | null {
   const trimmed = apiKey.trim();
-  if (!trimmed) return "API key is required";
-  if (trimmed.length < 16) return "API key looks too short";
-  if (!/^[A-Za-z0-9]+$/.test(trimmed))
-    return "API key must be letters and numbers only";
-  return null;
+  let reason: string | null = null;
+  let msg: string | null = null;
+  if (!trimmed) {
+    reason = "empty";
+    msg = "API key is required";
+  } else if (trimmed.length < 16) {
+    reason = "too-short";
+    msg = "API key looks too short";
+  } else if (!/^[A-Za-z0-9]+$/.test(trimmed)) {
+    reason = "bad-charset";
+    msg = "API key must be letters and numbers only";
+  }
+  if (msg) {
+    reportMessage("[binance] key validation failed", {
+      op: "binance.validateKey",
+      reason,
+      keyLen: trimmed.length,
+    });
+  }
+  return msg;
 }
 
 export function validateBinanceSecret(apiSecret: string): string | null {
   const trimmed = apiSecret.trim();
-  if (!trimmed) return "API secret is required";
-  if (trimmed.length < 16) return "API secret looks too short";
-  if (!/^[A-Za-z0-9]+$/.test(trimmed))
-    return "API secret must be letters and numbers only";
-  return null;
+  let reason: string | null = null;
+  let msg: string | null = null;
+  if (!trimmed) {
+    reason = "empty";
+    msg = "API secret is required";
+  } else if (trimmed.length < 16) {
+    reason = "too-short";
+    msg = "API secret looks too short";
+  } else if (!/^[A-Za-z0-9]+$/.test(trimmed)) {
+    reason = "bad-charset";
+    msg = "API secret must be letters and numbers only";
+  }
+  if (msg) {
+    reportMessage("[binance] secret validation failed", {
+      op: "binance.validateSecret",
+      reason,
+      keyLen: trimmed.length,
+    });
+  }
+  return msg;
 }

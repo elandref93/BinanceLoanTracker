@@ -13,6 +13,8 @@
  * client re-pulls instead of clobbering.
  */
 
+import { reportError, reportMessage } from "@/lib/crashReporting";
+
 const baseUrl = process.env.EXPO_PUBLIC_DOMAIN
   ? `https://${process.env.EXPO_PUBLIC_DOMAIN}`
   : "";
@@ -55,17 +57,28 @@ export async function fetchRemoteSettings(): Promise<RemoteSettingsBlob | null> 
   try {
     const res = await fetch(`${baseUrl}/api/settings/sync`, { headers });
     if (res.status === 404) return null;
-    if (!res.ok) return null;
+    if (!res.ok) {
+      reportMessage("[sync] settings fetch non-ok", {
+        op: "settings.fetch",
+        status: res.status,
+      });
+      return null;
+    }
     const body = (await res.json()) as RemoteSettingsBlob;
     if (
       typeof body?.updatedAt !== "string" ||
       typeof body.settings !== "object" ||
       body.settings === null
     ) {
+      reportMessage("[sync] settings fetch bad-shape", {
+        op: "settings.fetch",
+        status: res.status,
+      });
       return null;
     }
     return body;
-  } catch {
+  } catch (e) {
+    reportError(e, { op: "settings.fetch" });
     return null;
   }
 }
@@ -80,17 +93,41 @@ export async function pushRemoteSettings(
   blob: RemoteSettingsBlob,
 ): Promise<"ok" | "conflict" | "skipped"> {
   const headers = await authHeader();
-  if (!headers) return "skipped";
+  if (!headers) {
+    reportMessage("[sync] settings push skipped", {
+      op: "settings.push",
+      reason: "no-auth",
+    });
+    return "skipped";
+  }
   try {
     const res = await fetch(`${baseUrl}/api/settings/sync`, {
       method: "PUT",
       headers: { ...headers, "content-type": "application/json" },
       body: JSON.stringify(blob),
     });
-    if (res.status === 409) return "conflict";
-    if (!res.ok) return "skipped";
+    if (res.status === 409) {
+      reportMessage("[sync] settings push conflict", {
+        op: "settings.push",
+        status: res.status,
+      });
+      return "conflict";
+    }
+    if (!res.ok) {
+      reportMessage("[sync] settings push skipped", {
+        op: "settings.push",
+        reason: "non-ok",
+        status: res.status,
+      });
+      return "skipped";
+    }
+    reportMessage("[sync] settings push ok", {
+      op: "settings.push",
+      status: res.status,
+    });
     return "ok";
-  } catch {
+  } catch (e) {
+    reportError(e, { op: "settings.push", reason: "network" });
     return "skipped";
   }
 }

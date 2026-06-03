@@ -47,15 +47,25 @@ export async function readRecord(
   sub: string,
   kind: SyncKind,
 ): Promise<StoredRecord | null> {
+  const target = fileFor(sub, kind);
   try {
-    const raw = await fs.readFile(fileFor(sub, kind), "utf8");
+    const raw = await fs.readFile(target, "utf8");
     const parsed = JSON.parse(raw) as StoredRecord;
     if (typeof parsed?.updatedAt !== "string") return null;
     return parsed;
   } catch (err) {
     const code = (err as NodeJS.ErrnoException).code;
-    if (code === "ENOENT") return null;
-    logger.warn({ err, code, kind }, "accountStorage: read failed");
+    if (code === "ENOENT") {
+      logger.info(
+        { op: "storage.read", kind, userId: sub, path: target, hit: false },
+        "accountStorage: read miss",
+      );
+      return null;
+    }
+    logger.warn(
+      { err, code, op: "storage.read", kind, userId: sub, path: target },
+      "accountStorage: read failed",
+    );
     return null;
   }
 }
@@ -69,6 +79,20 @@ export async function writeRecord(
   const target = fileFor(sub, kind);
   const tmp = `${target}.${crypto.randomBytes(6).toString("hex")}.tmp`;
   const body = JSON.stringify(rec);
-  await fs.writeFile(tmp, body, { encoding: "utf8", mode: 0o600 });
-  await fs.rename(tmp, target);
+  const bytes = Buffer.byteLength(body, "utf8");
+  try {
+    await fs.writeFile(tmp, body, { encoding: "utf8", mode: 0o600 });
+    await fs.rename(tmp, target);
+    logger.info(
+      { op: "storage.write", kind, userId: sub, path: target, bytes },
+      "accountStorage: write+rename ok",
+    );
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    logger.error(
+      { err, code, op: "storage.write", kind, userId: sub, path: target, bytes },
+      "accountStorage: write+rename failed",
+    );
+    throw err;
+  }
 }

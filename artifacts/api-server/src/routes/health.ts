@@ -1,5 +1,6 @@
 import { Router, type IRouter } from "express";
 import { HealthCheckResponse } from "@workspace/api-zod";
+import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
 
@@ -14,6 +15,10 @@ router.get("/healthz", (_req, res) => {
   if (!process.env.APPLE_BUNDLE_ID) missing.push("APPLE_BUNDLE_ID");
 
   if (missing.length > 0) {
+    logger.warn(
+      { op: "health", status: 503, missing },
+      "healthz degraded — required env vars missing",
+    );
     res.status(503).json({
       status: "degraded",
       missing,

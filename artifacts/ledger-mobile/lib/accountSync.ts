@@ -17,6 +17,7 @@
  */
 
 import type { AccountContainer } from "./accountStore";
+import { reportError, reportMessage } from "@/lib/crashReporting";
 
 const baseUrl = process.env.EXPO_PUBLIC_DOMAIN
   ? `https://${process.env.EXPO_PUBLIC_DOMAIN}`
@@ -53,13 +54,24 @@ export async function fetchRemoteBlob(): Promise<RemoteBlob | null> {
   try {
     const res = await fetch(`${baseUrl}/api/accounts/sync`, { headers });
     if (res.status === 404) return null;
-    if (!res.ok) return null;
+    if (!res.ok) {
+      reportMessage("[sync] accounts fetch non-ok", {
+        op: "accounts.fetch",
+        status: res.status,
+      });
+      return null;
+    }
     const body = (await res.json()) as RemoteBlob;
     if (typeof body?.updatedAt !== "string" || !Array.isArray(body.containers)) {
+      reportMessage("[sync] accounts fetch bad-shape", {
+        op: "accounts.fetch",
+        status: res.status,
+      });
       return null;
     }
     return body;
-  } catch {
+  } catch (e) {
+    reportError(e, { op: "accounts.fetch" });
     return null;
   }
 }
@@ -74,17 +86,41 @@ export async function pushRemoteBlob(
   blob: RemoteBlob,
 ): Promise<"ok" | "conflict" | "skipped"> {
   const headers = await authHeader();
-  if (!headers) return "skipped";
+  if (!headers) {
+    reportMessage("[sync] accounts push skipped", {
+      op: "accounts.push",
+      reason: "no-auth",
+    });
+    return "skipped";
+  }
   try {
     const res = await fetch(`${baseUrl}/api/accounts/sync`, {
       method: "PUT",
       headers: { ...headers, "content-type": "application/json" },
       body: JSON.stringify(blob),
     });
-    if (res.status === 409) return "conflict";
-    if (!res.ok) return "skipped";
+    if (res.status === 409) {
+      reportMessage("[sync] accounts push conflict", {
+        op: "accounts.push",
+        status: res.status,
+      });
+      return "conflict";
+    }
+    if (!res.ok) {
+      reportMessage("[sync] accounts push skipped", {
+        op: "accounts.push",
+        reason: "non-ok",
+        status: res.status,
+      });
+      return "skipped";
+    }
+    reportMessage("[sync] accounts push ok", {
+      op: "accounts.push",
+      status: res.status,
+    });
     return "ok";
-  } catch {
+  } catch (e) {
+    reportError(e, { op: "accounts.push", reason: "network" });
     return "skipped";
   }
 }

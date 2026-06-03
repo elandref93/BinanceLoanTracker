@@ -5,6 +5,7 @@ import {
   pushRemoteBlob,
   type RemoteBlob,
 } from "./accountSync";
+import { reportError, reportMessage } from "@/lib/crashReporting";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Profile model: a single "account" is a Personal or Trust profile that holds
@@ -231,7 +232,8 @@ async function readAll(): Promise<AccountContainer[]> {
       const v1 = await migrateV1IfNeeded();
       return v1 ?? [];
     });
-  } catch {
+  } catch (e) {
+    reportError(e, { op: "accounts.read" });
     return [];
   }
 }
@@ -494,6 +496,13 @@ export function addLink(
     container.links.push(newLink);
     await writeAll(all);
     notify();
+    reportMessage("[accounts] link added", {
+      op: "accounts.addLink",
+      exchange: link.exchange,
+      target: target.kind,
+      linkCount: container.links.length,
+      profileCount: all.length,
+    });
     return container.id;
   });
 }
@@ -509,6 +518,11 @@ export function removeLink(
     c.links = c.links.filter((l) => l.id !== linkId);
     await writeAll(all);
     notify();
+    reportMessage("[accounts] link removed", {
+      op: "accounts.removeLink",
+      linkCount: c.links.length,
+      profileCount: all.length,
+    });
   });
 }
 

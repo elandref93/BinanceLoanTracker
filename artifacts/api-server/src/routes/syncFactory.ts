@@ -50,9 +50,17 @@ export function makeSyncRouter({
     }
     const rec = await readRecord(sub, kind);
     if (!rec) {
+      logger.info(
+        { op: "sync.get", kind, userId: sub, hit: false, status: 404 },
+        `${kind}/sync miss`,
+      );
       res.status(404).json({ error: "No synced data" });
       return;
     }
+    logger.info(
+      { op: "sync.get", kind, userId: sub, hit: true, status: 200 },
+      `${kind}/sync hit`,
+    );
     res.json(rec);
   });
 
@@ -64,14 +72,41 @@ export function makeSyncRouter({
     }
     const parsed = Body.safeParse(req.body);
     if (!parsed.success) {
+      logger.warn(
+        {
+          op: "sync.put",
+          kind,
+          userId: sub,
+          status: 400,
+          reason: "invalid-body",
+          issues: parsed.error.issues.map((i) => i.code),
+        },
+        `${kind}/sync rejected (invalid body)`,
+      );
       res.status(400).json({ error: "Invalid request body" });
       return;
     }
     const payload = (parsed.data as Record<string, unknown>)[payloadKey];
     if (!validatePayload(payload)) {
+      logger.warn(
+        {
+          op: "sync.put",
+          kind,
+          userId: sub,
+          status: 400,
+          reason: "invalid-payload-shape",
+        },
+        `${kind}/sync rejected (invalid ${payloadKey} shape)`,
+      );
       res.status(400).json({ error: `${payloadKey} has an invalid shape` });
       return;
     }
+    // Item count only — never the payload contents.
+    const itemCount = Array.isArray(payload)
+      ? payload.length
+      : payload && typeof payload === "object"
+        ? Object.keys(payload).length
+        : 0;
     try {
       const outcome = await withUserLock(sub, async () => {
         const existing = await readRecord(sub, kind);
@@ -87,12 +122,38 @@ export function makeSyncRouter({
         return { kind: "ok" as const };
       });
       if (outcome.kind === "conflict") {
+        logger.warn(
+          {
+            op: "sync.put",
+            kind,
+            userId: sub,
+            status: 409,
+            reason: "stale",
+            incomingUpdatedAt: parsed.data.updatedAt,
+            existingUpdatedAt: outcome.existing.updatedAt,
+          },
+          `${kind}/sync rejected (conflict)`,
+        );
         res.status(409).json(outcome.existing);
         return;
       }
+      logger.info(
+        {
+          op: "sync.put",
+          kind,
+          userId: sub,
+          status: 200,
+          items: itemCount,
+          updatedAt: parsed.data.updatedAt,
+        },
+        `${kind}/sync accepted (ok)`,
+      );
       res.json({ ok: true, updatedAt: parsed.data.updatedAt });
     } catch (err) {
-      logger.error({ err, kind }, `${kind}/sync PUT failed`);
+      logger.error(
+        { err, op: "sync.put", kind, userId: sub, status: 500 },
+        `${kind}/sync PUT failed`,
+      );
       res.status(500).json({ error: "Failed to persist sync blob" });
     }
   });

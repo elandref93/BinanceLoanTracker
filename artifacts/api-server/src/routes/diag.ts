@@ -62,6 +62,10 @@ router.post("/crash", (req: Request, res: Response) => {
   crashes.push(entry);
   if (crashes.length > MAX) crashes.splice(0, crashes.length - MAX);
 
+  logger.info(
+    { op: "diag.crash", userId: entry.userId, fatal: Boolean(entry.fatal) },
+    "client crash received",
+  );
   logger.error({ clientCrash: entry }, "client crash reported");
   res.status(204).end();
 });

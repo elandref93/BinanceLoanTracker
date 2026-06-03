@@ -47,6 +47,11 @@ router.post("/apple", async (req, res) => {
     return;
   }
 
+  logger.info(
+    { op: "auth.apple", hasName: Boolean(parsed.data.name) },
+    "Apple Sign In attempt received",
+  );
+
   const bundleId = process.env.APPLE_BUNDLE_ID;
   if (!bundleId) {
     logger.error("APPLE_BUNDLE_ID env var is not set — cannot verify tokens");
@@ -69,6 +74,10 @@ router.post("/apple", async (req, res) => {
     appleClaims = await verifyAppleIdentityToken(
       parsed.data.identityToken,
       audience,
+    );
+    logger.info(
+      { op: "auth.apple", userId: appleClaims.sub },
+      "Apple identity token verified",
     );
   } catch (err) {
     if (err instanceof AppleTokenVerificationError) {
@@ -106,6 +115,8 @@ router.post("/apple", async (req, res) => {
 
   logger.info(
     {
+      op: "auth.apple",
+      userId: appleClaims.sub,
       sub: appleClaims.sub,
       hasEmail: Boolean(appleClaims.email),
       hasName: Boolean(fullName),

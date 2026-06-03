@@ -20,6 +20,7 @@ import { setSyncTokenGetter } from "@/lib/accountSync";
 import { hydrateSettings } from "@/lib/settingsStore";
 import { setSettingsTokenGetter } from "@/lib/settingsSync";
 import { checkAndApplyUpdate } from "@/lib/otaUpdates";
+import { reportError, reportMessage } from "@/lib/crashReporting";
 
 interface SessionContextValue {
   /** True once the hydration from secure storage has completed. */
@@ -58,7 +59,8 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
           setIsLoaded(true);
         }
       })
-      .catch(() => {
+      .catch((e) => {
+        reportError(e, { op: "session.loadStored" });
         if (!cancelled) setIsLoaded(true);
       });
     return () => {
@@ -77,8 +79,13 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     setSyncTokenGetter(getToken);
     setSettingsTokenGetter(getToken);
     if (session) {
-      void hydrateFromServer();
-      void hydrateSettings();
+      reportMessage("[session] hydrate start", { op: "session.hydrate" });
+      void hydrateFromServer().catch((e) => {
+        reportError(e, { op: "accounts.hydrate" });
+      });
+      void hydrateSettings().catch((e) => {
+        reportError(e, { op: "settings.hydrate" });
+      });
     }
     return () => {
       setSyncTokenGetter(null);
@@ -87,8 +94,17 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   }, [session, getToken]);
 
   const signInWithApple = useCallback(async () => {
-    const next = await performAppleSignIn();
+    reportMessage("[session] apple sign-in start", { op: "session.signIn" });
+    let next: Session;
+    try {
+      next = await performAppleSignIn();
+    } catch (e) {
+      // Log but DO NOT swallow — rethrow so the UI still surfaces the failure.
+      reportError(e, { op: "session.signIn" });
+      throw e;
+    }
     setSession(next);
+    reportMessage("[session] apple sign-in success", { op: "session.signIn" });
     // Stage the latest OTA bundle on login. Runs in the background and only
     // DOWNLOADS the update — it never calls reloadAsync() (which crashes
     // natively on this build and traps the device on the old bundle). The
@@ -98,7 +114,13 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const signOut = useCallback(async () => {
-    await clearStoredSession();
+    reportMessage("[session] sign-out", { op: "session.signOut" });
+    try {
+      await clearStoredSession();
+    } catch (e) {
+      reportError(e, { op: "session.signOut" });
+      throw e;
+    }
     setSession(null);
   }, []);
 

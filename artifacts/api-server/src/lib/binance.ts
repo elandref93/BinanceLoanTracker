@@ -386,6 +386,12 @@ export function signQuery(secret: string, query: string): string {
   return createHmac("sha256", secret).update(query).digest("hex");
 }
 
+// Reduce an arbitrary thrown value to a short, secret-free message for logs.
+function sanitizeErr(err: unknown): string {
+  if (err instanceof Error) return err.message.slice(0, 200);
+  return String(err).slice(0, 200);
+}
+
 /**
  * Thrown on any non-2xx from Binance. Carries the parsed Binance error code
  * + message (which is safe — it never echoes the signed query) but does NOT
@@ -430,9 +436,24 @@ async function binanceSignedGetOn<T = unknown>(
   });
   const signature = signQuery(creds.apiSecret, qs.toString());
   qs.append("signature", signature);
-  const res = await fetch(`${base}${path}?${qs.toString()}`, {
-    headers: { "X-MBX-APIKEY": creds.apiKey },
-  });
+  logger.debug({ op: "binance.signedGet", path }, "binance upstream call start");
+  const startedAt = Date.now();
+  let res: Awaited<ReturnType<typeof fetch>>;
+  try {
+    res = await fetch(`${base}${path}?${qs.toString()}`, {
+      headers: { "X-MBX-APIKEY": creds.apiKey },
+    });
+  } catch (err) {
+    logger.error(
+      { op: "binance.signedGet", path, ms: Date.now() - startedAt, msg: sanitizeErr(err) },
+      "binance upstream call network error",
+    );
+    throw err;
+  }
+  logger.debug(
+    { op: "binance.signedGet", path, status: res.status, ms: Date.now() - startedAt },
+    "binance upstream call done",
+  );
   const body = await res.text();
   if (!res.ok) {
     // Parse Binance's documented error envelope `{code, msg}` only — do NOT
@@ -471,10 +492,25 @@ async function binanceSignedPost<T = unknown>(
   });
   const signature = signQuery(creds.apiSecret, qs.toString());
   qs.append("signature", signature);
-  const res = await fetch(`${BINANCE_BASE}${path}?${qs.toString()}`, {
-    method: "POST",
-    headers: { "X-MBX-APIKEY": creds.apiKey },
-  });
+  logger.debug({ op: "binance.signedPost", path }, "binance upstream call start");
+  const startedAt = Date.now();
+  let res: Awaited<ReturnType<typeof fetch>>;
+  try {
+    res = await fetch(`${BINANCE_BASE}${path}?${qs.toString()}`, {
+      method: "POST",
+      headers: { "X-MBX-APIKEY": creds.apiKey },
+    });
+  } catch (err) {
+    logger.error(
+      { op: "binance.signedPost", path, ms: Date.now() - startedAt, msg: sanitizeErr(err) },
+      "binance upstream call network error",
+    );
+    throw err;
+  }
+  logger.debug(
+    { op: "binance.signedPost", path, status: res.status, ms: Date.now() - startedAt },
+    "binance upstream call done",
+  );
   const body = await res.text();
   if (!res.ok) {
     let code: number | null = null;
@@ -505,7 +541,22 @@ async function binancePublicGet<T = unknown>(
   const url = qs.toString()
     ? `${BINANCE_BASE}${path}?${qs.toString()}`
     : `${BINANCE_BASE}${path}`;
-  const res = await fetch(url);
+  logger.debug({ op: "binance.publicGet", path }, "binance upstream call start");
+  const startedAt = Date.now();
+  let res: Awaited<ReturnType<typeof fetch>>;
+  try {
+    res = await fetch(url);
+  } catch (err) {
+    logger.error(
+      { op: "binance.publicGet", path, ms: Date.now() - startedAt, msg: sanitizeErr(err) },
+      "binance upstream call network error",
+    );
+    throw err;
+  }
+  logger.debug(
+    { op: "binance.publicGet", path, status: res.status, ms: Date.now() - startedAt },
+    "binance upstream call done",
+  );
   if (!res.ok) {
     throw new Error(
       `Binance ${path} ${res.status}: ${(await res.text()).slice(0, 300)}`,

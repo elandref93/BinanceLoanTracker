@@ -84,16 +84,47 @@ function basicAuth(creds: LunoCredentials): string {
   return `Basic ${Buffer.from(`${creds.keyId}:${creds.keySecret}`).toString("base64")}`;
 }
 
+// Reduce an arbitrary thrown value to a short, secret-free message for logs.
+function sanitizeErr(err: unknown): string {
+  if (err instanceof Error) return err.message.slice(0, 200);
+  return String(err).slice(0, 200);
+}
+
+// Strip the query string so a `pair=`/`asset=` value is the most we ever log
+// — never the Authorization header or any credential material.
+function lunoEndpoint(path: string): string {
+  return path.split("?")[0];
+}
+
 async function lunoFetch<T>(
   path: string,
   creds: LunoCredentials | null,
 ): Promise<T> {
   const url = `${LUNO_BASE}${path}`;
+  const endpoint = lunoEndpoint(path);
   const headers: Record<string, string> = {
     Accept: "application/json",
   };
   if (creds) headers.Authorization = basicAuth(creds);
-  const res = await fetch(url, { headers });
+  logger.debug(
+    { op: "luno.fetch", endpoint, hasAuth: Boolean(creds) },
+    "luno upstream call start",
+  );
+  const startedAt = Date.now();
+  let res: Awaited<ReturnType<typeof fetch>>;
+  try {
+    res = await fetch(url, { headers });
+  } catch (err) {
+    logger.error(
+      { op: "luno.fetch", endpoint, ms: Date.now() - startedAt, msg: sanitizeErr(err) },
+      "luno upstream call network error",
+    );
+    throw err;
+  }
+  logger.debug(
+    { op: "luno.fetch", endpoint, status: res.status, ms: Date.now() - startedAt },
+    "luno upstream call done",
+  );
   if (!res.ok) {
     let code: string | null = null;
     let msg = `HTTP ${res.status}`;

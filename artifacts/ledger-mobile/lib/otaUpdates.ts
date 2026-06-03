@@ -1,5 +1,7 @@
 import * as Updates from "expo-updates";
 
+import { reportError, reportMessage } from "@/lib/crashReporting";
+
 /**
  * Check for a newer over-the-air (EAS Update) JS bundle and, if one is
  * available, download (stage) it so it applies on the NEXT cold launch.
@@ -20,10 +22,15 @@ export async function checkAndApplyUpdate(): Promise<void> {
   if (__DEV__ || !Updates.isEnabled) return;
   try {
     const result = await Updates.checkForUpdateAsync();
-    if (!result.isAvailable) return;
+    if (!result.isAvailable) {
+      reportMessage("[ota] no update", { op: "ota.check", isAvailable: false });
+      return;
+    }
     // Download only — staged for the next cold launch. Never reloadAsync().
     await Updates.fetchUpdateAsync();
-  } catch {
+    reportMessage("[ota] update staged", { op: "ota.fetch", isAvailable: true });
+  } catch (e) {
     // No update, no network, or fetch failed — keep the current bundle.
+    reportError(e, { op: "ota.check" });
   }
 }

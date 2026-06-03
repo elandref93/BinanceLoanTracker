@@ -6,6 +6,7 @@ import {
   pushRemoteSettings,
   type SettingsPayload,
 } from "./settingsSync";
+import { reportError, reportMessage } from "@/lib/crashReporting";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Cross-device sync for app settings. This module owns the orchestration
@@ -60,7 +61,8 @@ async function readJson<T>(raw: string | null): Promise<T | undefined> {
   if (!raw) return undefined;
   try {
     return JSON.parse(raw) as T;
-  } catch {
+  } catch (e) {
+    reportError(e, { op: "settings.parse" });
     return undefined;
   }
 }

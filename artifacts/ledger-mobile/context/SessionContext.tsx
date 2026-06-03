@@ -89,9 +89,10 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const signInWithApple = useCallback(async () => {
     const next = await performAppleSignIn();
     setSession(next);
-    // Pull the latest OTA bundle on login. Runs in the background; if an
-    // update exists the app reloads into it (session persists, so the user
-    // stays signed in). No-op in dev / Expo Go.
+    // Stage the latest OTA bundle on login. Runs in the background and only
+    // DOWNLOADS the update — it never calls reloadAsync() (which crashes
+    // natively on this build and traps the device on the old bundle). The
+    // staged update applies on the next cold launch. No-op in dev / Expo Go.
     void checkAndApplyUpdate();
     return next;
   }, []);

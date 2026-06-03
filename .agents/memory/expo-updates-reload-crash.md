@@ -21,3 +21,12 @@ app — never force a reload. `fallbackToCacheTimeout: 0` means "don't block
 startup on the network", it does NOT disable staged-update application.
 Re-enable reloadAsync only after upgrading Expo/RN/expo-updates and verifying on
 a real TestFlight build.
+
+**Audit ALL call sites, not just the UI.** A reloadAsync ban was applied to the
+visible update components but missed a background call in the sign-in flow
+(`checkAndApplyUpdate` in `lib/otaUpdates.ts`, invoked from SessionContext).
+That stray call meant: OTA downloads → reloadAsync on next sign-in → native
+crash → expo-updates rolls the new update back to the embedded bundle → device
+permanently stuck on the old build and re-crashes on every later OTA. Grep
+`reloadAsync` across the whole app (lib + context + hooks, not only components)
+whenever auditing this.

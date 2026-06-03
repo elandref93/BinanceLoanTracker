@@ -11,9 +11,9 @@ suspecting the merge logic, the server, or their exchange keys.
 OLD commit, not current code.** e.g. Crypto tab titled "Crypto" with a
 "WALLETS" section + "BTC ON LUNO"/"TOTAL · LUNO" tiles, and a Settings tab with
 inline account management showing "Healthy · checked just now" — that layout is
-from the pre-consolidation era (~commit 624cd64 / 8fbf224), long before the
-"Portfolio" merged Binance+Luno donut view. `git log -S "<unique UI string>"`
-pins the era the device is stuck on.
+from the pre-consolidation era, long before the "Portfolio" merged
+Binance+Luno donut view. `git log -S "<unique UI string>"` pins the era the
+device is stuck on.
 
 **Rule out runtimeVersion mismatch:** `eas update:list --branch production`.
 If every update (and the embedded build) is the same runtimeVersion (here all

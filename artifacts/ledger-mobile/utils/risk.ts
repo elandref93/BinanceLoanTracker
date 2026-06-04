@@ -85,6 +85,59 @@ export function collateralShortfallToTarget(
   return h < 0 ? -h : 0;
 }
 
+/**
+ * Quantity of the collateral asset that `addedUsd` would buy at the loan's
+ * current collateral price. Zero when no price is derivable or the amount is
+ * non-positive. Used by the "simulate adding collateral" tool.
+ */
+export function collateralQtyForUsd(loan: Loan, addedUsd: number): number {
+  const price = currentCollateralPrice(loan);
+  if (price <= 0 || addedUsd <= 0) return 0;
+  return addedUsd / price;
+}
+
+/**
+ * Aggregate LTV if `addedUsd` of extra collateral value were added across the
+ * book (i.e. buy more collateral with new funds). More collateral → lower LTV.
+ */
+export function aggLtvWithExtraCollateral(
+  totalDebtUsd: number,
+  totalColUsd: number,
+  addedUsd: number,
+): number {
+  const col = totalColUsd + Math.max(0, addedUsd);
+  return col > 0 ? (totalDebtUsd / col) * 100 : 0;
+}
+
+/**
+ * Liquidation price for `loan` after buying `addedUsd` more of its collateral
+ * asset at the current price. More collateral qty → lower liquidation price
+ * (a bigger cushion before liquidation).
+ */
+export function liqPriceWithExtraCollateral(
+  loan: Loan,
+  addedUsd: number,
+): number {
+  const extraQty = collateralQtyForUsd(loan, addedUsd);
+  const newQty = loan.collateral.qty + extraQty;
+  if (newQty <= 0) return 0;
+  return loan.debtUsd / newQty / (LIQ_LTV / 100);
+}
+
+/**
+ * Price-drop-until-liquidation % for `loan` after adding `addedUsd` collateral.
+ * Larger than the current buffer because the liquidation price moves down.
+ */
+export function priceDropPctWithExtraCollateral(
+  loan: Loan,
+  addedUsd: number,
+): number {
+  const now = currentCollateralPrice(loan);
+  if (now <= 0) return 0;
+  const target = liqPriceWithExtraCollateral(loan, addedUsd);
+  return ((now - target) / now) * 100;
+}
+
 export function nextAction(
   loans: Loan[],
   targetLtv: number = DEFAULT_TARGET_LTV,

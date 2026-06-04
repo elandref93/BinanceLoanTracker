@@ -1,4 +1,5 @@
-import { StyleSheet, Text, View, type ViewStyle } from "react-native";
+import { Feather } from "@expo/vector-icons";
+import { Pressable, StyleSheet, Text, View, type ViewStyle } from "react-native";
 
 import { useColors } from "@/hooks/useColors";
 
@@ -8,9 +9,18 @@ interface Props {
   hint?: string;
   tone?: "default" | "primary" | "ok" | "warn" | "danger";
   style?: ViewStyle;
+  /** When set, renders a tappable "i" info button in the tile's top-right. */
+  onInfo?: () => void;
 }
 
-export function Tile({ label, value, hint, tone = "default", style }: Props) {
+export function Tile({
+  label,
+  value,
+  hint,
+  tone = "default",
+  style,
+  onInfo,
+}: Props) {
   const colors = useColors();
   const toneColor =
     tone === "primary"
@@ -34,9 +44,25 @@ export function Tile({ label, value, hint, tone = "default", style }: Props) {
         style,
       ]}
     >
-      <Text style={[styles.label, { color: colors.mutedForeground }]}>
-        {label.toUpperCase()}
-      </Text>
+      <View style={styles.header}>
+        <Text style={[styles.label, { color: colors.mutedForeground }]}>
+          {label.toUpperCase()}
+        </Text>
+        {onInfo ? (
+          <Pressable
+            onPress={onInfo}
+            hitSlop={10}
+            accessibilityRole="button"
+            accessibilityLabel={`${label} info`}
+            style={({ pressed }) => [
+              styles.info,
+              { borderColor: colors.border, opacity: pressed ? 0.5 : 1 },
+            ]}
+          >
+            <Feather name="info" size={12} color={colors.mutedForeground} />
+          </Pressable>
+        ) : null}
+      </View>
       <Text style={[styles.value, { color: toneColor }]}>{value}</Text>
       {hint ? (
         <Text style={[styles.hint, { color: colors.mutedForeground }]}>
@@ -53,10 +79,26 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     gap: 4,
   },
+  header: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: 8,
+  },
   label: {
+    flex: 1,
     fontSize: 10,
     fontFamily: "Inter_600SemiBold",
     letterSpacing: 1,
+  },
+  info: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    borderWidth: StyleSheet.hairlineWidth,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: -2,
   },
   value: {
     fontSize: 22,

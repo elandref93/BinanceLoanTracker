@@ -28,6 +28,7 @@ import {
   writeWidgetSnapshot,
 } from "@/lib/widgetSnapshot";
 import { AccountChip } from "@/components/AccountChip";
+import { CollateralSimModal } from "@/components/CollateralSimModal";
 import { Container } from "@/components/Container";
 import { ErrorView } from "@/components/ErrorView";
 import { LoanRow } from "@/components/LoanRow";
@@ -63,12 +64,13 @@ export default function DashboardScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { currency, toggle } = useCurrency();
+  const { currency, usdToZar, toggle } = useCurrency();
   const { targetLtv, containers, targetForContainer, refreshContainers } =
     useRiskSettings();
   // `filter` is the selected Personal/Trust container id, or null for the
   // combined "All" view across every account.
   const [filter, setFilter] = useState<string | null>(null);
+  const [simOpen, setSimOpen] = useState(false);
 
   const accountsQ = useListAccounts();
   const loansQ = useListLoans();
@@ -478,6 +480,10 @@ export default function DashboardScreen() {
             hint={overTarget ? "add collateral" : "buffer"}
             tone={overTarget ? "warn" : "ok"}
             style={{ flex: 1 }}
+            onInfo={() => {
+              haptic.tap();
+              setSimOpen(true);
+            }}
           />
         ) : (
           <Tile
@@ -488,6 +494,20 @@ export default function DashboardScreen() {
           />
         )}
       </View>
+
+      <CollateralSimModal
+        visible={simOpen}
+        onClose={() => setSimOpen(false)}
+        currency={currency}
+        usdToZar={usdToZar}
+        totalDebtUsd={totalDebtUsd}
+        totalColUsd={totalColUsd}
+        currentAggLtv={aggLtv}
+        activeTarget={activeTarget}
+        shortfallUsd={totalShortfall}
+        closest={closest}
+        closestAccountName={closestAccountName}
+      />
 
       <LunoReadyToDeployTile currency={currency} />
 

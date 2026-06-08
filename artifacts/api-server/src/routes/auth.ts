@@ -4,6 +4,10 @@ import {
   AppleTokenVerificationError,
   verifyAppleIdentityToken,
 } from "../lib/appleVerifier";
+import {
+  MicrosoftTokenVerificationError,
+  verifyMicrosoftIdentityToken,
+} from "../lib/microsoftVerifier";
 import { signSession } from "../lib/sessionJwt";
 import { logger } from "../lib/logger";
 
@@ -12,6 +16,10 @@ const router: IRouter = Router();
 // Hard cap on the identityToken size — legitimate Apple identity tokens are
 // well under 4 KB. Anything larger is either a bug or an attack.
 const MAX_APPLE_TOKEN_BYTES = 8 * 1024;
+
+// Entra v2.0 id_tokens are larger than Apple's (they can carry group/role
+// claims), but still comfortably under 16 KB in practice.
+const MAX_MICROSOFT_TOKEN_BYTES = 16 * 1024;
 
 const AppleSignInBody = z.object({
   // The JWT returned by AppleAuthentication.signInAsync() on the device.
@@ -131,6 +139,106 @@ router.post("/apple", async (req, res) => {
       sub: appleClaims.sub,
       email: appleClaims.email ?? null,
       name: fullName,
+    },
+  });
+  res.status(200).json(body);
+});
+
+const MicrosoftSignInBody = z.object({
+  // The v2.0 id_token returned by MSAL on the web client.
+  idToken: z.string().min(1).max(MAX_MICROSOFT_TOKEN_BYTES),
+});
+
+const MicrosoftSignInResponse = z.object({
+  sessionToken: z.string(),
+  user: z.object({
+    sub: z.string(),
+    email: z.string().nullable(),
+    name: z.string().nullable(),
+  }),
+});
+
+router.post("/microsoft", async (req, res) => {
+  const parsed = MicrosoftSignInBody.safeParse(req.body);
+  if (!parsed.success) {
+    logger.warn(
+      { issues: parsed.error.issues.map((i) => i.code) },
+      "rejected /api/auth/microsoft — invalid request body",
+    );
+    res.status(400).json({ error: "Invalid request body" });
+    return;
+  }
+
+  logger.info({ op: "auth.microsoft" }, "Microsoft Sign In attempt received");
+
+  const tenantId = process.env.MICROSOFT_TENANT_ID;
+  const clientId = process.env.MICROSOFT_CLIENT_ID;
+  if (!tenantId || !clientId) {
+    logger.error(
+      {
+        hasTenantId: Boolean(tenantId),
+        hasClientId: Boolean(clientId),
+      },
+      "MICROSOFT_TENANT_ID / MICROSOFT_CLIENT_ID not set — cannot verify tokens",
+    );
+    res
+      .status(500)
+      .json({ error: "Server is not configured for Microsoft Sign In" });
+    return;
+  }
+
+  let microsoftClaims;
+  try {
+    microsoftClaims = await verifyMicrosoftIdentityToken(parsed.data.idToken, {
+      tenantId,
+      audience: clientId,
+    });
+    logger.info(
+      { op: "auth.microsoft", userId: microsoftClaims.sub },
+      "Microsoft identity token verified",
+    );
+  } catch (err) {
+    if (err instanceof MicrosoftTokenVerificationError) {
+      // Token problems are client-driven (stale/forged/wrong tenant or app),
+      // so this is a 401, not a 500. We log the reason but never log the token.
+      logger.warn(
+        { reason: err.reason, msg: err.message },
+        "Microsoft identity token verification failed",
+      );
+      res.status(401).json({ error: "Invalid Microsoft identity token" });
+      return;
+    }
+    logger.error(
+      { err },
+      "Unexpected error verifying Microsoft identity token",
+    );
+    res.status(500).json({ error: "Internal error verifying token" });
+    return;
+  }
+
+  const sessionToken = await signSession({
+    sub: microsoftClaims.sub,
+    email: microsoftClaims.email,
+    name: microsoftClaims.name,
+  });
+
+  logger.info(
+    {
+      op: "auth.microsoft",
+      userId: microsoftClaims.sub,
+      sub: microsoftClaims.sub,
+      hasEmail: Boolean(microsoftClaims.email),
+      hasName: Boolean(microsoftClaims.name),
+    },
+    "Microsoft Sign In succeeded — session token issued",
+  );
+
+  const body = MicrosoftSignInResponse.parse({
+    sessionToken,
+    user: {
+      sub: microsoftClaims.sub,
+      email: microsoftClaims.email ?? null,
+      name: microsoftClaims.name ?? null,
     },
   });
   res.status(200).json(body);

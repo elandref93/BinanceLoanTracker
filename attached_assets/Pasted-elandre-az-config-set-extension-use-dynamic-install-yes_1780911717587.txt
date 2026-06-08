@@ -1,0 +1,141 @@
+elandre [ ~ ]$ az config set extension.use_dynamic_install=yes_without_prompt
+               az config set extension.use_dynamic_install=yes_without_prompt
+APP="binance-loan-tracker-backend"
+APP="binance-loan-tracker-backend"acker-backend.azurewebsites.net/.well-known/openid-configuration"
+DISCOVERY="https://binance-loan-tracker-backend.azurewebsites.net/.well-known/openid-configuration"
+RG="$(az webapp list --query "[?name=='$APP'].resourceGroup" -o tsv)"
+echo "Resource group: $RG"
+az webapp auth show -g "$RG" -n "$APP" > current-auth.json
+az webapp auth show -g "$RG" -n "$APP" > current-auth.json
+jq --arg disc "$DISCOVERY" '
+jq --arg disc "$DISCOVERY" 'uthentication = true
+  .globalValidation.requireAuthentication = truen = "Return401"
+  | .globalValidation.unauthenticatedClientAction = "Return401"
+  | .globalValidation.excludedPaths = [n",
+      "/.well-known/openid-configuration",
+      "/.well-known/jwks.json",
+      "/api/auth/apple",
+      "/api/healthz"
+    ]identityProviders.customOpenIdConnectProviders.appsession = {
+  | .identityProviders.customOpenIdConnectProviders.appsession = {
+      registration: {nance-loan-tracker-mobile",
+        clientId: "binance-loan-tracker-mobile",penIdConfiguration: $disc }
+        openIdConnectConfiguration: { wellKnownOpenIdConfiguration: $disc }
+      },gin: { nameClaimType: "sub" }
+      login: { nameClaimType: "sub" }
+    }rent-auth.json > merged-auth.json
+' current-auth.json > merged-auth.json
+az webapp auth set -g "$RG" -n "$APP" --body @merged-auth.json
+az webapp auth set -g "$RG" -n "$APP" --body @merged-auth.json
+echo "Providers now configured:"
+echo "Providers now configured:"[]' merged-auth.json
+jq -r '.identityProviders | keys[]' merged-auth.json
+Command group 'config' is experimental and under development. Reference and support levels: https://aka.ms/CLI_refstatus
+Resource group: ubuntu
+WARNING: The behavior of this command has been altered by the following extension: authV2
+{
+  "clearInboundClaimsMapping": "false",
+  "globalValidation": {
+    "excludedPaths": [
+      "/.well-known/openid-configuration",
+      "/.well-known/jwks.json",
+      "/api/auth/apple",
+      "/api/healthz"
+    ],
+    "requireAuthentication": true,
+    "unauthenticatedClientAction": "Return401"
+  },
+  "httpSettings": {
+    "forwardProxy": {
+      "convention": "NoProxy"
+    },
+    "requireHttps": true,
+    "routes": {
+      "apiPrefix": "/.auth"
+    }
+  },
+  "identityProviders": {
+    "apple": {
+      "enabled": true,
+      "login": {},
+      "registration": {}
+    },
+    "azureActiveDirectory": {
+      "enabled": true,
+      "login": {
+        "disableWWWAuthenticate": false
+      },
+      "registration": {},
+      "validation": {
+        "defaultAuthorizationPolicy": {
+          "allowedPrincipals": {}
+        },
+        "jwtClaimChecks": {}
+      }
+    },
+    "customOpenIdConnectProviders": {
+      "appsession": {
+        "login": {
+          "nameClaimType": "sub"
+        },
+        "registration": {
+          "clientId": "binance-loan-tracker-mobile",
+          "openIdConnectConfiguration": {
+            "wellKnownOpenIdConfiguration": "https://binance-loan-tracker-backend.azurewebsites.net/.well-known/openid-configuration"
+          }
+        }
+      }
+    },
+    "facebook": {
+      "enabled": true,
+      "login": {},
+      "registration": {}
+    },
+    "gitHub": {
+      "enabled": true,
+      "login": {},
+      "registration": {}
+    },
+    "google": {
+      "enabled": true,
+      "login": {},
+      "registration": {},
+      "validation": {}
+    },
+    "legacyMicrosoftAccount": {
+      "enabled": true,
+      "login": {},
+      "registration": {},
+      "validation": {}
+    },
+    "twitter": {
+      "enabled": true,
+      "registration": {}
+    }
+  },
+  "login": {
+    "cookieExpiration": {
+      "convention": "FixedTime",
+      "timeToExpiration": "08:00:00"
+    },
+    "nonce": {
+      "nonceExpirationInterval": "00:05:00",
+      "validateNonce": true
+    },
+    "preserveUrlFragmentsForLogins": false,
+    "routes": {},
+    "tokenStore": {
+      "azureBlobStorage": {},
+      "enabled": false,
+      "fileSystem": {},
+      "tokenRefreshExtensionHours": 72.0
+    }
+  },
+  "platform": {
+    "enabled": true,
+    "runtimeVersion": "~1"
+  }
+}
+Providers now configured:
+customOpenIdConnectProviders
+elandre [ ~ ]$ 

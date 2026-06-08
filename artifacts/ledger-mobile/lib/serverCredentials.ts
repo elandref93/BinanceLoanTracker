@@ -13,11 +13,13 @@
  * Apple, the endpoint is Bearer-gated, and the round-trip is HTTPS-only. The
  * server encrypts the secrets at rest. This module never logs plaintext keys.
  *
- * Everything here is behind the opt-in preference (default OFF). A user who
- * never enables it makes ZERO network calls to these endpoints.
+ * Server-side tracking is now ON BY DEFAULT (there is no user toggle): whenever
+ * the user is signed in and has linked an exchange, the encrypted credentials
+ * are uploaded so the scheduler can keep LTV/holdings fresh while the app is
+ * closed, and the app reads that snapshot back. A signed-out user, or one with
+ * no linked accounts, still makes ZERO calls to these endpoints (uploads early
+ * out in `uploadCredentials`).
  */
-
-import * as SecureStore from "expo-secure-store";
 
 import { getBinanceLinks, getLunoLinks } from "./accountStore";
 import { reportError, reportMessage } from "@/lib/crashReporting";
@@ -27,28 +29,37 @@ const baseUrl = process.env.EXPO_PUBLIC_DOMAIN
   ? `https://${process.env.EXPO_PUBLIC_DOMAIN}`
   : "";
 
-// ── opt-in preference ──
-// Stored in SecureStore (same as the app-lock pref) so it survives across
-// launches but is wiped on uninstall. Default OFF.
-const PREF_KEY = "ledger.serverTracking.enabled.v1";
-
+/**
+ * Server-side tracking is always enabled now. Retained as a function (rather
+ * than inlining `true`) so the existing call site in accountStore.ts keeps
+ * working without an import change, and so the policy lives in one place.
+ */
 export async function isServerTrackingEnabled(): Promise<boolean> {
-  try {
-    const v = await SecureStore.getItemAsync(PREF_KEY);
-    return v === "1";
-  } catch (e) {
-    reportError(e, { op: "credentials.pref.read" });
-    return false;
-  }
+  return true;
 }
 
-export async function setServerTrackingEnabled(enabled: boolean): Promise<void> {
-  if (enabled) {
-    await SecureStore.setItemAsync(PREF_KEY, "1");
-  } else {
-    await SecureStore.deleteItemAsync(PREF_KEY);
-  }
-}
+export type ServerSnapshotLoan = {
+  id: string;
+  accountId: string;
+  asset: string;
+  debtUsd: number;
+  collateralAsset: string;
+  collateralValueUsd: number;
+  ltv: number;
+  apr: number;
+};
+
+export type ServerContainerLtv = {
+  containerId: string;
+  name?: string;
+  type?: string;
+  debtUsd: number;
+  collateralUsd: number;
+  ltv: number;
+  loanCount: number;
+};
+
+export type ServerDailyChargePoint = { t: string; usd: number };
 
 export type ServerLtvSnapshot = {
   updatedAt: string;
@@ -57,6 +68,14 @@ export type ServerLtvSnapshot = {
   totalDebtUsd: number;
   totalCollateralUsd: number;
   history: { t: string; ltv: number }[];
+  // Consolidated bundle (Phase 3) — all optional; older servers omit them.
+  loans?: ServerSnapshotLoan[];
+  holdingsUsd?: number;
+  interestLifetimeUsd?: number;
+  interestProjected30dUsd?: number;
+  perContainer?: ServerContainerLtv[];
+  dailyCharge?: ServerDailyChargePoint[];
+  fxUsdToZar?: number;
 };
 
 type CredentialAccount = {

@@ -1,6 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { setUsdToZar } from "@/utils/format";
+import { fetchLtvSnapshot } from "@/lib/serverCredentials";
 
 // Live USD→ZAR rate, fetched on launch and remembered between sessions so the
 // app shows the most recent known rate even when offline. Falls back to the
@@ -26,6 +27,19 @@ async function loadCachedRate(): Promise<CachedRate | null> {
     // corrupt cache — ignore and fall through
   }
   return null;
+}
+
+// Prefer the rate the server already computed and embedded in the consolidated
+// snapshot — one fewer third-party call from the device. Returns null when not
+// signed in, no snapshot yet, or the field is absent (older server).
+async function fetchServerRate(): Promise<number | null> {
+  try {
+    const snap = await fetchLtvSnapshot();
+    const rate = snap?.fxUsdToZar;
+    return isValidRate(rate) ? rate : null;
+  } catch {
+    return null;
+  }
 }
 
 async function fetchLiveRate(): Promise<number | null> {
@@ -59,7 +73,9 @@ export async function initFxRate(onRate: (rate: number) => void): Promise<void> 
     setUsdToZar(cached.rate);
     onRate(cached.rate);
   }
-  const live = await fetchLiveRate();
+  // Server snapshot is the primary live source; the external API is the
+  // offline/early-launch fallback (e.g. before the session token is ready).
+  const live = (await fetchServerRate()) ?? (await fetchLiveRate());
   if (live !== null) {
     setUsdToZar(live);
     onRate(live);

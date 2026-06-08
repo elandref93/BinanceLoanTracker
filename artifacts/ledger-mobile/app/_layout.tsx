@@ -15,8 +15,8 @@ import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { AppLockGate } from "@/components/AppLockGate";
+import { AutoUpdater } from "@/components/AutoUpdater";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
-import { UpdateBanner } from "@/components/UpdateBanner";
 import { CurrencyProvider } from "@/context/CurrencyContext";
 import { RiskSettingsProvider } from "@/context/RiskSettingsContext";
 import { SessionProvider } from "@/context/SessionContext";
@@ -127,7 +127,7 @@ function RootLayout() {
                       />
                     </Stack>
                   </AppLockGate>
-                  <UpdateBanner />
+                  <AutoUpdater />
                   </RiskSettingsProvider>
                 </CurrencyProvider>
               </KeyboardProvider>

@@ -5,6 +5,8 @@ import {
   GetRateHistoryResponse,
   ListHoldingsResponse,
   ListInterestQueryParams,
+  ListLoanTransactionsQueryParams,
+  ListLoanTransactionsResponse,
   ListLoansQueryParams,
   ListAccountsResponse,
   GetPricesResponse,
@@ -49,6 +51,9 @@ const emptyClient: BinanceClient = {
   },
   async getLifetimeInterestUsd() {
     return { lifetimeInterestUsd: 0, loanAgeDays: 0 };
+  },
+  async getLoanTransactions() {
+    return [];
   },
   async getHoldings() {
     return [];
@@ -130,6 +135,16 @@ router.get("/loans", async (req, res, next) => {
     const { accountId } = ListLoansQueryParams.parse(req.query);
     const summary = await computeLoanSummary(clientFor(req), accountId);
     res.json(ListLoansResponse.parse(summary));
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get("/loans/transactions", async (req, res, next) => {
+  try {
+    const { loanId } = ListLoanTransactionsQueryParams.parse(req.query);
+    const transactions = await clientFor(req).getLoanTransactions(loanId);
+    res.json(ListLoanTransactionsResponse.parse({ loanId, transactions }));
   } catch (err) {
     next(err);
   }

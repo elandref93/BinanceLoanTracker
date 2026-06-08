@@ -1,12 +1,13 @@
 import { Feather } from "@expo/vector-icons";
 import * as Linking from "expo-linking";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from "react-native";
 
@@ -46,8 +47,16 @@ import {
   useGetRateHistory,
   useListAccounts,
   useListInterest,
+  useListLoanTransactions,
   useListLoans,
 } from "@workspace/api-client-react";
+import {
+  getLoanAnnotation,
+  setLoanAnnotation,
+  subscribeLoanAnnotations,
+  type GoalMode,
+  type LoanAnnotation,
+} from "@/lib/loanAnnotations";
 
 function Row({ label, value }: { label: string; value: string }) {
   const colors = useColors();
@@ -95,6 +104,56 @@ function Card({
   );
 }
 
+// Simulate month-by-month payoff: interest compounds on the declining balance,
+// the contribution is applied at month end. Returns months-to-settle (capped)
+// or null when the contribution never outpaces interest.
+function monthsToSettle(
+  principal: number,
+  monthlyRate: number,
+  contribution: number,
+): number | null {
+  if (principal <= 0) return 0;
+  if (contribution <= 0) return null;
+  let balance = principal;
+  for (let m = 1; m <= 600; m++) {
+    balance = balance * (1 + monthlyRate) - contribution;
+    if (balance <= 0) return m;
+  }
+  return null; // > 50 years ⇒ effectively never with this contribution
+}
+
+// Required monthly contribution to clear `principal` in `n` months at
+// `monthlyRate` (standard amortization; falls back to straight-line at r≈0).
+function requiredMonthly(
+  principal: number,
+  monthlyRate: number,
+  n: number,
+): number {
+  if (n <= 0) return principal;
+  if (monthlyRate <= 1e-9) return principal / n;
+  const f = Math.pow(1 + monthlyRate, -n);
+  return (principal * monthlyRate) / (1 - f);
+}
+
+function addMonths(date: Date, months: number): Date {
+  const d = new Date(date.getTime());
+  d.setMonth(d.getMonth() + months);
+  return d;
+}
+
+function monthsUntil(target: Date, from: Date): number {
+  const ms = target.getTime() - from.getTime();
+  return ms / (1000 * 60 * 60 * 24 * 30.44);
+}
+
+function fmtDate(d: Date): string {
+  return d.toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+}
+
 export default function LoanDetailScreen() {
   const colors = useColors();
   const { targetForAccountId, containerForAccountId } = useRiskSettings();
@@ -121,6 +180,41 @@ export default function LoanDetailScreen() {
   useEffect(() => {
     void getSnapshotsSince(30).then(setSnapshots);
   }, [interestQ.dataUpdatedAt]);
+
+  const txQ = useListLoanTransactions(
+    { loanId: id ?? "" },
+    { query: { enabled: !!id } as never },
+  );
+
+  // Per-loan user annotations (manual sell rate + repayment goal), synced
+  // cross-device. Hydrate on mount and react to remote updates.
+  const [annotation, setAnnotation] = useState<LoanAnnotation>({});
+  useEffect(() => {
+    if (!id) return;
+    void getLoanAnnotation(id).then(setAnnotation);
+    return subscribeLoanAnnotations(() => {
+      void getLoanAnnotation(id).then(setAnnotation);
+    });
+  }, [id]);
+  // Local draft strings for the numeric/date inputs (committed on blur).
+  const [sellRateDraft, setSellRateDraft] = useState("");
+  const [contribDraft, setContribDraft] = useState("");
+  const [targetDraft, setTargetDraft] = useState("");
+  useEffect(() => {
+    setSellRateDraft(
+      annotation.sellRate != null ? String(annotation.sellRate) : "",
+    );
+    setContribDraft(
+      annotation.monthlyContribution != null
+        ? String(annotation.monthlyContribution)
+        : "",
+    );
+    setTargetDraft(annotation.targetSettleDate ?? "");
+  }, [
+    annotation.sellRate,
+    annotation.monthlyContribution,
+    annotation.targetSettleDate,
+  ]);
 
   if (loansQ.isLoading || accountsQ.isLoading) {
     return (
@@ -176,6 +270,34 @@ export default function LoanDetailScreen() {
         : 0;
   const hourly = loan.debt * effectiveHourlyRate;
   const daily = hourly * 24;
+
+  // ── Repayment forecasting ──
+  // Work in USD (these loans are stablecoin-borrowed, so debt ≈ debtUsd). The
+  // monthly rate compounds the declining balance against ongoing accrual.
+  const goalMode: GoalMode = annotation.goalMode ?? "contribution";
+  const monthlyRate = effectiveHourlyRate * 24 * 30.44;
+  const monthlyInterestUsd = loan.debtUsd * monthlyRate;
+  const contribution = annotation.monthlyContribution ?? 0;
+  const settleMonths = monthsToSettle(loan.debtUsd, monthlyRate, contribution);
+  const payoffDate =
+    settleMonths != null && settleMonths > 0
+      ? addMonths(new Date(), settleMonths)
+      : null;
+  const targetDate = annotation.targetSettleDate
+    ? new Date(annotation.targetSettleDate)
+    : null;
+  const targetMonths =
+    targetDate && !Number.isNaN(targetDate.getTime())
+      ? Math.max(1, Math.round(monthsUntil(targetDate, new Date())))
+      : null;
+  const requiredPerMonth =
+    targetMonths != null
+      ? requiredMonthly(loan.debtUsd, monthlyRate, targetMonths)
+      : null;
+
+  // ── Real borrow/repay events for this loan ──
+  const loanTxs = txQ.data?.transactions ?? [];
+  const repayments = loanTxs.filter((t) => t.type === "repay");
 
   const byLoan = interestQ.data?.byLoan.find((b) => b.loanId === loan.id);
 
@@ -514,7 +636,9 @@ export default function LoanDetailScreen() {
 
       <Card title="Debt growth">
         <Text style={[styles.simHint, { color: colors.mutedForeground }]}>
-          Interest accrues into the debt — there are no repayments.
+          {repayments.length > 0
+            ? "Interest accrues into the debt; repayments reduce the amount due."
+            : "Interest accrues into the debt. No repayments recorded yet."}
         </Text>
         <Row label="Today" value={fmtMoney(loan.debtUsd, currency)} />
         <Row
@@ -546,6 +670,216 @@ export default function LoanDetailScreen() {
             value={fmtMoney(byLoan.lifetimeInterestUsd, currency)}
           />
         ) : null}
+      </Card>
+
+      <Card title="Repayments">
+        {txQ.isLoading ? (
+          <Text style={[styles.simHint, { color: colors.mutedForeground }]}>
+            Loading repayment history…
+          </Text>
+        ) : repayments.length === 0 ? (
+          <Text style={[styles.empty, { color: colors.mutedForeground }]}>
+            No repayments recorded for this loan.
+          </Text>
+        ) : (
+          repayments.map((t, i) => (
+            <View key={`${t.ts}-${i}`} style={styles.txRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.txAmount, { color: colors.ok }]}>
+                  −{fmtQty(t.amount, t.asset)}
+                </Text>
+                <Text
+                  style={[styles.txDate, { color: colors.mutedForeground }]}
+                >
+                  {fmtDate(new Date(t.ts))}
+                </Text>
+              </View>
+              <Text style={[styles.txUsd, { color: colors.foreground }]}>
+                {fmtMoney(t.amountUsd, currency)}
+              </Text>
+            </View>
+          ))
+        )}
+      </Card>
+
+      <Card title="Repayment plan">
+        <View style={styles.fieldRow}>
+          <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>
+            Luno sell rate (ZAR)
+          </Text>
+          <TextInput
+            value={sellRateDraft}
+            onChangeText={setSellRateDraft}
+            onEndEditing={() => {
+              const n = Number(sellRateDraft);
+              void setLoanAnnotation(loan.id, {
+                sellRate:
+                  sellRateDraft.trim() === "" || !Number.isFinite(n) ? null : n,
+              });
+            }}
+            keyboardType="decimal-pad"
+            placeholder="—"
+            placeholderTextColor={colors.mutedForeground}
+            style={[
+              styles.input,
+              {
+                color: colors.foreground,
+                borderColor: colors.border,
+                borderRadius: 8,
+              },
+            ]}
+          />
+        </View>
+
+        <View style={[styles.seg, { borderColor: colors.border, marginTop: 4 }]}>
+          {(
+            [
+              ["contribution", "Monthly → date"],
+              ["target", "Date → monthly"],
+            ] as const
+          ).map(([mode, label]) => {
+            const on = goalMode === mode;
+            return (
+              <Pressable
+                key={mode}
+                onPress={() =>
+                  void setLoanAnnotation(loan.id, { goalMode: mode })
+                }
+                style={[
+                  styles.segBtn,
+                  { flex: 1, alignItems: "center" },
+                  on && { backgroundColor: colors.primary + "22" },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.segText,
+                    { color: on ? colors.primary : colors.mutedForeground },
+                  ]}
+                >
+                  {label}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+
+        {goalMode === "contribution" ? (
+          <>
+            <View style={styles.fieldRow}>
+              <Text
+                style={[styles.fieldLabel, { color: colors.mutedForeground }]}
+              >
+                Monthly contribution ({currency})
+              </Text>
+              <TextInput
+                value={contribDraft}
+                onChangeText={setContribDraft}
+                onEndEditing={() => {
+                  const n = Number(contribDraft);
+                  void setLoanAnnotation(loan.id, {
+                    monthlyContribution:
+                      contribDraft.trim() === "" || !Number.isFinite(n)
+                        ? null
+                        : n,
+                  });
+                }}
+                keyboardType="decimal-pad"
+                placeholder="0"
+                placeholderTextColor={colors.mutedForeground}
+                style={[
+                  styles.input,
+                  {
+                    color: colors.foreground,
+                    borderColor: colors.border,
+                    borderRadius: 8,
+                  },
+                ]}
+              />
+            </View>
+            <Row
+              label="Monthly interest"
+              value={fmtMoney(monthlyInterestUsd, currency)}
+            />
+            {contribution > 0 ? (
+              settleMonths != null && payoffDate ? (
+                <>
+                  <Row
+                    label="Settles in"
+                    value={`${settleMonths} mo`}
+                  />
+                  <Row label="Projected payoff" value={fmtDate(payoffDate)} />
+                </>
+              ) : (
+                <Text
+                  style={[styles.simHint, { color: colors.warn, marginTop: 4 }]}
+                >
+                  Contribution must exceed monthly interest (
+                  {fmtMoney(monthlyInterestUsd, currency)}) to ever settle.
+                </Text>
+              )
+            ) : (
+              <Text
+                style={[
+                  styles.simHint,
+                  { color: colors.mutedForeground, marginTop: 4 },
+                ]}
+              >
+                Enter a monthly contribution to project a payoff date.
+              </Text>
+            )}
+          </>
+        ) : (
+          <>
+            <View style={styles.fieldRow}>
+              <Text
+                style={[styles.fieldLabel, { color: colors.mutedForeground }]}
+              >
+                Target date (YYYY-MM-DD)
+              </Text>
+              <TextInput
+                value={targetDraft}
+                onChangeText={setTargetDraft}
+                onEndEditing={() => {
+                  const raw = targetDraft.trim();
+                  const ok = /^\d{4}-\d{2}-\d{2}$/.test(raw);
+                  void setLoanAnnotation(loan.id, {
+                    targetSettleDate: ok ? raw : null,
+                  });
+                }}
+                placeholder="2027-01-01"
+                placeholderTextColor={colors.mutedForeground}
+                autoCapitalize="none"
+                style={[
+                  styles.input,
+                  {
+                    color: colors.foreground,
+                    borderColor: colors.border,
+                    borderRadius: 8,
+                  },
+                ]}
+              />
+            </View>
+            {requiredPerMonth != null && targetMonths != null ? (
+              <>
+                <Row label="Months to target" value={`${targetMonths} mo`} />
+                <Row
+                  label="Required / month"
+                  value={fmtMoney(requiredPerMonth, currency)}
+                />
+              </>
+            ) : (
+              <Text
+                style={[
+                  styles.simHint,
+                  { color: colors.mutedForeground, marginTop: 4 },
+                ]}
+              >
+                Enter a target date to compute the required monthly payment.
+              </Text>
+            )}
+          </>
+        )}
       </Card>
 
       <Pressable
@@ -716,6 +1050,40 @@ const styles = StyleSheet.create({
   },
   ruleScope: { fontSize: 11, fontFamily: "Inter_400Regular", marginTop: 2 },
   empty: { fontSize: 12, fontFamily: "Inter_400Regular", paddingVertical: 4 },
+  txRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 6,
+  },
+  txAmount: {
+    fontSize: 14,
+    fontFamily: "Inter_700Bold",
+    fontVariant: ["tabular-nums"],
+  },
+  txDate: { fontSize: 11, fontFamily: "Inter_400Regular", marginTop: 2 },
+  txUsd: {
+    fontSize: 13,
+    fontFamily: "Inter_600SemiBold",
+    fontVariant: ["tabular-nums"],
+  },
+  fieldRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+    paddingVertical: 4,
+  },
+  fieldLabel: { fontSize: 13, fontFamily: "Inter_400Regular", flex: 1 },
+  input: {
+    minWidth: 110,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    fontSize: 14,
+    fontFamily: "Inter_600SemiBold",
+    fontVariant: ["tabular-nums"],
+    textAlign: "right",
+  },
   simHint: { fontSize: 12, fontFamily: "Inter_400Regular", marginBottom: 4 },
   simPriceRow: {
     flexDirection: "row",

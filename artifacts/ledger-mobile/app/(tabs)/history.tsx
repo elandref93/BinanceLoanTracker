@@ -8,9 +8,9 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import Svg, { Rect } from "react-native-svg";
 
 import { Container } from "@/components/Container";
+import { DailyChargeChart } from "@/components/DailyChargeChart";
 import { ErrorView } from "@/components/ErrorView";
 import { LtvHistoryChart } from "@/components/LtvHistoryChart";
 import { ScreenSkeleton } from "@/components/Skeleton";
@@ -26,6 +26,7 @@ import {
   getSnapshotsSince,
   type LoanSnapshot,
 } from "@/lib/loanSnapshots";
+import { fetchLtvSnapshot } from "@/lib/serverCredentials";
 import {
   useListAccounts,
   useListInterest,
@@ -53,24 +54,49 @@ export default function HistoryScreen() {
     void getSnapshotsSince(30).then(setSnapshots);
   }, [interestQ.dataUpdatedAt]);
 
-  // Bar chart: prefer real income rows (fixed-term loans post BORROW_DAILY_
-  // INTEREST). For flexible loans, Binance posts no per-day rows so the chart
-  // would be flat-zero — fall back to debt × apr integrated over local
-  // snapshots, which gives a real shape once a few days of history exist.
-  const byDay = useMemo(() => {
+  // Longer-range daily-charge history precomputed server-side (fills in as the
+  // server accumulates daily buckets). Pulled once on mount.
+  const [serverDaily, setServerDaily] = useState<
+    { day: string; usd: number }[]
+  >([]);
+  useEffect(() => {
+    void fetchLtvSnapshot().then((s) => {
+      if (s?.dailyCharge) {
+        setServerDaily(
+          s.dailyCharge
+            .map((p) => ({ day: p.t.slice(0, 10), usd: p.usd }))
+            .filter((p) => p.usd >= 0),
+        );
+      }
+    });
+  }, []);
+
+  // Bar chart data: prefer real income rows (fixed-term loans post BORROW_DAILY_
+  // INTEREST), overlaid on the server's longer history. For flexible loans,
+  // Binance posts no per-day rows so we fall back to debt × apr integrated over
+  // local snapshots, which gives a real shape once a few days of history exist.
+  const dailyData = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const p of serverDaily) map.set(p.day, p.usd);
     const fromRows = new Map<string, number>();
     for (const r of rows) {
       const day = r.ts.slice(0, 10);
       fromRows.set(day, (fromRows.get(day) ?? 0) + r.amountUsd);
     }
     if (fromRows.size > 0) {
-      return Array.from(fromRows.entries())
-        .sort((a, b) => a[0].localeCompare(b[0]))
-        .slice(-14);
+      for (const [day, usd] of fromRows) map.set(day, usd);
+    } else if (map.size === 0) {
+      for (const [day, usd] of dailyChargeBuckets(snapshots, 365)) {
+        map.set(day, usd);
+      }
     }
-    return dailyChargeBuckets(snapshots, 14);
-  }, [rows, snapshots]);
-  const chartHasRealData = rows.length > 0 || snapshots.length >= 2;
+    return Array.from(map.entries())
+      .map(([day, usd]) => ({ day, usd }))
+      .sort((a, b) => a.day.localeCompare(b.day));
+  }, [serverDaily, rows, snapshots]);
+  const chartHasRealData =
+    dailyData.length > 0 &&
+    (rows.length > 0 || snapshots.length >= 2 || serverDaily.length > 0);
 
   if (interestQ.isLoading || accountsQ.isLoading || loansQ.isLoading) {
     return <ScreenSkeleton kind="history" />;
@@ -96,11 +122,6 @@ export default function HistoryScreen() {
     const totalCol = loans.reduce((s, l) => s + l.collateral.valueUsd, 0);
     return totalCol > 0 ? (totalDebt / totalCol) * 100 : 0;
   }, [loans]);
-
-  const max = Math.max(0.0001, ...byDay.map(([, v]) => v));
-  const chartW = 320;
-  const chartH = 120;
-  const barW = chartW / Math.max(byDay.length, 1) - 4;
 
   const accountFor = (loanId: string) => {
     const l = loans.find((x) => x.id === loanId);
@@ -179,45 +200,11 @@ export default function HistoryScreen() {
         />
       </View>
 
-      <View
-        style={[
-          styles.card,
-          {
-            backgroundColor: colors.card,
-            borderColor: colors.border,
-            borderRadius: colors.radius,
-          },
-        ]}
-      >
-        <Text style={[styles.cardLabel, { color: colors.mutedForeground }]}>
-          DAILY CHARGE · LAST 14 DAYS
-        </Text>
-        {chartHasRealData ? (
-          <Svg width={chartW} height={chartH}>
-            {byDay.map(([day, v], i) => {
-              const h = (v / max) * (chartH - 16);
-              const x = i * (barW + 4);
-              const y = chartH - h;
-              return (
-                <Rect
-                  key={day}
-                  x={x}
-                  y={y}
-                  width={barW}
-                  height={h}
-                  rx={2}
-                  fill={colors.primary}
-                  opacity={0.85}
-                />
-              );
-            })}
-          </Svg>
-        ) : (
-          <Text style={[styles.empty, { color: colors.mutedForeground }]}>
-            Building daily-charge history locally — bars appear after a few refreshes.
-          </Text>
-        )}
-      </View>
+      <DailyChargeChart
+        data={dailyData}
+        currency={currency}
+        hasRealData={chartHasRealData}
+      />
 
       <View
         style={[

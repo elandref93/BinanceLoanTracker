@@ -318,11 +318,11 @@ async function writeAll(containers: AccountContainer[]): Promise<void> {
       void hydrateFromServer();
     }
   });
-  // Additive, opt-in only: if the user has enabled server-side tracking,
-  // re-upload the encrypted credentials so the scheduler's LTV computation
-  // stays in sync with the local change. Imported lazily to avoid an import
-  // cycle (serverCredentials imports this module). A disabled/opted-out user
-  // never makes a network call here.
+  // Server-side tracking is on by default: re-upload the encrypted credentials
+  // so the scheduler's LTV/holdings computation stays in sync with this local
+  // change. Imported lazily to avoid an import cycle (serverCredentials imports
+  // this module). `uploadCredentials` early-outs to a no-op when signed out or
+  // when there are no linked accounts, so this stays free in those cases.
   void (async () => {
     try {
       const { isServerTrackingEnabled, uploadCredentials } = await import(

@@ -1,6 +1,6 @@
 import { Feather } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Pressable,
   RefreshControl,
@@ -11,6 +11,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { AccountChip } from "@/components/AccountChip";
 import { AssetIcon } from "@/components/AssetIcon";
 import { Container } from "@/components/Container";
 import { DonutChart, type DonutSegment } from "@/components/DonutChart";
@@ -20,6 +21,7 @@ import { ScreenLoader } from "@/components/ScreenLoader";
 import { Sparkline } from "@/components/Sparkline";
 import { useColors } from "@/hooks/useColors";
 import { useCurrency } from "@/context/CurrencyContext";
+import { useRiskSettings } from "@/context/RiskSettingsContext";
 import { useLunoHistory } from "@/hooks/useLunoHistory";
 import { haptic } from "@/lib/haptics";
 import {
@@ -106,12 +108,63 @@ export default function CryptoScreen() {
   const pending = pendingQ.data?.withdrawals ?? [];
   const binanceHoldings = holdingsQ.data?.holdings ?? [];
 
+  // ── Account isolation (All / Personal / Trust) ──
+  // `filter` is the selected container id, or null for the combined view.
+  // We resolve each exchange link's owning container via RiskSettings and use
+  // it to scope holdings (Luno wallet.accountId, Binance Holding.byAccount) and
+  // the transaction list. Composition is derived from these `view*` sources so
+  // the donut/totals/list all reflect the selected account.
+  const { containers, containerForAccountId } = useRiskSettings();
+  const [filter, setFilter] = useState<string | null>(null);
+
+  const matchesFilter = useCallback(
+    (accountId: string) =>
+      filter == null || containerForAccountId(accountId)?.id === filter,
+    [filter, containerForAccountId],
+  );
+
+  const viewWallets = useMemo(
+    () =>
+      filter == null ? wallets : wallets.filter((w) => matchesFilter(w.accountId)),
+    [wallets, filter, matchesFilter],
+  );
+
+  const viewBinanceHoldings = useMemo<Holding[]>(() => {
+    if (filter == null) return binanceHoldings;
+    const out: Holding[] = [];
+    for (const h of binanceHoldings) {
+      const accts = h.byAccount.filter((a) => matchesFilter(a.accountId));
+      if (accts.length === 0) continue;
+      const fTotal = accts.reduce((s, a) => s + a.total, 0);
+      if (fTotal <= 0) continue;
+      out.push({
+        ...h,
+        spot: accts.reduce((s, a) => s + a.spot, 0),
+        funding: accts.reduce((s, a) => s + a.funding, 0),
+        collateral: accts.reduce((s, a) => s + a.collateral, 0),
+        total: fTotal,
+        // No per-account USD on the wire; pro-rate the asset's total by quantity.
+        usd: h.total > 0 ? (h.usd * fTotal) / h.total : 0,
+        byAccount: accts,
+      });
+    }
+    return out;
+  }, [binanceHoldings, filter, matchesFilter]);
+
+  const viewTransactions = useMemo(
+    () =>
+      filter == null
+        ? transactions
+        : transactions.filter((t) => matchesFilter(t.accountId)),
+    [transactions, filter, matchesFilter],
+  );
+
   // Pair coverage: derive the set of pairs we need to quote from the
-  // assets the user actually holds, against their display currency.
-  // Pure-fiat balances (ZAR holding when currency=ZAR) need no ticker.
+  // assets the user actually holds (in the selected view), against their
+  // display currency. Pure-fiat balances (ZAR when currency=ZAR) need no ticker.
   const neededPairs = useMemo(
-    () => pairsForAssets(wallets.map((w) => w.asset), currency),
-    [wallets, currency],
+    () => pairsForAssets(viewWallets.map((w) => w.asset), currency),
+    [viewWallets, currency],
   );
   const tickersQ = useGetLunoTickers(
     { pairs: neededPairs.join(",") },
@@ -125,7 +178,7 @@ export default function CryptoScreen() {
     return m;
   }, [tickersQ.data]);
 
-  const grouped = useMemo(() => groupByAsset(wallets), [wallets]);
+  const grouped = useMemo(() => groupByAsset(viewWallets), [viewWallets]);
   const btcReady = grouped.get("XBT")?.totalBalance ?? 0;
 
   // Per-asset fiat values + portfolio total. Assets without a working
@@ -172,7 +225,7 @@ export default function CryptoScreen() {
 
   const merged = useMemo<MergedHolding[]>(() => {
     const map = new Map<string, MergedHolding>();
-    for (const h of binanceHoldings) {
+    for (const h of viewBinanceHoldings) {
       const sym = h.asset.toUpperCase();
       map.set(sym, {
         symbol: sym,
@@ -205,13 +258,13 @@ export default function CryptoScreen() {
     return Array.from(map.values())
       .filter((m) => m.binanceQty > 0 || m.lunoQty > 0)
       .sort((a, b) => b.usd - a.usd);
-  }, [binanceHoldings, grouped, usdPriceMap, currency]);
+  }, [viewBinanceHoldings, grouped, usdPriceMap, currency]);
 
   const combinedUsd = useMemo(
     () => merged.reduce((s, m) => s + m.usd, 0),
     [merged],
   );
-  const hasBinance = binanceHoldings.length > 0;
+  const hasBinance = viewBinanceHoldings.length > 0;
 
   // Stable colour per asset (by descending value, since `merged` is sorted),
   // shared by the donut and the per-row swatch so the legend reads cleanly.
@@ -236,7 +289,10 @@ export default function CryptoScreen() {
   // prevents a spurious "zero" sample landing during a cold start while
   // tickers are still loading.
   useEffect(() => {
+    // Only sample the ALL-account view; a filtered total would poison the
+    // cross-device Luno history with a partial figure.
     if (
+      filter === null &&
       !walletsQ.isFetching &&
       !tickersQ.isFetching &&
       wallets.length > 0 &&
@@ -245,6 +301,7 @@ export default function CryptoScreen() {
       void recordLunoSample({ btc: btcReady, fiat: totalFiat, currency });
     }
   }, [
+    filter,
     walletsQ.isFetching,
     tickersQ.isFetching,
     wallets.length,
@@ -270,12 +327,20 @@ export default function CryptoScreen() {
     });
   };
 
+  // Wait for ALL data before showing the consolidated view, so the user never
+  // sees a partial portfolio that then reshuffles as Luno / prices arrive.
+  // `isLoading` is true only for an ENABLED query on its first fetch; a disabled
+  // query (e.g. tickers/prices before wallets resolve, or when nothing needs
+  // quoting) reports `false`, so it never blocks. The dependent valuation
+  // queries (tickersQ/pricesQ) enable once wallets/holdings resolve and then
+  // block until their USD values are in — giving a fully-formed combined view.
   const loading =
-    walletsQ.isLoading &&
-    pendingQ.isLoading &&
-    txQ.isLoading &&
-    tickersQ.isLoading &&
-    holdingsQ.isLoading;
+    walletsQ.isLoading ||
+    pendingQ.isLoading ||
+    txQ.isLoading ||
+    tickersQ.isLoading ||
+    holdingsQ.isLoading ||
+    pricesQ.isLoading;
   const allError =
     walletsQ.isError && pendingQ.isError && txQ.isError && tickersQ.isError;
 
@@ -309,6 +374,35 @@ export default function CryptoScreen() {
         <Text style={[styles.title, { color: colors.foreground }]}>
           Portfolio
         </Text>
+
+        {/* Account isolation chips — only meaningful with ≥2 containers. */}
+        {containers.length >= 2 ? (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.chipRow}
+          >
+            <AccountChip
+              label="All"
+              selected={filter === null}
+              onPress={() => {
+                haptic.tap();
+                setFilter(null);
+              }}
+            />
+            {containers.map((c) => (
+              <AccountChip
+                key={c.id}
+                label={c.name}
+                selected={filter === c.id}
+                onPress={() => {
+                  haptic.tap();
+                  setFilter(c.id);
+                }}
+              />
+            ))}
+          </ScrollView>
+        ) : null}
 
         {/* Consolidated portfolio — total value, allocation donut, and the
             per-asset list (each row expands to its Binance/Luno split). */}
@@ -591,10 +685,12 @@ export default function CryptoScreen() {
         {/* Transactions — Luno only. Binance has no general transaction
             history endpoint (only interest), so every row here is a Luno
             wallet movement; the badge makes the source explicit. */}
-        {transactions.length > 0 ? (
+        {viewTransactions.length > 0 ? (
           <View style={{ gap: 8 }}>
             <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>
-              ALL TRANSACTIONS · LUNO
+              {filter === null
+                ? "ALL TRANSACTIONS · LUNO"
+                : "TRANSACTIONS · LUNO"}
             </Text>
             <View
               style={[
@@ -606,7 +702,7 @@ export default function CryptoScreen() {
                 },
               ]}
             >
-              {transactions.map((t, i) => (
+              {viewTransactions.map((t, i) => (
                 <View key={`${t.walletId}_${t.rowIndex}_${i}`}>
                   {i > 0 ? (
                     <View
@@ -620,7 +716,9 @@ export default function CryptoScreen() {
           </View>
         ) : null}
 
-        {!noLunoLinked && transactions.length === 0 && pending.length === 0 ? (
+        {!noLunoLinked &&
+        viewTransactions.length === 0 &&
+        pending.length === 0 ? (
           <Text style={[styles.empty, { color: colors.mutedForeground }]}>
             No recent activity.
           </Text>
@@ -766,8 +864,8 @@ function TxRow({ t }: { t: LunoTransaction }) {
           style={[styles.txSub, { color: colors.mutedForeground }]}
           numberOfLines={1}
         >
-          Luno · {t.description || (inflow ? "Inflow" : "Outflow")} ·{" "}
-          {fmtTime(t.ts)}
+          {t.accountName ? `${t.accountName} · ` : ""}Luno ·{" "}
+          {t.description || (inflow ? "Inflow" : "Outflow")} · {fmtTime(t.ts)}
         </Text>
       </View>
     </View>
@@ -806,6 +904,7 @@ const styles = StyleSheet.create({
     fontFamily: "Inter_700Bold",
     letterSpacing: -0.5,
   },
+  chipRow: { gap: 8, paddingRight: 8 },
   emptyCard: {
     padding: 20,
     borderWidth: StyleSheet.hairlineWidth,

@@ -82,6 +82,7 @@
     "expo-clipboard": "~8.0.8",
     "expo-local-authentication": "~17.0.8",
     "expo-print": "~15.0.8",
+    "expo-screen-orientation": "~9.0.9",
     "expo-sharing": "~14.0.8",
     "expo-task-manager": "^14.0.9",
     "expo-updates": "~29.0.18"

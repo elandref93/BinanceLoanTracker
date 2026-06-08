@@ -55,6 +55,8 @@ export interface LunoClient {
   listWallets(): Promise<LunoWallet[]>;
   listTransactions(opts?: {
     asset?: string;
+    /** Scope to a single linked account (exchange-link id). */
+    accountId?: string;
     limit?: number;
   }): Promise<LunoTransaction[]>;
   listPendingWithdrawals(): Promise<LunoPendingWithdrawal[]>;
@@ -217,6 +219,8 @@ export function createRealLunoClient(
       }));
     },
     async listTransactions(opts) {
+      // Single-account real client: if scoped to a different account, no-op.
+      if (opts?.accountId && opts.accountId !== account.id) return [];
       const wallets = await this.listWallets();
       const filtered = opts?.asset
         ? wallets.filter(
@@ -345,6 +349,10 @@ export function createMultiplexLunoClient(
       return fanOut(members, "listWallets", (m) => m.client.listWallets());
     },
     async listTransactions(opts) {
+      // Optionally scope to one linked account before fanning out.
+      const targets = opts?.accountId
+        ? members.filter((m) => m.account.id === opts.accountId)
+        : members;
       // Per-account budget: divide the caller's limit across members so the
       // global limit is respected even when N accounts each return their own
       // page. Add a small headroom so we don't drop the most-recent rows
@@ -352,9 +360,9 @@ export function createMultiplexLunoClient(
       const globalLimit = opts?.limit ?? 25;
       const perAccount = Math.max(
         5,
-        Math.ceil(globalLimit / Math.max(1, members.length)) + 5,
+        Math.ceil(globalLimit / Math.max(1, targets.length)) + 5,
       );
-      const merged = await fanOut(members, "listTransactions", (m) =>
+      const merged = await fanOut(targets, "listTransactions", (m) =>
         m.client.listTransactions({ asset: opts?.asset, limit: perAccount }),
       );
       // Re-sort globally so "newest first" holds across all accounts, not

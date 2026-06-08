@@ -23,6 +23,10 @@ import {
 import { recordLtvSample } from "@/lib/ltvHistory";
 import { recordLoanSnapshots } from "@/lib/loanSnapshots";
 import {
+  fetchLtvSnapshot,
+  type ServerLtvSnapshot,
+} from "@/lib/serverCredentials";
+import {
   buildSnapshot,
   weightedApr,
   writeWidgetSnapshot,
@@ -98,6 +102,17 @@ export default function DashboardScreen() {
     })();
   }, []);
 
+  // Server snapshot: the scheduler precomputes aggregate LTV/debt/collateral
+  // even while the app is closed. Pull it once on launch so a freshly signed-in
+  // device (no local cache yet) shows real numbers instantly instead of a
+  // skeleton; the live loans query then takes over and supersedes it.
+  const [snapshot, setSnapshot] = useState<ServerLtvSnapshot | null>(null);
+  useEffect(() => {
+    void fetchLtvSnapshot().then((s) => {
+      if (s) setSnapshot(s);
+    });
+  }, []);
+
   // Persist on every successful fetch.
   useEffect(() => {
     if (loansQ.data?.loans) void writeLoanCache(loansQ.data.loans);
@@ -150,6 +165,21 @@ export default function DashboardScreen() {
   // Targets only apply to a single selected account; the combined "All" view
   // has no single target, so we suppress the target line / status there.
   const activeTarget = filter ? targetForContainer(filter) : null;
+
+  // Use the server snapshot as an instant fallback for the combined ("All")
+  // hero ONLY while we have no loans loaded yet (no live response, no cache).
+  // The snapshot is an all-account aggregate, so it never applies to a single
+  // selected container. Once loans arrive, the computed values win.
+  const useSnapshotFallback =
+    filter === null && all.length === 0 && snapshot != null;
+  const displayAggLtv = useSnapshotFallback ? snapshot.aggregateLtv : aggLtv;
+  const displayDebtUsd = useSnapshotFallback
+    ? snapshot.totalDebtUsd
+    : totalDebtUsd;
+  const displayColUsd = useSnapshotFallback
+    ? snapshot.totalCollateralUsd
+    : totalColUsd;
+
   const status =
     activeTarget != null ? statusFromLtv(aggLtv, activeTarget) : null;
 
@@ -255,11 +285,21 @@ export default function DashboardScreen() {
   // Only show the blocking loader / error screen when we have NO cache to
   // fall back on. With cache, we render the dashboard normally and surface
   // the stale state via a banner at the top.
-  if ((accountsQ.isLoading || loansQ.isLoading) && all.length === 0) {
+  // With a server snapshot in hand we can render the hero immediately, so only
+  // fall back to the skeleton when we have neither cache nor snapshot.
+  if (
+    (accountsQ.isLoading || loansQ.isLoading) &&
+    all.length === 0 &&
+    snapshot == null
+  ) {
     return <ScreenSkeleton kind="dashboard" />;
   }
 
-  if ((accountsQ.isError || loansQ.isError) && all.length === 0) {
+  if (
+    (accountsQ.isError || loansQ.isError) &&
+    all.length === 0 &&
+    snapshot == null
+  ) {
     return (
       <View style={[styles.center, { backgroundColor: colors.background }]}>
         <ErrorView
@@ -397,22 +437,25 @@ export default function DashboardScreen() {
             },
           ]}
         >
-          {fmtPct(aggLtv)}
+          {fmtPct(displayAggLtv)}
         </Text>
         {status !== null ? (
           <Pill status={status} label={statusLabel(status)} />
         ) : null}
         <View style={styles.heroFooter}>
           <Text style={[styles.heroSub, { color: colors.mutedForeground }]}>
-            Debt {fmtMoney(totalDebtUsd, currency, { whole: true })}
+            Debt {fmtMoney(displayDebtUsd, currency, { whole: true })}
           </Text>
           <Text style={[styles.heroSub, { color: colors.mutedForeground }]}>
-            Collateral {fmtMoney(totalColUsd, currency, { whole: true })}
+            Collateral {fmtMoney(displayColUsd, currency, { whole: true })}
           </Text>
         </View>
       </View>
 
-      <LtvHistoryChart currentLtv={aggLtv} targetLtv={activeTarget ?? undefined} />
+      <LtvHistoryChart
+        currentLtv={displayAggLtv}
+        targetLtv={activeTarget ?? undefined}
+      />
 
       {closest ? (
         <Pressable

@@ -121,9 +121,11 @@ router.get("/wallets", async (req, res, next) => {
 
 router.get("/transactions", async (req, res, next) => {
   try {
-    const { asset, limit } = ListLunoTransactionsQueryParams.parse(req.query);
+    const { asset, accountId, limit } =
+      ListLunoTransactionsQueryParams.parse(req.query);
     const transactions = await clientFor(req).listTransactions({
       asset,
+      accountId,
       limit,
     });
     res.json(ListLunoTransactionsResponse.parse({ transactions }));

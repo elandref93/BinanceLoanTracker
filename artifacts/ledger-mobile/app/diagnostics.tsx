@@ -21,6 +21,23 @@ import {
 } from "@/lib/crashReporting";
 import { fmtAge } from "@/utils/format";
 
+/** Severity label for an entry, tolerant of legacy entries without `level`. */
+function levelOf(e: CrashEntry): "INFO" | "ERROR" | "FATAL" {
+  const level = e.level ?? (e.fatal ? "fatal" : "error");
+  if (level === "fatal") return "FATAL";
+  if (level === "info") return "INFO";
+  return "ERROR";
+}
+
+/** Single-entry plain-text rendering, shared by "Copy all" and per-entry copy. */
+function formatEntry(e: CrashEntry): string {
+  return (
+    `[${e.time}] ${levelOf(e)} ${e.message}\n` +
+    `${e.context ? `context: ${JSON.stringify(e.context)}\n` : ""}` +
+    `${e.stack ?? ""}`
+  );
+}
+
 export default function DiagnosticsScreen() {
   const colors = useColors();
   const [entries, setEntries] = useState<CrashEntry[]>([]);
@@ -37,17 +54,17 @@ export default function DiagnosticsScreen() {
 
   const onCopyAll = async () => {
     const text =
-      entries
-        .map(
-          (e) =>
-            `[${e.time}] ${e.fatal ? "FATAL " : ""}${e.message}\n` +
-            `${e.context ? `context: ${JSON.stringify(e.context)}\n` : ""}` +
-            `${e.stack ?? ""}`,
-        )
-        .join("\n\n──────────\n\n") || "No errors recorded.";
+      entries.map(formatEntry).join("\n\n──────────\n\n") ||
+      "No errors recorded.";
     await Clipboard.setStringAsync(text);
     haptic.tap();
     Alert.alert("Copied", "Crash logs copied to clipboard.");
+  };
+
+  const onCopyEntry = async (entry: CrashEntry) => {
+    await Clipboard.setStringAsync(formatEntry(entry));
+    haptic.tap();
+    Alert.alert("Copied", "Entry copied to clipboard.");
   };
 
   const onClear = () => {
@@ -112,7 +129,15 @@ export default function DiagnosticsScreen() {
             No errors recorded yet.
           </Text>
         ) : (
-          entries.map((e) => (
+          entries.map((e) => {
+            const label = levelOf(e);
+            const badgeColor =
+              label === "FATAL"
+                ? colors.danger
+                : label === "INFO"
+                  ? colors.mutedForeground
+                  : colors.warn;
+            return (
             <View
               key={e.id}
               style={[
@@ -128,17 +153,23 @@ export default function DiagnosticsScreen() {
                 <Text
                   style={[
                     styles.badge,
-                    {
-                      color: e.fatal ? colors.danger : colors.warn,
-                      borderColor: e.fatal ? colors.danger : colors.warn,
-                    },
+                    { color: badgeColor, borderColor: badgeColor },
                   ]}
                 >
-                  {e.fatal ? "FATAL" : "ERROR"}
+                  {label}
                 </Text>
-                <Text style={[styles.time, { color: colors.mutedForeground }]}>
-                  {fmtAge(e.time)}
-                </Text>
+                <View style={styles.cardHeadRight}>
+                  <Text style={[styles.time, { color: colors.mutedForeground }]}>
+                    {fmtAge(e.time)}
+                  </Text>
+                  <Pressable
+                    onPress={() => onCopyEntry(e)}
+                    hitSlop={8}
+                    style={({ pressed }) => ({ opacity: pressed ? 0.5 : 1 })}
+                  >
+                    <Feather name="copy" size={14} color={colors.primary} />
+                  </Pressable>
+                </View>
               </View>
               <Text style={[styles.msg, { color: colors.foreground }]}>
                 {e.message}
@@ -154,7 +185,8 @@ export default function DiagnosticsScreen() {
                 </Text>
               ) : null}
             </View>
-          ))
+            );
+          })
         )}
       </Container>
     </ScrollView>
@@ -190,6 +222,11 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
+  },
+  cardHeadRight: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
   },
   badge: {
     fontSize: 10,

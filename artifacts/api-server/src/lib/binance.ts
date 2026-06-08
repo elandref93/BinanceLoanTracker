@@ -54,6 +54,16 @@ export interface BinancePrice {
   usd: number;
 }
 
+/** A discrete borrow or repay event on a single loan. */
+export interface BinanceLoanTransaction {
+  loanId: string;
+  ts: string;
+  type: "borrow" | "repay";
+  asset: string;
+  amount: number;
+  amountUsd: number;
+}
+
 export interface BinanceHoldingByAccount {
   accountId: string;
   accountName: string;
@@ -97,6 +107,11 @@ export interface BinanceClient {
   getLifetimeInterestUsd(
     loanId: string,
   ): Promise<{ lifetimeInterestUsd: number; loanAgeDays: number }>;
+  /**
+   * Discrete borrow/repay events for one loan (flexible loans only — margin
+   * loans have no public event history). Newest first. Empty when unknown.
+   */
+  getLoanTransactions(loanId: string): Promise<BinanceLoanTransaction[]>;
   /**
    * Per-asset crypto holdings across spot, funding and collateral wallets.
    * Used by the unified crypto view alongside Luno balances.
@@ -366,6 +381,31 @@ export function createMockBinanceClient(): BinanceClient {
         lifetimeInterestUsd: round(dailyUsd * loanAgeDays, 2),
         loanAgeDays,
       };
+    },
+    async getLoanTransactions(loanId) {
+      const loan = SEED_LOANS.find((l) => l.id === loanId);
+      if (!loan) return [];
+      const now = Date.now();
+      const px = SEED_PRICES[loan.asset] ?? 1;
+      // Synthetic: one initial borrow plus a partial repayment two weeks later.
+      return [
+        {
+          loanId,
+          ts: new Date(now - 14 * 86_400_000).toISOString(),
+          type: "repay" as const,
+          asset: loan.asset,
+          amount: round(loan.debt * 0.1, 2),
+          amountUsd: round(loan.debt * 0.1 * px, 2),
+        },
+        {
+          loanId,
+          ts: new Date(now - 45 * 86_400_000).toISOString(),
+          type: "borrow" as const,
+          asset: loan.asset,
+          amount: round(loan.debt, 2),
+          amountUsd: round(loan.debt * px, 2),
+        },
+      ];
     },
     async getHoldings() {
       return [];
@@ -1458,6 +1498,68 @@ export function createRealBinanceClient(
       // Margin loans: not derivable from public history endpoints.
       return { lifetimeInterestUsd: 0, loanAgeDays: 0 };
     },
+    async getLoanTransactions(loanId) {
+      const loans = await this.listLoans();
+      const loan = loans.find((l) => l.id === loanId);
+      if (!loan) return [];
+      // Only flexible loans expose discrete borrow/repay history. Fixed-term
+      // and margin loans have no usable per-event endpoint here.
+      if (!loanId.includes("_flex_")) return [];
+      const [borrowsRaw, repaysRaw] = await Promise.all([
+        binanceSignedGet(creds, "/sapi/v2/loan/flexible/borrow/history", {
+          loanCoin: loan.asset,
+          size: 100,
+        }).catch((err) => {
+          logger.warn({ err, loanId }, "flexible borrow history (tx) failed");
+          return null;
+        }),
+        binanceSignedGet(creds, "/sapi/v2/loan/flexible/repay/history", {
+          loanCoin: loan.asset,
+          size: 100,
+        }).catch((err) => {
+          logger.warn({ err, loanId }, "flexible repay history (tx) failed");
+          return null;
+        }),
+      ]);
+      const matches = (r: Record<string, unknown>) =>
+        str(r["loanCoin"]).toUpperCase() === loan.asset &&
+        str(r["collateralCoin"]).toUpperCase() === loan.collateral.asset;
+      const { prices } = await fetchUsdPrices([loan.asset]);
+      const usd = prices[0]?.usd ?? 0;
+      const out: BinanceLoanTransaction[] = [];
+      for (const r of rowsArray(borrowsRaw)) {
+        const row = r as Record<string, unknown>;
+        if (!matches(row)) continue;
+        const amount = num(row["initialLoanAmount"]);
+        const ts = num(row["borrowTime"]);
+        if (amount <= 0 || ts <= 0) continue;
+        out.push({
+          loanId,
+          ts: new Date(ts).toISOString(),
+          type: "borrow",
+          asset: loan.asset,
+          amount: round(amount, 8),
+          amountUsd: round(amount * usd, 2),
+        });
+      }
+      for (const r of rowsArray(repaysRaw)) {
+        const row = r as Record<string, unknown>;
+        if (!matches(row)) continue;
+        const amount = num(row["repayAmount"]);
+        const ts = num(row["repayTime"]) || num(row["updateTime"]);
+        if (amount <= 0 || ts <= 0) continue;
+        out.push({
+          loanId,
+          ts: new Date(ts).toISOString(),
+          type: "repay",
+          asset: loan.asset,
+          amount: round(amount, 8),
+          amountUsd: round(amount * usd, 2),
+        });
+      }
+      out.sort((a, b) => (a.ts < b.ts ? 1 : a.ts > b.ts ? -1 : 0));
+      return out;
+    },
     async getRateHistory(loanId, days) {
       // MARGIN loans expose a real per-accrual rate history — use it.
       const ref = parseMarginLoanRef(loanId);
@@ -1638,6 +1740,19 @@ export function createMultiplexBinanceClient(
           "lifetime interest failed",
         );
         return { lifetimeInterestUsd: 0, loanAgeDays: 0 };
+      }
+    },
+    async getLoanTransactions(loanId) {
+      const owner = members.find((m) => loanId.startsWith(`${m.account.id}_`));
+      if (!owner) return [];
+      try {
+        return await owner.client.getLoanTransactions(loanId);
+      } catch (err) {
+        logger.warn(
+          { err, loanId, accountId: owner.account.id },
+          "loan transactions failed",
+        );
+        return [];
       }
     },
     async getHoldings() {

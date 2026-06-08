@@ -10,10 +10,48 @@ import { logger } from "./logger";
 
 const SUFFIX = ".ltv.json";
 export const MAX_HISTORY = 500;
+/** Retain ~13 months of daily interest-charge buckets for the chart ranges. */
+export const MAX_DAILY_CHARGE = 400;
 
 export interface LtvPoint {
   t: string;
   ltv: number;
+}
+
+/** A daily total interest-charge bucket, accumulated server-side over time. */
+export interface DailyChargePoint {
+  /** UTC day, ISO date (yyyy-mm-dd…). */
+  t: string;
+  /** Projected interest charge for that day in USD (sum across loans). */
+  usd: number;
+}
+
+/** Per Personal/Trust container LTV breakdown (keyed by the synced accounts blob). */
+export interface ContainerLtv {
+  containerId: string;
+  name?: string;
+  type?: string;
+  debtUsd: number;
+  collateralUsd: number;
+  ltv: number;
+  loanCount: number;
+}
+
+/**
+ * Minimal loan shape persisted in the snapshot so the app can render the loan
+ * list instantly from the server bundle. Mirrors the fields the dashboard
+ * actually uses; the live `/loans` response remains the source of truth once
+ * it arrives.
+ */
+export interface SnapshotLoan {
+  id: string;
+  accountId: string;
+  asset: string;
+  debtUsd: number;
+  collateralAsset: string;
+  collateralValueUsd: number;
+  ltv: number;
+  apr: number;
 }
 
 export interface LtvSnapshot {
@@ -23,6 +61,15 @@ export interface LtvSnapshot {
   totalDebtUsd: number;
   totalCollateralUsd: number;
   history: LtvPoint[];
+  // ── Consolidated bundle (Phase 3). All optional so older snapshots and the
+  // LTV-only fast path keep validating; readers must tolerate absence. ──
+  loans?: SnapshotLoan[];
+  holdingsUsd?: number;
+  interestLifetimeUsd?: number;
+  interestProjected30dUsd?: number;
+  perContainer?: ContainerLtv[];
+  dailyCharge?: DailyChargePoint[];
+  fxUsdToZar?: number;
 }
 
 function hashFor(sub: string): string {
@@ -48,6 +95,24 @@ export async function readSnapshotByHash(
       totalCollateralUsd:
         typeof p.totalCollateralUsd === "number" ? p.totalCollateralUsd : 0,
       history: Array.isArray(p.history) ? p.history : [],
+      // Consolidated bundle — pass through verbatim when present.
+      ...(Array.isArray(p.loans) ? { loans: p.loans } : {}),
+      ...(typeof p.holdingsUsd === "number"
+        ? { holdingsUsd: p.holdingsUsd }
+        : {}),
+      ...(typeof p.interestLifetimeUsd === "number"
+        ? { interestLifetimeUsd: p.interestLifetimeUsd }
+        : {}),
+      ...(typeof p.interestProjected30dUsd === "number"
+        ? { interestProjected30dUsd: p.interestProjected30dUsd }
+        : {}),
+      ...(Array.isArray(p.perContainer)
+        ? { perContainer: p.perContainer }
+        : {}),
+      ...(Array.isArray(p.dailyCharge) ? { dailyCharge: p.dailyCharge } : {}),
+      ...(typeof p.fxUsdToZar === "number"
+        ? { fxUsdToZar: p.fxUsdToZar }
+        : {}),
     };
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === "ENOENT") return null;

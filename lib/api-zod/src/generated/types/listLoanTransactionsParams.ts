@@ -5,9 +5,7 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
-import type { Price } from './price';
 
-export type GetPrices200 = {
-  asOf: Date;
-  prices: Price[];
+export type ListLoanTransactionsParams = {
+loanId: string;
 };

@@ -19,7 +19,14 @@ import { hydrateFromServer } from "@/lib/accountStore";
 import { setSyncTokenGetter } from "@/lib/accountSync";
 import { hydrateSettings } from "@/lib/settingsStore";
 import { setSettingsTokenGetter } from "@/lib/settingsSync";
-import { setCredentialsTokenGetter } from "@/lib/serverCredentials";
+import {
+  hydrateLoanAnnotations,
+  setLoanAnnotationsTokenGetter,
+} from "@/lib/loanAnnotations";
+import {
+  setCredentialsTokenGetter,
+  uploadCredentials,
+} from "@/lib/serverCredentials";
 import { setAuthFailureHandler } from "@/lib/authEvents";
 import { checkAndApplyUpdate } from "@/lib/otaUpdates";
 import { reportError, reportMessage } from "@/lib/crashReporting";
@@ -31,6 +38,13 @@ interface SessionContextValue {
   isSignedIn: boolean;
   /** Stable user info from the session JWT (null when signed out). */
   user: SessionUser | null;
+  /**
+   * True once the first server-side account hydration after sign-in has
+   * settled (success OR failure). Gates the onboarding redirect so a fresh
+   * device doesn't flash "connect your account" before the synced profile
+   * (stored server-side under the same Apple ID) has been pulled down.
+   */
+  accountsHydrated: boolean;
   /** Returns the bearer token to attach to /api/* requests, or null. */
   getToken: () => Promise<string | null>;
   /** Run the Apple Sign In flow and persist the resulting session. */
@@ -44,6 +58,7 @@ const SessionContext = createContext<SessionContextValue | null>(null);
 export function SessionProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [isLoaded, setIsLoaded] = useState(false);
+  const [accountsHydrated, setAccountsHydrated] = useState(false);
 
   // Ref mirror — read inside getToken() to avoid stale closures when the
   // session changes after the consumer first captured the function reference
@@ -81,19 +96,40 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     setSyncTokenGetter(getToken);
     setSettingsTokenGetter(getToken);
     setCredentialsTokenGetter(getToken);
+    setLoanAnnotationsTokenGetter(getToken);
     if (session) {
       reportMessage("[session] hydrate start", { op: "session.hydrate" });
-      void hydrateFromServer().catch((e) => {
-        reportError(e, { op: "accounts.hydrate" });
-      });
+      // Reset the gate signal for this (new) session so the onboarding redirect
+      // waits for the pull below before concluding the user has no accounts.
+      setAccountsHydrated(false);
+      // Hydrate accounts first, THEN upload credentials so the server has the
+      // freshest links. Server-side tracking is on by default, so this happens
+      // on every signed-in launch; uploadCredentials no-ops when there are no
+      // linked accounts. `.finally` ensures we still upload locally-stored keys
+      // even if the hydrate pull fails (e.g. offline with cached accounts).
+      void hydrateFromServer()
+        .catch((e) => {
+          reportError(e, { op: "accounts.hydrate" });
+        })
+        .finally(() => {
+          setAccountsHydrated(true);
+          void uploadCredentials();
+        });
       void hydrateSettings().catch((e) => {
         reportError(e, { op: "settings.hydrate" });
       });
+      void hydrateLoanAnnotations().catch((e) => {
+        reportError(e, { op: "annotations.hydrate" });
+      });
+    } else {
+      // Signed out — clear the gate so the next sign-in re-waits for its pull.
+      setAccountsHydrated(false);
     }
     return () => {
       setSyncTokenGetter(null);
       setSettingsTokenGetter(null);
       setCredentialsTokenGetter(null);
+      setLoanAnnotationsTokenGetter(null);
     };
   }, [session, getToken]);
 
@@ -109,10 +145,9 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     }
     setSession(next);
     reportMessage("[session] apple sign-in success", { op: "session.signIn" });
-    // Stage the latest OTA bundle on login. Runs in the background and only
-    // DOWNLOADS the update — it never calls reloadAsync() (which crashes
-    // natively on this build and traps the device on the old bundle). The
-    // staged update applies on the next cold launch. No-op in dev / Expo Go.
+    // Stage the latest OTA bundle on login (download only, no reload — applies
+    // on the next cold launch). In-session updates are applied automatically by
+    // components/AutoUpdater on foreground return. No-op in dev / Expo Go.
     void checkAndApplyUpdate();
     return next;
   }, []);
@@ -143,11 +178,12 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       isLoaded,
       isSignedIn: session !== null,
       user: session?.user ?? null,
+      accountsHydrated,
       getToken,
       signInWithApple,
       signOut,
     }),
-    [isLoaded, session, getToken, signInWithApple, signOut],
+    [isLoaded, session, accountsHydrated, getToken, signInWithApple, signOut],
   );
 
   return (

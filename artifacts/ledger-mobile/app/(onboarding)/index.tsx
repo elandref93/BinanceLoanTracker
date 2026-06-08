@@ -18,12 +18,15 @@ export default function OnboardingIntro() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { isLoaded, isSignedIn, signOut } = useSession();
+  const { isLoaded, isSignedIn, accountsHydrated, signOut } = useSession();
   const count = useStoredAccountsCount();
 
   if (!isLoaded || count === null) return null;
   if (!isSignedIn) return <Redirect href="/(auth)/sign-in" />;
   if (count > 0) return <Redirect href="/(tabs)" />;
+  // Don't show the "connect your account" CTA until the server profile pull has
+  // settled — a synced account may still be loading on a fresh device.
+  if (!accountsHydrated) return null;
 
   const onSignOut = async () => {
     await signOut();

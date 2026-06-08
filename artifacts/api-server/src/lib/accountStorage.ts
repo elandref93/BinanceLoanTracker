@@ -13,16 +13,20 @@ import { logger } from "./logger";
 // shared with credential + snapshot storage in ./dataDir.
 
 /** Distinct per-user blobs. Each maps to its own file so they sync independently. */
-export type SyncKind = "accounts" | "settings";
+export type SyncKind = "accounts" | "settings" | "annotations";
 
 export type StoredRecord = { updatedAt: string } & Record<string, unknown>;
 
-function fileFor(sub: string, kind: SyncKind): string {
-  const hash = crypto.createHash("sha256").update(sub).digest("hex");
+function fileForHash(hash: string, kind: SyncKind): string {
   // "accounts" keeps the original bare filename for backwards compatibility
   // with blobs already on disk; other kinds get a suffix.
   const name = kind === "accounts" ? `${hash}.json` : `${hash}.${kind}.json`;
   return path.join(getDataDir(), name);
+}
+
+function fileFor(sub: string, kind: SyncKind): string {
+  const hash = crypto.createHash("sha256").update(sub).digest("hex");
+  return fileForHash(hash, kind);
 }
 
 async function ensureDir(): Promise<void> {
@@ -51,6 +55,32 @@ export async function readRecord(
     logger.warn(
       { err, code, op: "storage.read", kind, userId: sub, path: target },
       "accountStorage: read failed",
+    );
+    return null;
+  }
+}
+
+/**
+ * Read a stored record directly by its on-disk hash (sha256(sub)). Used by the
+ * scheduler, which iterates credential files and only has the hash — never the
+ * raw `sub`. The hash convention is identical across credential / snapshot /
+ * blob storage, so a credential file's hash maps to the same user's blobs.
+ */
+export async function readRecordByHash(
+  hash: string,
+  kind: SyncKind,
+): Promise<StoredRecord | null> {
+  const target = fileForHash(hash, kind);
+  try {
+    const raw = await fs.readFile(target, "utf8");
+    const parsed = JSON.parse(raw) as StoredRecord;
+    if (typeof parsed?.updatedAt !== "string") return null;
+    return parsed;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return null;
+    logger.warn(
+      { err, op: "storage.readByHash", kind, path: target },
+      "accountStorage: read-by-hash failed",
     );
     return null;
   }

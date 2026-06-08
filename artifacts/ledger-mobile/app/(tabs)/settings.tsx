@@ -46,12 +46,6 @@ import {
   estimateCacheBytes,
   fmtBytes,
 } from "@/lib/storage";
-import {
-  deleteServerCredentials,
-  isServerTrackingEnabled,
-  setServerTrackingEnabled,
-  uploadCredentials,
-} from "@/lib/serverCredentials";
 import { fmtPct } from "@/utils/format";
 
 export default function SettingsScreen() {
@@ -103,8 +97,6 @@ export default function SettingsScreen() {
   const [rules, setRules] = useState<AlertRule[]>([]);
   const [appLockOn, setAppLockOn] = useState(false);
   const [appLockSupported, setAppLockSupported] = useState(false);
-  const [serverTrackingOn, setServerTrackingOn] = useState(false);
-  const [serverTrackingBusy, setServerTrackingBusy] = useState(false);
   const [cacheBytes, setCacheBytes] = useState<number | null>(null);
   const [clearingCache, setClearingCache] = useState(false);
 
@@ -116,7 +108,6 @@ export default function SettingsScreen() {
     getAlertsEnabled().then(setAlerts);
     isAppLockSupported().then(setAppLockSupported);
     isAppLockEnabled().then(setAppLockOn);
-    isServerTrackingEnabled().then(setServerTrackingOn);
     refreshCacheSize();
   }, [refreshCacheSize]);
 
@@ -151,48 +142,6 @@ export default function SettingsScreen() {
   const onToggleAppLock = async (next: boolean) => {
     await setAppLockEnabled(next);
     setAppLockOn(next);
-  };
-
-  const onToggleServerTracking = async (next: boolean) => {
-    if (serverTrackingBusy) return;
-    setServerTrackingBusy(true);
-    // Optimistically reflect the toggle; revert below if the action fails.
-    setServerTrackingOn(next);
-    try {
-      if (next) {
-        const result = await uploadCredentials();
-        if (result === "ok") {
-          await setServerTrackingEnabled(true);
-          Alert.alert(
-            "Server-side tracking on",
-            "Your encrypted keys were uploaded. LTV will now update on a schedule even when the app is closed.",
-          );
-        } else if (result === "unavailable") {
-          await setServerTrackingEnabled(false);
-          setServerTrackingOn(false);
-          Alert.alert(
-            "Not available yet",
-            "Server-side tracking isn't configured on the server yet. Please try again later.",
-          );
-        } else {
-          await setServerTrackingEnabled(false);
-          setServerTrackingOn(false);
-          Alert.alert(
-            "Couldn't enable",
-            "We couldn't upload your keys. Make sure you have at least one account and are online, then try again.",
-          );
-        }
-      } else {
-        await setServerTrackingEnabled(false);
-        await deleteServerCredentials();
-        Alert.alert(
-          "Server-side tracking off",
-          "Your keys were removed from the server. LTV will only update while the app is open.",
-        );
-      }
-    } finally {
-      setServerTrackingBusy(false);
-    }
   };
 
   const onToggleAlerts = async (next: boolean) => {
@@ -374,21 +323,6 @@ export default function SettingsScreen() {
           />
         </Section>
       ) : null}
-
-      <Section title="Server-side tracking">
-        <Row
-          label="Server-side tracking (updates while app is closed)"
-          right={
-            <Switch
-              value={serverTrackingOn}
-              onValueChange={onToggleServerTracking}
-              disabled={serverTrackingBusy}
-              trackColor={{ true: colors.primary, false: colors.border }}
-              thumbColor={colors.background}
-            />
-          }
-        />
-      </Section>
 
       <Section title="Storage">
         <Row

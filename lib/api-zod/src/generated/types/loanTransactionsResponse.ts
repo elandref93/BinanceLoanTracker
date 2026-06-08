@@ -5,12 +5,9 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { LoanTransaction } from './loanTransaction';
 
-export interface InterestRow {
-  ts: Date;
-  accountId: string;
+export interface LoanTransactionsResponse {
   loanId: string;
-  asset: string;
-  amount: number;
-  amountUsd: number;
+  transactions: LoanTransaction[];
 }

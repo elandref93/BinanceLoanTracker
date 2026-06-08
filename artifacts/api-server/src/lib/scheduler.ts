@@ -9,6 +9,7 @@ import {
   writeSnapshotByHash,
   MAX_HISTORY,
 } from "./ltvSnapshot";
+import { buildConsolidatedExtras } from "./consolidatedSnapshot";
 import { isCryptoConfigured } from "./secretCrypto";
 import { logger } from "./logger";
 
@@ -47,6 +48,24 @@ export async function runOnce(): Promise<void> {
           ...(prev?.history ?? []),
           { t: summary.asOf, ltv: summary.aggregateLtv },
         ].slice(-MAX_HISTORY);
+        // Consolidated bundle (loans, holdings, interest, per-container LTV,
+        // daily-charge history, FX). Guarded so a failure here still lets the
+        // core LTV snapshot write.
+        let extras = {};
+        try {
+          extras = await buildConsolidatedExtras({
+            hash,
+            client,
+            summary,
+            lunoAccounts: creds.luno,
+            prev,
+          });
+        } catch (err) {
+          logger.warn(
+            { err, op: "scheduler.consolidated" },
+            "consolidated bundle build failed — writing LTV-only snapshot",
+          );
+        }
         await writeSnapshotByHash(hash, {
           updatedAt: new Date().toISOString(),
           asOf: summary.asOf,
@@ -54,6 +73,7 @@ export async function runOnce(): Promise<void> {
           totalDebtUsd: summary.totalDebtUsd,
           totalCollateralUsd: summary.totalCollateralUsd,
           history,
+          ...extras,
         });
       } catch (err) {
         logger.warn(

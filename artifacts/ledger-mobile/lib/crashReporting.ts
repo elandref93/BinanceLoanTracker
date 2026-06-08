@@ -47,6 +47,14 @@ function captureToSentry(
 const STORAGE_KEY = "ledger.crashes.v1";
 const MAX_ENTRIES = 25;
 
+/**
+ * Severity of a captured entry. `info` covers routine lifecycle markers
+ * (e.g. "[session] hydrate start") logged via `reportMessage` — these are NOT
+ * errors and must be labelled as such in the Diagnostics screen. `error` and
+ * `fatal` are real problems.
+ */
+export type CrashLevel = "info" | "error" | "fatal";
+
 export interface CrashEntry {
   id: string;
   /** ISO timestamp. */
@@ -54,7 +62,22 @@ export interface CrashEntry {
   message: string;
   stack?: string;
   context?: Record<string, unknown>;
+  level: CrashLevel;
+  /**
+   * @deprecated Use `level`. Retained for backward compatibility with entries
+   * persisted before `level` existed; always equals `level === "fatal"`.
+   */
   fatal: boolean;
+}
+
+/**
+ * Normalise an entry that may have been persisted before `level` existed.
+ * Old entries only carried `fatal`; treat a non-fatal legacy entry as `error`
+ * (we can no longer distinguish legacy info markers from real errors).
+ */
+function withLevel(entry: CrashEntry): CrashEntry {
+  if (entry.level) return entry;
+  return { ...entry, level: entry.fatal ? "fatal" : "error" };
 }
 
 // Minimal typing for React Native's global error hook (avoids depending on an
@@ -79,7 +102,7 @@ function ensureLoaded(): Promise<void> {
         if (raw) {
           const parsed = JSON.parse(raw) as unknown;
           if (Array.isArray(parsed)) {
-            buffer = (parsed as CrashEntry[]).slice(-MAX_ENTRIES);
+            buffer = (parsed as CrashEntry[]).slice(-MAX_ENTRIES).map(withLevel);
           }
         }
       } catch {
@@ -157,7 +180,7 @@ function makeEntry(
   message: string,
   stack: string | undefined,
   context: Record<string, unknown> | undefined,
-  fatal: boolean,
+  level: CrashLevel,
 ): CrashEntry {
   return {
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -165,7 +188,8 @@ function makeEntry(
     message,
     stack,
     context,
-    fatal,
+    level,
+    fatal: level === "fatal",
   };
 }
 
@@ -177,7 +201,7 @@ export function reportError(
     const { message, stack } = toMessageAndStack(err);
     // eslint-disable-next-line no-console
     console.error("[crashReporting]", message, context ?? {});
-    void store(makeEntry(message, stack, context, false));
+    void store(makeEntry(message, stack, context, "error"));
     captureToSentry(err, context, "error");
   } catch {
     // never throw
@@ -192,7 +216,7 @@ export function reportFatal(
     const { message, stack } = toMessageAndStack(err);
     // eslint-disable-next-line no-console
     console.error("[crashReporting][FATAL]", message, context ?? {});
-    void store(makeEntry(message, stack, context, true));
+    void store(makeEntry(message, stack, context, "fatal"));
     captureToSentry(err, context, "fatal");
   } catch {
     // never throw
@@ -206,7 +230,7 @@ export function reportMessage(
   try {
     // eslint-disable-next-line no-console
     console.warn("[crashReporting]", message, context ?? {});
-    void store(makeEntry(message, undefined, context, false));
+    void store(makeEntry(message, undefined, context, "info"));
     try {
       // Record as a breadcrumb, NOT a captured message. These are routine
       // lifecycle markers ("[session] hydrate start", "[sync] accounts push
@@ -260,7 +284,12 @@ export function initCrashReporting(): void {
       eu.setGlobalHandler((error, isFatal) => {
         const { message, stack } = toMessageAndStack(error);
         void store(
-          makeEntry(message, stack, { source: "globalHandler" }, isFatal ?? true),
+          makeEntry(
+            message,
+            stack,
+            { source: "globalHandler" },
+            (isFatal ?? true) ? "fatal" : "error",
+          ),
         );
         // Preserve default behaviour (redbox in dev / crash in prod) so we
         // never silently swallow a fatal error.
@@ -277,7 +306,7 @@ export function initCrashReporting(): void {
     const reason = (e as { reason?: unknown })?.reason ?? e;
     const { message, stack } = toMessageAndStack(reason);
     void store(
-      makeEntry(message, stack, { source: "unhandledrejection" }, false),
+      makeEntry(message, stack, { source: "unhandledrejection" }, "error"),
     );
   };
   try {

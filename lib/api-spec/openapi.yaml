@@ -169,6 +169,29 @@ paths:
               schema:
                 $ref: "#/components/schemas/RateHistoryResponse"
 
+  /loans/transactions:
+    get:
+      operationId: listLoanTransactions
+      tags: [binance]
+      summary: Borrow/repay events for a single loan
+      description: >
+        Discrete borrow and repay events for one loan, derived from Binance's
+        flexible borrow/repay history. Repayments reduce the amount due; the app
+        uses these to show real repayments and to drive payoff forecasting.
+        Margin loans have no public event history, so the list may be empty.
+      parameters:
+        - in: query
+          name: loanId
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Loan borrow/repay events (newest first)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoanTransactionsResponse"
+
   /holdings:
     get:
       operationId: listHoldings
@@ -217,6 +240,11 @@ paths:
           name: asset
           required: false
           description: Filter by asset symbol (e.g. XBT, ZAR)
+          schema: { type: string }
+        - in: query
+          name: accountId
+          required: false
+          description: Scope to a single linked Luno account (exchange-link id)
           schema: { type: string }
         - in: query
           name: limit
@@ -603,6 +631,31 @@ components:
         rolling24hVolume: { type: number }
         asOf: { type: string, format: date-time }
       required: [pair, ask, bid, lastTrade, rolling24hVolume, asOf]
+
+    LoanTransaction:
+      type: object
+      properties:
+        loanId: { type: string }
+        ts: { type: string, format: date-time }
+        type:
+          type: string
+          enum: [borrow, repay]
+        asset: { type: string, description: Borrowed asset symbol }
+        amount:
+          type: number
+          description: Event amount in the borrowed asset (positive)
+        amountUsd: { type: number }
+      required: [loanId, ts, type, asset, amount, amountUsd]
+
+    LoanTransactionsResponse:
+      type: object
+      properties:
+        loanId: { type: string }
+        transactions:
+          type: array
+          items:
+            $ref: "#/components/schemas/LoanTransaction"
+      required: [loanId, transactions]
 
     InterestByAsset:
       type: object

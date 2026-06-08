@@ -1,7 +1,7 @@
 import { Feather } from "@expo/vector-icons";
 import { Redirect, Tabs } from "expo-router";
 import React, { useEffect } from "react";
-import { Platform, StyleSheet, View } from "react-native";
+import { ActivityIndicator, Platform, StyleSheet, View } from "react-native";
 
 import { useColors } from "@/hooks/useColors";
 import { useSession } from "@/context/SessionContext";
@@ -41,7 +41,7 @@ function payloadFor(
 export default function TabLayout() {
   const colors = useColors();
   const isWeb = Platform.OS === "web";
-  const { isLoaded, isSignedIn, getToken } = useSession();
+  const { isLoaded, isSignedIn, getToken, accountsHydrated } = useSession();
   const accountsCount = useStoredAccountsCount();
 
   useEffect(() => {
@@ -67,6 +67,19 @@ export default function TabLayout() {
 
   if (!isLoaded || accountsCount === null) return null;
   if (!isSignedIn) return <Redirect href="/(auth)/sign-in" />;
+  // A fresh device starts with empty local storage even when the user already
+  // has accounts synced under their Apple ID. Wait for the first server pull to
+  // settle before sending them to onboarding, otherwise we'd flash (or get
+  // stuck on) "connect your account" while the synced profile is still loading.
+  if (accountsCount === 0 && !accountsHydrated) {
+    return (
+      <View
+        style={[styles.loading, { backgroundColor: colors.background }]}
+      >
+        <ActivityIndicator color={colors.primary} />
+      </View>
+    );
+  }
   if (accountsCount === 0) return <Redirect href="/(onboarding)" />;
 
   return (
@@ -144,3 +157,7 @@ export default function TabLayout() {
     </Tabs>
   );
 }
+
+const styles = StyleSheet.create({
+  loading: { flex: 1, alignItems: "center", justifyContent: "center" },
+});

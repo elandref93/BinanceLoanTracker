@@ -1,0 +1,76 @@
+name: Publish OTA Update
+
+# ---------------------------------------------------------------------------
+# Deterministic, in-repo OTA publishing for the Ledger mobile app.
+#
+#   GitHub push to main (touching mobile/shared paths)
+#     -> CI installs deps and EAS CLI
+#     -> CI runs `eas update --branch production`
+#     -> the new JS bundle is published to the "production" EAS channel
+#     -> installed builds download it and apply it on the next COLD launch
+#
+# Why this exists: OTA updates were previously published only by the Expo
+# GitHub App (configured in the Expo dashboard). That path stalled and left
+# shipped commits unpublished for hours with no signal. This workflow makes
+# publishing explicit, reviewable, and version-controlled.
+#
+# REQUIRED: add the `EXPO_TOKEN` secret to this GitHub repo
+# (Settings -> Secrets and variables -> Actions). Use an Expo access token with
+# permission to publish updates to this project.
+#
+# IMPORTANT: to avoid double-publishing, DISABLE the Expo dashboard's GitHub
+# auto-update integration once this workflow is in place — otherwise both will
+# publish an update for every push.
+#
+# The runtimeVersion policy is `appVersion`, so an OTA update only reaches
+# builds whose native version matches. A native/SDK change still needs a fresh
+# TestFlight build (see `pnpm --filter @workspace/ledger-mobile run tf:build`).
+# ---------------------------------------------------------------------------
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'artifacts/ledger-mobile/**'
+      - 'lib/api-zod/**'
+      - 'lib/api-spec/**'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - '.github/workflows/publish-update.yml'
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.18.3
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Set up EAS
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      # Publish to the production channel. The commit message is passed via an
+      # env var (not interpolated into the shell) to avoid command injection
+      # from arbitrary commit text.
+      - name: Publish OTA update
+        working-directory: artifacts/ledger-mobile
+        env:
+          EXPO_USE_METRO_WORKSPACE_ROOT: '1'
+          EXPO_PUBLIC_DOMAIN: binance-loan-tracker-backend.azurewebsites.net
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
+        run: eas update --branch production --non-interactive --message "${COMMIT_MSG:-Manual OTA publish}"

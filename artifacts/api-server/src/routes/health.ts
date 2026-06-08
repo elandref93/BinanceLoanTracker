@@ -10,8 +10,14 @@ const router: IRouter = Router();
 // network calls): JWT signing keys + Apple audience are the bare minimum.
 router.get("/healthz", (_req, res) => {
   const missing: string[] = [];
+  // A signing key is required — either the RS256 private key (preferred, used
+  // for the Azure Easy Auth custom-OIDC merge) OR the legacy HS256 secret.
+  const hasRsaKey = Boolean(process.env.SESSION_JWT_PRIVATE_KEY?.trim());
   const secret = process.env.SESSION_JWT_SECRET;
-  if (!secret || secret.length < 32) missing.push("SESSION_JWT_SECRET");
+  const hasHsSecret = Boolean(secret && secret.length >= 32);
+  if (!hasRsaKey && !hasHsSecret) {
+    missing.push("SESSION_JWT_PRIVATE_KEY or SESSION_JWT_SECRET");
+  }
   if (!process.env.APPLE_BUNDLE_ID) missing.push("APPLE_BUNDLE_ID");
 
   if (missing.length > 0) {

@@ -14,7 +14,9 @@ import { toBase64 } from "@/lib/encoding";
 import {
   setAuthTokenGetter,
   setExtraHeadersGetter,
+  setAuthFailureHandler,
 } from "@workspace/api-client-react";
+import { notifyAuthFailure } from "@/lib/authEvents";
 
 function payloadFor(
   links: Array<{
@@ -44,6 +46,9 @@ export default function TabLayout() {
 
   useEffect(() => {
     setAuthTokenGetter(() => getToken());
+    // Route the central api-client's 401s through the same app-wide handler the
+    // sync modules use (SessionContext registers it to sign the user out).
+    setAuthFailureHandler(() => notifyAuthFailure());
     setExtraHeadersGetter(async () => {
       const [binance, luno] = await Promise.all([
         getBinanceLinks(),
@@ -56,6 +61,7 @@ export default function TabLayout() {
     });
     return () => {
       setExtraHeadersGetter(null);
+      setAuthFailureHandler(null);
     };
   }, [getToken]);
 

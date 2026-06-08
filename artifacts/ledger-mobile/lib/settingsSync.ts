@@ -14,6 +14,7 @@
  */
 
 import { reportError, reportMessage } from "@/lib/crashReporting";
+import { notifyAuthFailure } from "@/lib/authEvents";
 
 const baseUrl = process.env.EXPO_PUBLIC_DOMAIN
   ? `https://${process.env.EXPO_PUBLIC_DOMAIN}`
@@ -57,6 +58,10 @@ export async function fetchRemoteSettings(): Promise<RemoteSettingsBlob | null> 
   try {
     const res = await fetch(`${baseUrl}/api/settings/sync`, { headers });
     if (res.status === 404) return null;
+    if (res.status === 401) {
+      notifyAuthFailure();
+      return null;
+    }
     if (!res.ok) {
       reportMessage("[sync] settings fetch non-ok", {
         op: "settings.fetch",
@@ -112,6 +117,10 @@ export async function pushRemoteSettings(
         status: res.status,
       });
       return "conflict";
+    }
+    if (res.status === 401) {
+      notifyAuthFailure();
+      return "skipped";
     }
     if (!res.ok) {
       reportMessage("[sync] settings push skipped", {

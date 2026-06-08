@@ -208,7 +208,17 @@ export function reportMessage(
     console.warn("[crashReporting]", message, context ?? {});
     void store(makeEntry(message, undefined, context, false));
     try {
-      Sentry.captureMessage(message, { level: "info", extra: context });
+      // Record as a breadcrumb, NOT a captured message. These are routine
+      // lifecycle markers ("[session] hydrate start", "[sync] accounts push
+      // skipped", ...); capturing them created a standalone Sentry *issue* per
+      // marker, flooding the dashboard with non-actionable info noise. As
+      // breadcrumbs they still travel with the next real error/crash to give a
+      // trail, and the on-device buffer + backend POST above are unchanged.
+      Sentry.addBreadcrumb({
+        level: "info",
+        message,
+        data: context,
+      });
     } catch {
       // never throw from the reporter
     }

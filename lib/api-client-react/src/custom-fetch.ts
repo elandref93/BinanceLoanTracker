@@ -7,6 +7,7 @@ export type ErrorType<T = unknown> = ApiError<T>;
 export type BodyType<T> = T;
 
 export type AuthTokenGetter = () => Promise<string | null> | string | null;
+export type AuthFailureHandler = () => void;
 export type ExtraHeadersGetter = () =>
   | Promise<Record<string, string> | null>
   | Record<string, string>
@@ -34,6 +35,7 @@ function sleep(ms: number): Promise<void> {
 let _baseUrl: string | null = null;
 let _authTokenGetter: AuthTokenGetter | null = null;
 let _extraHeadersGetter: ExtraHeadersGetter | null = null;
+let _authFailureHandler: AuthFailureHandler | null = null;
 
 /**
  * Set a base URL that is prepended to every relative request URL
@@ -68,6 +70,15 @@ export function setAuthTokenGetter(getter: AuthTokenGetter | null): void {
  */
 export function setExtraHeadersGetter(getter: ExtraHeadersGetter | null): void {
   _extraHeadersGetter = getter;
+}
+
+/**
+ * Register a handler invoked whenever a response comes back `401 Unauthorized`,
+ * i.e. the bearer token was rejected. Consumers typically use this to clear the
+ * stored session and route the user back to sign-in. Pass `null` to clear.
+ */
+export function setAuthFailureHandler(handler: AuthFailureHandler | null): void {
+  _authFailureHandler = handler;
 }
 
 function isRequest(input: RequestInfo | URL): input is Request {
@@ -426,6 +437,14 @@ export async function customFetch<T = unknown>(
       await sleep(BASE_BACKOFF_MS * 2 ** attempt);
       attempt += 1;
       continue;
+    }
+
+    if (response.status === 401 && _authFailureHandler) {
+      try {
+        _authFailureHandler();
+      } catch {
+        /* a failing handler must not mask the original 401 */
+      }
     }
 
     if (!response.ok) {

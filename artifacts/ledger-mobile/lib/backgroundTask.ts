@@ -4,7 +4,12 @@ import { Platform } from "react-native";
 
 import { loadStoredSession } from "@/lib/session";
 import { checkAndNotifyLoans } from "@/lib/alerts";
-import { listContainers } from "@/lib/accountStore";
+import {
+  getBinanceLinks,
+  getLunoLinks,
+  listContainers,
+} from "@/lib/accountStore";
+import { toBase64 } from "@/lib/encoding";
 import { recordLtvSample } from "@/lib/ltvHistory";
 import { recordLoanSnapshots } from "@/lib/loanSnapshots";
 import {
@@ -30,15 +35,51 @@ type LoanLite = {
   collateral: { valueUsd: number; asset: string };
 };
 
+// Base64-encoded JSON of the linked accounts' credentials, matching the
+// foreground builder in app/(tabs)/_layout.tsx. The /api/loans route is
+// stateless — it can only fetch from Binance with the keys passed per request
+// via these headers, so the headless task MUST send them too or the server
+// returns zero loans.
+function accountsHeader(
+  links: Array<{ id: string; name: string; apiKey: string; apiSecret: string }>,
+): string {
+  return toBase64(
+    JSON.stringify(
+      links.map((l) => ({
+        id: l.id,
+        name: l.name,
+        apiKey: l.apiKey,
+        apiSecret: l.apiSecret,
+      })),
+    ),
+  );
+}
+
 async function runRefresh(): Promise<BackgroundFetch.BackgroundFetchResult> {
   try {
     const domain = process.env.EXPO_PUBLIC_DOMAIN;
     if (!domain) return BackgroundFetch.BackgroundFetchResult.NoData;
     const session = await loadStoredSession();
     if (!session) return BackgroundFetch.BackgroundFetchResult.NoData;
-    const res = await fetch(`https://${domain}/api/loans`, {
-      headers: { authorization: `Bearer ${session.sessionToken}` },
-    });
+
+    // Without linked Binance keys there's nothing to compute — and crucially we
+    // must NOT fall through to the "zero out the widget" path below, which would
+    // wipe the last-known figures whenever this ran credential-less.
+    const [binanceLinks, lunoLinks] = await Promise.all([
+      getBinanceLinks(),
+      getLunoLinks(),
+    ]);
+    if (binanceLinks.length === 0) {
+      return BackgroundFetch.BackgroundFetchResult.NoData;
+    }
+    const headers: Record<string, string> = {
+      authorization: `Bearer ${session.sessionToken}`,
+      "X-Binance-Accounts": accountsHeader(binanceLinks),
+    };
+    if (lunoLinks.length > 0) {
+      headers["X-Luno-Accounts"] = accountsHeader(lunoLinks);
+    }
+    const res = await fetch(`https://${domain}/api/loans`, { headers });
     if (!res.ok) return BackgroundFetch.BackgroundFetchResult.Failed;
     const body = (await res.json()) as { loans?: LoanLite[] };
     const loans = body.loans ?? [];

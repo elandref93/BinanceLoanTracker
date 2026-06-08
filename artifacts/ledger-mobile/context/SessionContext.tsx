@@ -19,6 +19,8 @@ import { hydrateFromServer } from "@/lib/accountStore";
 import { setSyncTokenGetter } from "@/lib/accountSync";
 import { hydrateSettings } from "@/lib/settingsStore";
 import { setSettingsTokenGetter } from "@/lib/settingsSync";
+import { setCredentialsTokenGetter } from "@/lib/serverCredentials";
+import { setAuthFailureHandler } from "@/lib/authEvents";
 import { checkAndApplyUpdate } from "@/lib/otaUpdates";
 import { reportError, reportMessage } from "@/lib/crashReporting";
 
@@ -78,6 +80,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     setSyncTokenGetter(getToken);
     setSettingsTokenGetter(getToken);
+    setCredentialsTokenGetter(getToken);
     if (session) {
       reportMessage("[session] hydrate start", { op: "session.hydrate" });
       void hydrateFromServer().catch((e) => {
@@ -90,6 +93,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     return () => {
       setSyncTokenGetter(null);
       setSettingsTokenGetter(null);
+      setCredentialsTokenGetter(null);
     };
   }, [session, getToken]);
 
@@ -123,6 +127,16 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     }
     setSession(null);
   }, []);
+
+  // When any authenticated call comes back 401 (token expired, or invalidated
+  // by the RS256 signing cutover), sign out so the user is re-prompted instead
+  // of being stuck with a dead token that fails every request.
+  useEffect(() => {
+    setAuthFailureHandler(() => {
+      void signOut();
+    });
+    return () => setAuthFailureHandler(null);
+  }, [signOut]);
 
   const value = useMemo<SessionContextValue>(
     () => ({

@@ -18,6 +18,7 @@
 
 import type { AccountContainer } from "./accountStore";
 import { reportError, reportMessage } from "@/lib/crashReporting";
+import { notifyAuthFailure } from "@/lib/authEvents";
 
 const baseUrl = process.env.EXPO_PUBLIC_DOMAIN
   ? `https://${process.env.EXPO_PUBLIC_DOMAIN}`
@@ -54,6 +55,10 @@ export async function fetchRemoteBlob(): Promise<RemoteBlob | null> {
   try {
     const res = await fetch(`${baseUrl}/api/accounts/sync`, { headers });
     if (res.status === 404) return null;
+    if (res.status === 401) {
+      notifyAuthFailure();
+      return null;
+    }
     if (!res.ok) {
       reportMessage("[sync] accounts fetch non-ok", {
         op: "accounts.fetch",
@@ -105,6 +110,10 @@ export async function pushRemoteBlob(
         status: res.status,
       });
       return "conflict";
+    }
+    if (res.status === 401) {
+      notifyAuthFailure();
+      return "skipped";
     }
     if (!res.ok) {
       reportMessage("[sync] accounts push skipped", {

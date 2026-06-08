@@ -14,6 +14,8 @@ import lunoRouter from "./luno";
 import accountsRouter from "./accounts";
 import settingsRouter from "./settings";
 import diagRouter from "./diag";
+import credentialsRouter from "./credentials";
+import ltvRouter from "./ltv";
 
 // Augment Express's Request type so route handlers downstream of requireAuth
 // can read req.userId without casts.
@@ -77,6 +79,8 @@ router.use(requireAuth, binanceRouter);
 router.use("/luno", requireAuth, lunoRouter);
 router.use("/accounts", requireAuth, accountsRouter);
 router.use("/settings", requireAuth, settingsRouter);
+router.use("/credentials", requireAuth, credentialsRouter);
+router.use("/ltv", requireAuth, ltvRouter);
 router.use("/diag", requireAuth, diagRouter);
 
 export default router;

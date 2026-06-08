@@ -7,6 +7,7 @@ import express, {
 import cors from "cors";
 import pinoHttp from "pino-http";
 import router from "./routes";
+import wellKnown from "./routes/wellKnown";
 import { logger } from "./lib/logger";
 import { Sentry } from "./lib/sentry";
 
@@ -79,6 +80,11 @@ app.use((_req, res, next) => {
 
 app.use(express.json({ limit: "256kb" }));
 app.use(express.urlencoded({ extended: true, limit: "256kb" }));
+
+// Public OIDC discovery + JWKS. Mounted at the root BEFORE the `/api`
+// requireAuth gate (and before the rate limiters, which are `/api`-scoped) so
+// Azure Easy Auth can fetch our token-validation metadata unauthenticated.
+app.use(wellKnown);
 
 // Lightweight per-IP rate limiter — no external dep. Two buckets:
 // - sign-in:  10 req / 5 min

@@ -4,5 +4,10 @@ export {
   setBaseUrl,
   setAuthTokenGetter,
   setExtraHeadersGetter,
+  setAuthFailureHandler,
 } from "./custom-fetch";
-export type { AuthTokenGetter, ExtraHeadersGetter } from "./custom-fetch";
+export type {
+  AuthTokenGetter,
+  ExtraHeadersGetter,
+  AuthFailureHandler,
+} from "./custom-fetch";

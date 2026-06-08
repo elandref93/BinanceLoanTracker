@@ -318,6 +318,23 @@ async function writeAll(containers: AccountContainer[]): Promise<void> {
       void hydrateFromServer();
     }
   });
+  // Additive, opt-in only: if the user has enabled server-side tracking,
+  // re-upload the encrypted credentials so the scheduler's LTV computation
+  // stays in sync with the local change. Imported lazily to avoid an import
+  // cycle (serverCredentials imports this module). A disabled/opted-out user
+  // never makes a network call here.
+  void (async () => {
+    try {
+      const { isServerTrackingEnabled, uploadCredentials } = await import(
+        "./serverCredentials"
+      );
+      if (await isServerTrackingEnabled()) {
+        await uploadCredentials();
+      }
+    } catch (e) {
+      reportError(e, { op: "credentials.autoUpload" });
+    }
+  })();
 }
 
 const UPDATED_AT_KEY = "ledger.accounts.v3.updatedAt";

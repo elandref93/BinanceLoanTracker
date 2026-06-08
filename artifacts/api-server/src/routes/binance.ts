@@ -11,13 +11,9 @@ import {
   ListInterestResponse,
   ListLoansResponse,
 } from "@workspace/api-zod";
-import {
-  BinanceApiError,
-  type BinanceClient,
-  createMultiplexBinanceClient,
-  createRealBinanceClient,
-} from "../lib/binance";
+import { BinanceApiError, type BinanceClient } from "../lib/binance";
 import { logger } from "../lib/logger";
+import { buildBinanceClient, computeLoanSummary } from "../lib/loanCompute";
 
 // Hard cap on the credentials header to prevent CPU/OOM DoS via a giant
 // base64 blob — the legitimate payload for 5 accounts is ~1.5 KB.
@@ -117,15 +113,7 @@ function parseAccountsHeader(req: Request): DeviceAccount[] | null {
 function clientFor(req: Request): BinanceClient {
   const accounts = parseAccountsHeader(req);
   if (!accounts) return emptyClient;
-  return createMultiplexBinanceClient(
-    accounts.map((a) => ({
-      account: { id: a.id, name: a.name },
-      client: createRealBinanceClient(
-        { id: a.id, name: a.name },
-        { apiKey: a.apiKey, apiSecret: a.apiSecret },
-      ),
-    })),
-  );
+  return buildBinanceClient(accounts);
 }
 
 router.get("/accounts", async (req, res, next) => {
@@ -140,23 +128,8 @@ router.get("/accounts", async (req, res, next) => {
 router.get("/loans", async (req, res, next) => {
   try {
     const { accountId } = ListLoansQueryParams.parse(req.query);
-    const loans = await clientFor(req).listLoans(accountId);
-    const totalDebtUsd = loans.reduce((s, l) => s + l.debtUsd, 0);
-    const totalCollateralUsd = loans.reduce(
-      (s, l) => s + l.collateral.valueUsd,
-      0,
-    );
-    const aggregateLtv =
-      totalCollateralUsd > 0 ? (totalDebtUsd / totalCollateralUsd) * 100 : 0;
-    res.json(
-      ListLoansResponse.parse({
-        asOf: new Date().toISOString(),
-        aggregateLtv: round(aggregateLtv, 2),
-        totalDebtUsd: round(totalDebtUsd, 2),
-        totalCollateralUsd: round(totalCollateralUsd, 2),
-        loans,
-      }),
-    );
+    const summary = await computeLoanSummary(clientFor(req), accountId);
+    res.json(ListLoansResponse.parse(summary));
   } catch (err) {
     next(err);
   }
@@ -305,7 +278,17 @@ router.get("/interest", async (req, res, next) => {
 
 router.get("/rate-history", async (req, res, next) => {
   try {
-    const { loanId, days } = GetRateHistoryQueryParams.parse(req.query);
+    // Query-string values arrive as strings; the generated schema expects a
+    // numeric literal (30 | 90), so coerce `days` before validation. Anything
+    // non-numeric stays a string and is rejected by the schema as a 400.
+    const rawDays = req.query.days;
+    const { loanId, days } = GetRateHistoryQueryParams.parse({
+      ...req.query,
+      days:
+        typeof rawDays === "string" && rawDays.trim() !== ""
+          ? Number(rawDays)
+          : rawDays,
+    });
     const window = days ?? 30;
     const points = await clientFor(req).getRateHistory(loanId, window);
     // `source` is authoritative, not just loanId-derived: the client falls

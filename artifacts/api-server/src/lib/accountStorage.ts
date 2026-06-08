@@ -1,6 +1,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
+import { getDataDir, ensureDataDir } from "./dataDir";
 import { logger } from "./logger";
 
 // Per-user encrypted-at-rest? No — the API is gated by Apple Sign-In and HTTPS,
@@ -8,23 +9,8 @@ import { logger } from "./logger";
 // sends. Filename is sha256(sub) so we never write a user identifier (which
 // could contain unexpected characters) onto the filesystem.
 //
-// Persistence: Azure App Service Linux *containers* have an ephemeral
-// filesystem — anything written under the app dir is wiped on every restart
-// or redeploy, which silently destroyed cross-device sync (a second device
-// would pull and get 404). Azure persists ONLY `/home`, and only when the app
-// setting WEBSITES_ENABLE_APP_SERVICE_STORAGE=true. So when we detect we're on
-// Azure (WEBSITE_INSTANCE_ID is injected there) we default the data dir under
-// `/home`. An explicit ACCOUNT_SYNC_DIR always wins. See AZURE.md.
-
-function resolveDataDir(): string {
-  if (process.env.ACCOUNT_SYNC_DIR) return process.env.ACCOUNT_SYNC_DIR;
-  if (process.env.WEBSITE_INSTANCE_ID) {
-    return "/home/data/account_sync";
-  }
-  return path.resolve(process.cwd(), "data", "account_sync");
-}
-
-const DATA_DIR = resolveDataDir();
+// Persistence/data-dir resolution (Azure /home, ACCOUNT_SYNC_DIR override) is
+// shared with credential + snapshot storage in ./dataDir.
 
 /** Distinct per-user blobs. Each maps to its own file so they sync independently. */
 export type SyncKind = "accounts" | "settings";
@@ -36,11 +22,11 @@ function fileFor(sub: string, kind: SyncKind): string {
   // "accounts" keeps the original bare filename for backwards compatibility
   // with blobs already on disk; other kinds get a suffix.
   const name = kind === "accounts" ? `${hash}.json` : `${hash}.${kind}.json`;
-  return path.join(DATA_DIR, name);
+  return path.join(getDataDir(), name);
 }
 
 async function ensureDir(): Promise<void> {
-  await fs.mkdir(DATA_DIR, { recursive: true });
+  await ensureDataDir();
 }
 
 export async function readRecord(

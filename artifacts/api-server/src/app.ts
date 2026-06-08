@@ -7,7 +7,6 @@ import express, {
 import cors from "cors";
 import pinoHttp from "pino-http";
 import router from "./routes";
-import wellKnown from "./routes/wellKnown";
 import { logger } from "./lib/logger";
 import { Sentry } from "./lib/sentry";
 
@@ -81,11 +80,6 @@ app.use((_req, res, next) => {
 app.use(express.json({ limit: "256kb" }));
 app.use(express.urlencoded({ extended: true, limit: "256kb" }));
 
-// Public OIDC discovery + JWKS. Mounted at the root BEFORE the `/api`
-// requireAuth gate (and before the rate limiters, which are `/api`-scoped) so
-// Azure Easy Auth can fetch our token-validation metadata unauthenticated.
-app.use(wellKnown);
-
 // Lightweight per-IP rate limiter — no external dep. Two buckets:
 // - sign-in:  10 req / 5 min
 // - default:  120 req / min
@@ -151,6 +145,22 @@ app.use(
   (err: unknown, req: Request, res: Response, _next: NextFunction): void => {
     logger.error({ err, path: req.path }, "unhandled route error");
     if (res.headersSent) return;
+    // Upstream middleware (e.g. body-parser on a malformed JSON body) attaches
+    // a client-error status — that's a 400, not a server fault. Honor 4xx codes
+    // so bad requests don't masquerade as 500s. We never echo `err.message`:
+    // it can contain raw request content, so the response stays generic.
+    const raw =
+      (err as { status?: unknown; statusCode?: unknown } | null) ?? {};
+    const status =
+      typeof raw.status === "number"
+        ? raw.status
+        : typeof raw.statusCode === "number"
+          ? raw.statusCode
+          : 500;
+    if (status >= 400 && status < 500) {
+      res.status(status).json({ error: "Bad request" });
+      return;
+    }
     res.status(500).json({ error: "Internal server error" });
   },
 );

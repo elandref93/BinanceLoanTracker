@@ -1,0 +1,35 @@
+{
+  "platform": {
+    "enabled": true
+  },
+  "globalValidation": {
+    "requireAuthentication": true,
+    "unauthenticatedClientAction": "Return401",
+    "excludedPaths": [
+      "/.well-known/openid-configuration",
+      "/.well-known/jwks.json",
+      "/api/auth/apple",
+      "/api/healthz"
+    ]
+  },
+  "identityProviders": {
+    "customOpenIdConnectProviders": {
+      "appsession": {
+        "registration": {
+          "clientId": "binance-loan-tracker-mobile",
+          "openIdConnectConfiguration": {
+            "wellKnownOpenIdConfiguration": "https://binance-loan-tracker-backend.azurewebsites.net/.well-known/openid-configuration"
+          }
+        },
+        "login": {
+          "nameClaimType": "sub"
+        }
+      }
+    }
+  },
+  "login": {
+    "tokenStore": {
+      "enabled": true
+    }
+  }
+}

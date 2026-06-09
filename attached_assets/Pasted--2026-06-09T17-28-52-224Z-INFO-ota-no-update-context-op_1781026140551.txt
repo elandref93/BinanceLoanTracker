@@ -1,0 +1,180 @@
+[2026-06-09T17:28:52.224Z] INFO [ota] no update
+context: {"op":"ota.check","isAvailable":false}
+
+
+──────────
+
+[2026-06-09T17:28:51.883Z] INFO [ota] no update
+context: {"op":"ota.check","isAvailable":false}
+
+
+──────────
+
+[2026-06-09T17:28:48.822Z] INFO [sync] credentials upload ok
+context: {"op":"credentials.upload","status":200}
+
+
+──────────
+
+[2026-06-09T17:28:48.488Z] INFO [session] hydrate start
+context: {"op":"session.hydrate"}
+
+
+──────────
+
+[2026-06-09T17:02:28.575Z] INFO [ota] no update
+context: {"op":"ota.check","isAvailable":false}
+
+
+──────────
+
+[2026-06-09T16:56:17.724Z] INFO [ota] no update
+context: {"op":"ota.check","isAvailable":false}
+
+
+──────────
+
+[2026-06-09T16:56:16.298Z] INFO [ota] no update
+context: {"op":"ota.check","isAvailable":false}
+
+
+──────────
+
+[2026-06-09T16:51:21.500Z] ERROR Unknown error: A server with the specified hostname could not be found.
+context: {"op":"ota.check"}
+Error: Unknown error: A server with the specified hostname could not be found.
+    at construct (native)
+    at apply (native)
+    at _construct (address at /var/mobile/Containers/Data/Application/E69A4421-24F8-4993-8655-5C1AF5ADAA9B/Library/Application Support/.expo-internal/b87cb027a052c59af69a1e8a5fdeae17.bundle:1:146863)
+    at Wrapper (address at /var/mobile/Containers/Data/Application/E69A4421-24F8-4993-8655-5C1AF5ADAA9B/Library/Application Support/.expo-internal/b87cb027a052c59af69a1e8a5fdeae17.bundle:1:146516)
+    at construct (native)
+    at _callSuper (address at /var/mobile/Containers/Data/Application/E69A4421-24F8-4993-8655-5C1AF5ADAA9B/Library/Application Support/.expo-internal/b87cb027a052c59af69a1e8a5fdeae17.bundle:1:131409)
+    at CodedError (address at /var/mobile/Containers/Data/Application/E69A4421-24F8-4993-8655-5C1AF5ADAA9B/Library/Application Support/.expo-internal/b87cb027a052c59af69a1e8a5fdeae17.bundle:1:812472)
+
+──────────
+
+[2026-06-09T16:51:21.292Z] ERROR Unknown error: A server with the specified hostname could not be found.
+context: {"op":"ota.check"}
+Error: Unknown error: A server with the specified hostname could not be found.
+    at construct (native)
+    at apply (native)
+    at _construct (address at /var/mobile/Containers/Data/Application/E69A4421-24F8-4993-8655-5C1AF5ADAA9B/Library/Application Support/.expo-internal/b87cb027a052c59af69a1e8a5fdeae17.bundle:1:146863)
+    at Wrapper (address at /var/mobile/Containers/Data/Application/E69A4421-24F8-4993-8655-5C1AF5ADAA9B/Library/Application Support/.expo-internal/b87cb027a052c59af69a1e8a5fdeae17.bundle:1:146516)
+    at construct (native)
+    at _callSuper (address at /var/mobile/Containers/Data/Application/E69A4421-24F8-4993-8655-5C1AF5ADAA9B/Library/Application Support/.expo-internal/b87cb027a052c59af69a1e8a5fdeae17.bundle:1:131409)
+    at CodedError (address at /var/mobile/Containers/Data/Application/E69A4421-24F8-4993-8655-5C1AF5ADAA9B/Library/Application Support/.expo-internal/b87cb027a052c59af69a1e8a5fdeae17.bundle:1:812472)
+
+──────────
+
+[2026-06-09T16:51:19.029Z] ERROR Network request failed
+context: {"op":"ltv.snapshot"}
+TypeError: Network request failed
+    at anonymous (address at /var/mobile/Containers/Data/Application/E69A4421-24F8-4993-8655-5C1AF5ADAA9B/Library/Application Support/.expo-internal/b87cb027a052c59af69a1e8a5fdeae17.bundle:1:471218)
+
+──────────
+
+[2026-06-09T16:51:18.521Z] ERROR Network request failed
+context: {"op":"credentials.upload","reason":"network"}
+TypeError: Network request failed
+    at anonymous (address at /var/mobile/Containers/Data/Application/E69A4421-24F8-4993-8655-5C1AF5ADAA9B/Library/Application Support/.expo-internal/b87cb027a052c59af69a1e8a5fdeae17.bundle:1:471218)
+
+──────────
+
+[2026-06-09T16:51:18.506Z] ERROR Network request failed
+context: {"op":"annotations.hydrate"}
+TypeError: Network request failed
+    at anonymous (address at /var/mobile/Containers/Data/Application/E69A4421-24F8-4993-8655-5C1AF5ADAA9B/Library/Application Support/.expo-internal/b87cb027a052c59af69a1e8a5fdeae17.bundle:1:471218)
+
+──────────
+
+[2026-06-09T16:51:18.505Z] ERROR Network request failed
+context: {"op":"settings.fetch"}
+TypeError: Network request failed
+    at anonymous (address at /var/mobile/Containers/Data/Application/E69A4421-24F8-4993-8655-5C1AF5ADAA9B/Library/Application Support/.expo-internal/b87cb027a052c59af69a1e8a5fdeae17.bundle:1:471218)
+
+──────────
+
+[2026-06-09T16:51:18.504Z] ERROR Network request failed
+context: {"op":"accounts.fetch"}
+TypeError: Network request failed
+    at anonymous (address at /var/mobile/Containers/Data/Application/E69A4421-24F8-4993-8655-5C1AF5ADAA9B/Library/Application Support/.expo-internal/b87cb027a052c59af69a1e8a5fdeae17.bundle:1:471218)
+
+──────────
+
+[2026-06-09T16:51:18.491Z] INFO [session] hydrate start
+context: {"op":"session.hydrate"}
+
+
+──────────
+
+[2026-06-09T16:50:55.334Z] ERROR Unknown error: A server with the specified hostname could not be found.
+context: {"op":"ota.check"}
+Error: Unknown error: A server with the specified hostname could not be found.
+    at construct (native)
+    at apply (native)
+    at _construct (address at /var/mobile/Containers/Data/Application/E69A4421-24F8-4993-8655-5C1AF5ADAA9B/Library/Application Support/.expo-internal/b87cb027a052c59af69a1e8a5fdeae17.bundle:1:146863)
+    at Wrapper (address at /var/mobile/Containers/Data/Application/E69A4421-24F8-4993-8655-5C1AF5ADAA9B/Library/Application Support/.expo-internal/b87cb027a052c59af69a1e8a5fdeae17.bundle:1:146516)
+    at construct (native)
+    at _callSuper (address at /var/mobile/Containers/Data/Application/E69A4421-24F8-4993-8655-5C1AF5ADAA9B/Library/Application Support/.expo-internal/b87cb027a052c59af69a1e8a5fdeae17.bundle:1:131409)
+    at CodedError (address at /var/mobile/Containers/Data/Application/E69A4421-24F8-4993-8655-5C1AF5ADAA9B/Library/Application Support/.expo-internal/b87cb027a052c59af69a1e8a5fdeae17.bundle:1:812472)
+
+──────────
+
+[2026-06-09T16:50:50.277Z] ERROR Network request failed
+context: {"op":"ltv.snapshot"}
+TypeError: Network request failed
+    at anonymous (address at /var/mobile/Containers/Data/Application/E69A4421-24F8-4993-8655-5C1AF5ADAA9B/Library/Application Support/.expo-internal/b87cb027a052c59af69a1e8a5fdeae17.bundle:1:471218)
+
+──────────
+
+[2026-06-09T16:50:49.751Z] ERROR Unknown error: A server with the specified hostname could not be found.
+context: {"op":"ota.check"}
+Error: Unknown error: A server with the specified hostname could not be found.
+    at construct (native)
+    at apply (native)
+    at _construct (address at /var/mobile/Containers/Data/Application/E69A4421-24F8-4993-8655-5C1AF5ADAA9B/Library/Application Support/.expo-internal/b87cb027a052c59af69a1e8a5fdeae17.bundle:1:146863)
+    at Wrapper (address at /var/mobile/Containers/Data/Application/E69A4421-24F8-4993-8655-5C1AF5ADAA9B/Library/Application Support/.expo-internal/b87cb027a052c59af69a1e8a5fdeae17.bundle:1:146516)
+    at construct (native)
+    at _callSuper (address at /var/mobile/Containers/Data/Application/E69A4421-24F8-4993-8655-5C1AF5ADAA9B/Library/Application Support/.expo-internal/b87cb027a052c59af69a1e8a5fdeae17.bundle:1:131409)
+    at CodedError (address at /var/mobile/Containers/Data/Application/E69A4421-24F8-4993-8655-5C1AF5ADAA9B/Library/Application Support/.expo-internal/b87cb027a052c59af69a1e8a5fdeae17.bundle:1:812472)
+
+──────────
+
+[2026-06-09T16:42:11.254Z] INFO [ota] no update
+context: {"op":"ota.check","isAvailable":false}
+
+
+──────────
+
+[2026-06-09T16:42:04.880Z] INFO [ota] no update
+context: {"op":"ota.check","isAvailable":false}
+
+
+──────────
+
+[2026-06-09T16:42:03.004Z] INFO [sync] credentials upload ok
+context: {"op":"credentials.upload","status":200}
+
+
+──────────
+
+[2026-06-09T16:42:01.321Z] INFO [session] hydrate start
+context: {"op":"session.hydrate"}
+
+
+──────────
+
+[2026-06-09T15:57:44.380Z] INFO [ota] no update
+context: {"op":"ota.check","isAvailable":false}
+
+
+──────────
+
+[2026-06-09T15:56:10.262Z] INFO [ota] no update
+context: {"op":"ota.check","isAvailable":false}
+
+
+──────────
+
+[2026-06-09T15:56:09.804Z] INFO [ota] no update
+context: {"op":"ota.check","isAvailable":false}

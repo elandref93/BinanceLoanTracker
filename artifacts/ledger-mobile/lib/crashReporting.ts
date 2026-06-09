@@ -50,10 +50,11 @@ const MAX_ENTRIES = 25;
 /**
  * Severity of a captured entry. `info` covers routine lifecycle markers
  * (e.g. "[session] hydrate start") logged via `reportMessage` — these are NOT
- * errors and must be labelled as such in the Diagnostics screen. `error` and
- * `fatal` are real problems.
+ * errors and must be labelled as such in the Diagnostics screen. `warn` covers
+ * expected-but-degraded conditions, chiefly transient offline/network failures
+ * that recover on their own. `error` and `fatal` are real problems.
  */
-export type CrashLevel = "info" | "error" | "fatal";
+export type CrashLevel = "info" | "warn" | "error" | "fatal";
 
 export interface CrashEntry {
   id: string;
@@ -193,11 +194,59 @@ function makeEntry(
   };
 }
 
+/**
+ * Transient connectivity failures (the device briefly offline, a DNS hiccup, a
+ * dropped request) are EXPECTED on mobile and recover on their own. They must
+ * not be logged as errors or raised as Sentry issues — otherwise a 30-second
+ * dead-zone turns into a wall of red ERRORs and a flood of non-actionable
+ * alerts. We recognise them by the OS/runtime messages they surface as.
+ */
+const TRANSIENT_NETWORK_RE =
+  /network request failed|hostname could not be found|internet connection appears to be offline|network connection was lost|could not connect to the server|connection appears to be offline|the request timed out|request timed out|software caused connection abort/i;
+
+function isTransientNetworkError(err: unknown): boolean {
+  const { message } = toMessageAndStack(err);
+  return TRANSIENT_NETWORK_RE.test(message);
+}
+
+/**
+ * Record a non-fatal warning. Used for expected-but-degraded conditions
+ * (chiefly transient offline/network failures). Logs to the device buffer at
+ * `warn` level and leaves a Sentry breadcrumb — but does NOT create a Sentry
+ * issue — so a brief connectivity blip stays out of the error dashboard while
+ * still travelling with the next real error for context.
+ */
+export function reportWarning(
+  err: unknown,
+  context?: Record<string, unknown>,
+): void {
+  try {
+    const { message, stack } = toMessageAndStack(err);
+    // eslint-disable-next-line no-console
+    console.warn("[crashReporting][warn]", message, context ?? {});
+    void store(makeEntry(message, stack, context, "warn"));
+    try {
+      Sentry.addBreadcrumb({ level: "warning", message, data: context });
+    } catch {
+      // never throw from the reporter
+    }
+  } catch {
+    // never throw
+  }
+}
+
 export function reportError(
   err: unknown,
   context?: Record<string, unknown>,
 ): void {
   try {
+    // Transient offline/network failures are expected on mobile and recover on
+    // their own — downgrade them to a warning so they don't masquerade as real
+    // errors in the Diagnostics screen or spam the Sentry dashboard.
+    if (isTransientNetworkError(err)) {
+      reportWarning(err, context);
+      return;
+    }
     const { message, stack } = toMessageAndStack(err);
     // eslint-disable-next-line no-console
     console.error("[crashReporting]", message, context ?? {});

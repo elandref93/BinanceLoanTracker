@@ -22,9 +22,10 @@ import {
 import { fmtAge } from "@/utils/format";
 
 /** Severity label for an entry, tolerant of legacy entries without `level`. */
-function levelOf(e: CrashEntry): "INFO" | "ERROR" | "FATAL" {
+function levelOf(e: CrashEntry): "INFO" | "WARN" | "ERROR" | "FATAL" {
   const level = e.level ?? (e.fatal ? "fatal" : "error");
   if (level === "fatal") return "FATAL";
+  if (level === "warn") return "WARN";
   if (level === "info") return "INFO";
   return "ERROR";
 }
@@ -132,11 +133,11 @@ export default function DiagnosticsScreen() {
           entries.map((e) => {
             const label = levelOf(e);
             const badgeColor =
-              label === "FATAL"
+              label === "FATAL" || label === "ERROR"
                 ? colors.danger
-                : label === "INFO"
-                  ? colors.mutedForeground
-                  : colors.warn;
+                : label === "WARN"
+                  ? colors.warn
+                  : colors.mutedForeground;
             return (
             <View
               key={e.id}

@@ -85,6 +85,7 @@
       "expo-task-manager",
       "@bacons/apple-targets",
       "./plugins/withSyncedExtensionBuildNumbers",
+      "./plugins/withDisableSentryDebugUpload",
       [
         "@sentry/react-native",
         {
@@ -92,8 +93,7 @@
           "project": "react-native",
           "url": "https://sentry.io/"
         }
-      ],
-      "./plugins/withDisableSentryDebugUpload"
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

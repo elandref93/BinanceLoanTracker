@@ -1,4 +1,5 @@
 - [pnpm packageManager pin vs Replit nix pnpm](pnpm-package-manager-pin.md) — pnpm pinned to an older version than the container ships SIGABRT-loops on every invocation; bump the pin to match.
+- [Stale api-client-react .d.ts after codegen](api-client-react-stale-dts.md) — phantom TS2724 "no exported member" in apps; orval updates src but not the committed composite dist consumed via project reference. Rebuild with `tsc --build`.
 - [EAS iOS build gotchas](eas-ios-build-gotchas.md) — Sentry dSYM phase fails the archive (SENTRY_DISABLE_AUTO_UPLOAD can't fix it; neutralize the phase via custom plugin); EAS builds need EAS_NO_VCS=1 in the sandbox.
 - [Session JWT ↔ Azure Easy Auth merge](session-jwt-easy-auth-merge.md) — api-server session JWT is dual-mode RS256/HS256 + self-publishes OIDC/JWKS so Easy Auth validates the app's own token; verify by header alg, accept both issuers.
 - [Azure App Service /home persistence](azure-home-persistence.md) — /home is read-only unless WEBSITES_ENABLE_APP_SERVICE_STORAGE=true; api-server falls back to ephemeral tmp on EACCES.

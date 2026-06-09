@@ -1,4 +1,5 @@
 import { Feather } from "@expo/vector-icons";
+import { useQueryClient } from "@tanstack/react-query";
 import { Redirect, Tabs } from "expo-router";
 import React, { useEffect } from "react";
 import { ActivityIndicator, Platform, StyleSheet, View } from "react-native";
@@ -15,8 +16,18 @@ import {
   setAuthTokenGetter,
   setExtraHeadersGetter,
   setAuthFailureHandler,
+  getListAccountsQueryOptions,
+  getListLoansQueryOptions,
+  getListHoldingsQueryOptions,
+  getListLunoWalletsQueryOptions,
+  getListLunoPendingQueryOptions,
+  getListLunoTransactionsQueryOptions,
+  getGetLunoTickersQueryOptions,
+  getGetPricesQueryOptions,
 } from "@workspace/api-client-react";
 import { notifyAuthFailure } from "@/lib/authEvents";
+import { useCurrency } from "@/context/CurrencyContext";
+import { pairsForAssets, displayAsset } from "@/lib/lunoPricing";
 
 function payloadFor(
   links: Array<{
@@ -43,6 +54,8 @@ export default function TabLayout() {
   const isWeb = Platform.OS === "web";
   const { isLoaded, isSignedIn, getToken, accountsHydrated } = useSession();
   const accountsCount = useStoredAccountsCount();
+  const queryClient = useQueryClient();
+  const { currency } = useCurrency();
 
   useEffect(() => {
     setAuthTokenGetter(() => getToken());
@@ -64,6 +77,76 @@ export default function TabLayout() {
       setAuthFailureHandler(null);
     };
   }, [getToken]);
+
+  // Warm the query caches the Home and Portfolio tabs read, so the data is
+  // already in place the moment the user opens a tab instead of each tab
+  // kicking off its own fetch (and flashing a skeleton) on first visit.
+  // Gated on a hydrated, signed-in session with at least one linked account so
+  // the auth token + X-Binance/Luno-Accounts headers registered above are in
+  // place before these requests fire. prefetchQuery respects staleTime, so the
+  // tabs reuse this data rather than refetching when they mount.
+  useEffect(() => {
+    if (!isSignedIn || !accountsHydrated || !accountsCount) return;
+    let cancelled = false;
+
+    // Lists the Home + Portfolio tabs read directly.
+    void queryClient.prefetchQuery(getListAccountsQueryOptions());
+    void queryClient.prefetchQuery(getListLoansQueryOptions());
+    void queryClient.prefetchQuery(getListHoldingsQueryOptions());
+    void queryClient.prefetchQuery(getListLunoPendingQueryOptions());
+    void queryClient.prefetchQuery(
+      getListLunoTransactionsQueryOptions({ limit: 30 }),
+    );
+
+    // The Portfolio valuation layer (Luno tickers + Binance USD prices) is
+    // parameterised by the assets actually held, so it can only be warmed once
+    // the wallet list is in. Fetch wallets first, derive the same pair/symbol
+    // sets the Portfolio screen computes for the default ("All") view, then
+    // prefetch the quotes so dollar values render without a second round-trip.
+    void (async () => {
+      try {
+        const walletsRes = await queryClient.fetchQuery(
+          getListLunoWalletsQueryOptions(),
+        );
+        if (cancelled) return;
+        const assets = (walletsRes?.wallets ?? []).map((w) => w.asset);
+
+        const pairs = pairsForAssets(assets, currency);
+        if (pairs.length > 0) {
+          void queryClient.prefetchQuery(
+            getGetLunoTickersQueryOptions({ pairs: pairs.join(",") }),
+          );
+        }
+
+        const symbols = Array.from(
+          new Set(
+            assets
+              .map((a) => displayAsset(a))
+              .filter(
+                (s) =>
+                  s !== "ZAR" &&
+                  s !== currency &&
+                  s !== "USDT" &&
+                  s !== "USDC" &&
+                  s !== "USD",
+              ),
+          ),
+        );
+        if (symbols.length > 0) {
+          void queryClient.prefetchQuery(
+            getGetPricesQueryOptions({ assets: symbols.join(",") }),
+          );
+        }
+      } catch {
+        // Best-effort warm-up; if it fails (e.g. offline) the Portfolio screen
+        // will fetch on open as before.
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isSignedIn, accountsHydrated, accountsCount, currency, queryClient]);
 
   if (!isLoaded || accountsCount === null) return null;
   if (!isSignedIn) return <Redirect href="/(auth)/sign-in" />;

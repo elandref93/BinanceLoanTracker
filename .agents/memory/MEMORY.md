@@ -1,4 +1,5 @@
 - [pnpm packageManager pin vs Replit nix pnpm](pnpm-package-manager-pin.md) — pnpm pinned to an older version than the container ships SIGABRT-loops on every invocation; bump the pin to match.
+- [EAS iOS build gotchas](eas-ios-build-gotchas.md) — Sentry dSYM phase fails the archive (SENTRY_DISABLE_AUTO_UPLOAD can't fix it; neutralize the phase via custom plugin); EAS builds need EAS_NO_VCS=1 in the sandbox.
 - [Session JWT ↔ Azure Easy Auth merge](session-jwt-easy-auth-merge.md) — api-server session JWT is dual-mode RS256/HS256 + self-publishes OIDC/JWKS so Easy Auth validates the app's own token; verify by header alg, accept both issuers.
 - [Azure App Service /home persistence](azure-home-persistence.md) — /home is read-only unless WEBSITES_ENABLE_APP_SERVICE_STORAGE=true; api-server falls back to ephemeral tmp on EACCES.
 - [pnpm override duplication for security CVEs](dependency-overrides.md) — overrides live in BOTH package.json and pnpm-workspace.yaml (keep in sync); Dependabot alerts are build-tooling-only transitives, fix with version-scoped pins.

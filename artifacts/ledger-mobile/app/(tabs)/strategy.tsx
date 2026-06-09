@@ -15,7 +15,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { Container, useWideScreen } from "@/components/Container";
+import { Container, useWideScreen, WIDE_CONTENT_WIDTH } from "@/components/Container";
 import { LeverageChart } from "@/components/LeverageChart";
 import { useCurrency } from "@/context/CurrencyContext";
 import { useRiskSettings } from "@/context/RiskSettingsContext";
@@ -422,7 +422,7 @@ export default function StrategyScreen() {
         paddingHorizontal: 16,
       }}
     >
-      <Container>
+      <Container maxWidth={WIDE_CONTENT_WIDTH}>
         {/* Header */}
         <View style={{ marginBottom: 16 }}>
           <Text style={[styles.eyebrow, { color: colors.primary }]}>

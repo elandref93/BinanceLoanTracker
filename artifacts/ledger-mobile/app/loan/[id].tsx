@@ -154,12 +154,23 @@ function fmtDate(d: Date): string {
   });
 }
 
-export default function LoanDetailScreen() {
+export function LoanDetailView({
+  loanId,
+  embedded = false,
+}: {
+  loanId: string;
+  /**
+   * When true the view renders as a plain content block (no ScrollView, no
+   * navigation header) so it can be embedded inside another scroll container,
+   * e.g. the iPad master–detail dashboard pane.
+   */
+  embedded?: boolean;
+}) {
   const colors = useColors();
   const { targetForAccountId, containerForAccountId } = useRiskSettings();
   const router = useRouter();
   const { currency } = useCurrency();
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const id = loanId;
   const loansQ = useListLoans();
   const accountsQ = useListAccounts();
   const interestQ = useListInterest();
@@ -217,6 +228,13 @@ export default function LoanDetailScreen() {
   ]);
 
   if (loansQ.isLoading || accountsQ.isLoading) {
+    if (embedded) {
+      return (
+        <View style={styles.embeddedState}>
+          <Text style={{ color: colors.mutedForeground }}>Loading loan…</Text>
+        </View>
+      );
+    }
     return (
       <>
         <Stack.Screen options={{ title: "Loan" }} />
@@ -226,22 +244,33 @@ export default function LoanDetailScreen() {
   }
 
   if (loansQ.isError || accountsQ.isError) {
+    const errBody = (
+      <ErrorView
+        message={(loansQ.error ?? accountsQ.error)?.message}
+        onRetry={() => {
+          loansQ.refetch();
+          accountsQ.refetch();
+        }}
+      />
+    );
+    if (embedded) return <View style={styles.embeddedState}>{errBody}</View>;
     return (
       <View style={[styles.center, { backgroundColor: colors.background }]}>
         <Stack.Screen options={{ title: "Loan" }} />
-        <ErrorView
-          message={(loansQ.error ?? accountsQ.error)?.message}
-          onRetry={() => {
-            loansQ.refetch();
-            accountsQ.refetch();
-          }}
-        />
+        {errBody}
       </View>
     );
   }
 
   const loan = loansQ.data?.loans.find((l) => l.id === id);
   if (!loan) {
+    if (embedded) {
+      return (
+        <View style={styles.embeddedState}>
+          <Text style={{ color: colors.mutedForeground }}>Loan not found</Text>
+        </View>
+      );
+    }
     return (
       <View style={[styles.center, { backgroundColor: colors.background }]}>
         <Stack.Screen options={{ title: "Loan" }} />
@@ -358,15 +387,8 @@ export default function LoanDetailScreen() {
     ruleAppliesTo(r, loan.id, loanContainer?.id),
   );
 
-  return (
-    <ScrollView
-      style={{ backgroundColor: colors.background }}
-      contentContainerStyle={styles.wrap}
-    >
-      <Stack.Screen
-        options={{ title: `${loan.collateral.asset} · ${account?.name ?? ""}` }}
-      />
-      <Container style={{ gap: 14 }}>
+  const content = (
+    <>
       <View style={styles.head}>
         <Text style={[styles.asset, { color: colors.foreground }]}>
           {loan.collateral.asset}/{loan.asset}
@@ -966,13 +988,35 @@ export default function LoanDetailScreen() {
       <Text style={[styles.foot, { color: colors.mutedForeground }]}>
         Read-only · adjust position in the Binance app
       </Text>
-      </Container>
+    </>
+  );
+
+  if (embedded) {
+    return <View style={styles.embedded}>{content}</View>;
+  }
+
+  return (
+    <ScrollView
+      style={{ backgroundColor: colors.background }}
+      contentContainerStyle={styles.wrap}
+    >
+      <Stack.Screen
+        options={{ title: `${loan.collateral.asset} · ${account?.name ?? ""}` }}
+      />
+      <Container style={{ gap: 14 }}>{content}</Container>
     </ScrollView>
   );
 }
 
+export default function LoanDetailScreen() {
+  const { id } = useLocalSearchParams<{ id: string }>();
+  return <LoanDetailView loanId={id ?? ""} />;
+}
+
 const styles = StyleSheet.create({
   wrap: { padding: 16, gap: 14, paddingBottom: 40 },
+  embedded: { gap: 14 },
+  embeddedState: { paddingVertical: 24, alignItems: "center" },
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
   head: {
     flexDirection: "row",

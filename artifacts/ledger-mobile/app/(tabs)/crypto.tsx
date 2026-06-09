@@ -13,7 +13,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AccountChip } from "@/components/AccountChip";
 import { AssetIcon } from "@/components/AssetIcon";
-import { Container } from "@/components/Container";
+import { Container, WIDE_CONTENT_WIDTH } from "@/components/Container";
 import { DonutChart, type DonutSegment } from "@/components/DonutChart";
 import { ExchangeLogo } from "@/components/ExchangeLogo";
 import { ErrorView } from "@/components/ErrorView";
@@ -370,7 +370,7 @@ export default function CryptoScreen() {
         />
       }
     >
-      <Container style={{ gap: 16 }}>
+      <Container maxWidth={WIDE_CONTENT_WIDTH} style={{ gap: 16 }}>
         <Text style={[styles.title, { color: colors.foreground }]}>
           Portfolio
         </Text>

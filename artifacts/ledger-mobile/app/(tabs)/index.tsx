@@ -7,9 +7,12 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  useWindowDimensions,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+
+import { LoanDetailView } from "@/app/loan/[id]";
 
 import { checkAndNotifyLoans } from "@/lib/alerts";
 import { haptic } from "@/lib/haptics";
@@ -33,7 +36,7 @@ import {
 } from "@/lib/widgetSnapshot";
 import { AccountChip } from "@/components/AccountChip";
 import { CollateralSimModal } from "@/components/CollateralSimModal";
-import { Container } from "@/components/Container";
+import { Container, Grid, WIDE_CONTENT_WIDTH } from "@/components/Container";
 import { ErrorView } from "@/components/ErrorView";
 import { LoanRow } from "@/components/LoanRow";
 import { LtvHistoryChart } from "@/components/LtvHistoryChart";
@@ -64,6 +67,13 @@ import {
 
 import { pairsForAssets, quoteWalletInFiat } from "@/lib/lunoPricing";
 
+// Below this width the dashboard keeps the single-column, push-to-detail phone
+// layout. At/above it (iPad and large windows) it switches to a two-pane
+// master–detail: summary + loan list on the left, the selected loan on the
+// right. Tuned so the list (≈360) + a usable detail pane both fit.
+const MASTER_DETAIL_MIN_WIDTH = 900;
+const MASTER_DETAIL_MAX_WIDTH = 1240;
+
 export default function DashboardScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
@@ -75,6 +85,11 @@ export default function DashboardScreen() {
   // combined "All" view across every account.
   const [filter, setFilter] = useState<string | null>(null);
   const [simOpen, setSimOpen] = useState(false);
+  // Selected loan for the iPad master–detail pane (null = fall back to the
+  // closest-to-liquidation loan).
+  const [selectedLoanId, setSelectedLoanId] = useState<string | null>(null);
+  const { width: windowWidth } = useWindowDimensions();
+  const masterDetail = windowWidth >= MASTER_DETAIL_MIN_WIDTH;
 
   const accountsQ = useListAccounts();
   const loansQ = useListLoans();
@@ -194,6 +209,17 @@ export default function DashboardScreen() {
     ? accounts.find((a) => a.id === closest.accountId)?.name ?? null
     : null;
 
+  // Which loan the master–detail pane shows. Honour an explicit selection only
+  // while it still exists in the current (possibly filtered) list; otherwise
+  // fall back to the closest-to-liquidation loan, then the first one.
+  const selectedExists =
+    selectedLoanId != null && loans.some((l) => l.id === selectedLoanId);
+  const effectiveSelectedId = masterDetail
+    ? selectedExists
+      ? selectedLoanId
+      : closest?.id ?? loans[0]?.id ?? null
+    : null;
+
   // Aggregate signed distance to target across all loans. With the
   // corrected `headroomToTarget` semantics, POSITIVE values are real
   // headroom and NEGATIVE values are shortfall. Surface the worse of
@@ -310,6 +336,363 @@ export default function DashboardScreen() {
     );
   }
 
+  // ── iPad / large-window master–detail ──────────────────────────────────
+  // Summary + selectable loan list on the left, the selected loan's full
+  // breakdown on the right. The whole thing lives in one ScrollView so it
+  // scrolls as a single page (no fragile nested scroll views). Phones and
+  // narrow split-view widths fall through to the single-column layout below.
+  if (masterDetail) {
+    return (
+      <ScrollView
+        style={{ backgroundColor: colors.background }}
+        contentContainerStyle={{
+          paddingTop: insets.top + 16,
+          paddingBottom: insets.bottom + 100,
+          paddingHorizontal: 16,
+          gap: 16,
+        }}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={colors.primary}
+          />
+        }
+      >
+        <Container maxWidth={MASTER_DETAIL_MAX_WIDTH} style={{ gap: 16 }}>
+          {showingCached && cachedAt ? (
+            <View
+              style={{
+                paddingVertical: 8,
+                paddingHorizontal: 12,
+                borderRadius: colors.radius,
+                backgroundColor: colors.card,
+                borderWidth: 1,
+                borderColor: colors.border,
+              }}
+            >
+              <Text
+                style={{
+                  color: colors.mutedForeground,
+                  fontFamily: "Inter_500Medium",
+                  fontSize: 12,
+                }}
+              >
+                Showing offline data ({cacheAgeLabel(cachedAt)}). Pull to refresh.
+              </Text>
+            </View>
+          ) : null}
+
+          <View style={styles.header}>
+            <View>
+              <Text style={[styles.title, { color: colors.foreground }]}>
+                Dashboard
+              </Text>
+              <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>
+                Across {containers.length} account
+                {containers.length === 1 ? "" : "s"}
+              </Text>
+            </View>
+            <Pressable
+              onPress={() => {
+                haptic.tap();
+                toggle();
+              }}
+              style={({ pressed }) => [
+                styles.fxBtn,
+                {
+                  backgroundColor: colors.card,
+                  borderColor: colors.border,
+                  borderRadius: colors.radius,
+                  opacity: pressed ? 0.7 : 1,
+                },
+              ]}
+            >
+              <Text style={[styles.fxText, { color: colors.foreground }]}>
+                {currency}
+              </Text>
+              <Feather name="repeat" size={12} color={colors.mutedForeground} />
+            </Pressable>
+          </View>
+
+          <View style={styles.masterDetail}>
+            <View style={styles.masterPane}>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.chipRow}
+              >
+                <AccountChip
+                  label="All"
+                  hint={fmtPct(aggLtv)}
+                  selected={filter === null}
+                  onPress={() => {
+                    haptic.tap();
+                    setFilter(null);
+                  }}
+                />
+                {containers.map((c) => (
+                  <AccountChip
+                    key={c.id}
+                    label={c.name}
+                    hint={`LTV ${fmtPct(containerLtv.get(c.id) ?? 0)}`}
+                    selected={filter === c.id}
+                    onPress={() => {
+                      haptic.tap();
+                      setFilter(c.id);
+                    }}
+                  />
+                ))}
+              </ScrollView>
+
+              <View
+                style={[
+                  styles.hero,
+                  {
+                    backgroundColor: colors.card,
+                    borderColor: colors.border,
+                    borderRadius: colors.radius,
+                  },
+                ]}
+              >
+                <Text
+                  style={[styles.heroLabel, { color: colors.mutedForeground }]}
+                >
+                  AGGREGATE LTV
+                </Text>
+                <Text
+                  style={[
+                    styles.heroValue,
+                    {
+                      color:
+                        status === null
+                          ? colors.foreground
+                          : status === "ok"
+                            ? colors.ok
+                            : status === "warn"
+                              ? colors.warn
+                              : colors.danger,
+                    },
+                  ]}
+                >
+                  {fmtPct(displayAggLtv)}
+                </Text>
+                {status !== null ? (
+                  <Pill status={status} label={statusLabel(status)} />
+                ) : null}
+                <View style={styles.heroFooter}>
+                  <Text
+                    style={[styles.heroSub, { color: colors.mutedForeground }]}
+                  >
+                    Debt {fmtMoney(displayDebtUsd, currency, { whole: true })}
+                  </Text>
+                  <Text
+                    style={[styles.heroSub, { color: colors.mutedForeground }]}
+                  >
+                    Collateral{" "}
+                    {fmtMoney(displayColUsd, currency, { whole: true })}
+                  </Text>
+                </View>
+              </View>
+
+              <LtvHistoryChart
+                currentLtv={displayAggLtv}
+                targetLtv={activeTarget ?? undefined}
+              />
+
+              {closest ? (
+                <Pressable
+                  onPress={() => {
+                    haptic.tap();
+                    setSelectedLoanId(closest.id);
+                  }}
+                  style={({ pressed }) => [
+                    styles.distance,
+                    {
+                      backgroundColor: colors.card,
+                      borderColor: colors.border,
+                      borderRadius: colors.radius,
+                      opacity: pressed ? 0.85 : 1,
+                    },
+                  ]}
+                >
+                  <View style={styles.distanceHead}>
+                    <Text
+                      style={[
+                        styles.tileLabel,
+                        { color: colors.mutedForeground },
+                      ]}
+                    >
+                      CLOSEST TO LIQUIDATION
+                    </Text>
+                    <View style={{ alignItems: "flex-end" }}>
+                      <Text
+                        style={[styles.distAsset, { color: colors.foreground }]}
+                      >
+                        {closest.collateral.asset}
+                      </Text>
+                      {closestAccountName ? (
+                        <Text
+                          style={[
+                            styles.distAccount,
+                            { color: colors.mutedForeground },
+                          ]}
+                        >
+                          {closestAccountName}
+                        </Text>
+                      ) : null}
+                    </View>
+                  </View>
+                  <Text style={[styles.distValue, { color: colors.danger }]}>
+                    {fmtPct(priceDropPctTo(closest, LIQ_LTV))}
+                  </Text>
+                  <View style={styles.distFooter}>
+                    <Text
+                      style={[styles.distHint, { color: colors.mutedForeground }]}
+                    >
+                      price drop until liquidation
+                    </Text>
+                    <Text
+                      style={[styles.distHint, { color: colors.mutedForeground }]}
+                    >
+                      at {fmtMoney(priceAtLtv(closest, LIQ_LTV), currency)}
+                    </Text>
+                  </View>
+                </Pressable>
+              ) : null}
+
+              <View style={styles.tileRow}>
+                <Tile
+                  label="Loans"
+                  value={String(loans.length)}
+                  style={{ flex: 1 }}
+                />
+                {activeTarget != null ? (
+                  <Tile
+                    label={
+                      overTarget
+                        ? `Over ${activeTarget}%`
+                        : `Headroom to ${activeTarget}%`
+                    }
+                    value={fmtMoney(
+                      overTarget ? totalShortfall : totalHeadroom,
+                      currency,
+                      { whole: true },
+                    )}
+                    hint={overTarget ? "add collateral" : "buffer"}
+                    tone={overTarget ? "warn" : "ok"}
+                    style={{ flex: 1 }}
+                    onInfo={() => {
+                      haptic.tap();
+                      setSimOpen(true);
+                    }}
+                  />
+                ) : (
+                  <Tile
+                    label="Collateral"
+                    value={fmtMoney(totalColUsd, currency, { whole: true })}
+                    hint="total value"
+                    style={{ flex: 1 }}
+                  />
+                )}
+              </View>
+
+              <LunoReadyToDeployTile currency={currency} />
+
+              <View style={styles.section}>
+                <Text
+                  style={[styles.sectionTitle, { color: colors.foreground }]}
+                >
+                  Loans
+                </Text>
+                {loans.length === 0 ? (
+                  <View
+                    style={[
+                      styles.emptyCard,
+                      {
+                        borderColor: colors.border,
+                        borderRadius: colors.radius,
+                      },
+                    ]}
+                  >
+                    <Text
+                      style={[styles.emptyTitle, { color: colors.foreground }]}
+                    >
+                      No open loans
+                    </Text>
+                    <Text
+                      style={[styles.empty, { color: colors.mutedForeground }]}
+                    >
+                      When you open a loan on Binance it will show up here on
+                      next refresh.
+                    </Text>
+                  </View>
+                ) : (
+                  <View style={{ gap: 10 }}>
+                    {loans.map((l) => {
+                      const acc = accounts.find((a) => a.id === l.accountId);
+                      return (
+                        <LoanRow
+                          key={l.id}
+                          loan={l}
+                          accountName={acc?.name ?? "—"}
+                          selected={l.id === effectiveSelectedId}
+                          onPress={() => {
+                            haptic.tap();
+                            setSelectedLoanId(l.id);
+                          }}
+                        />
+                      );
+                    })}
+                  </View>
+                )}
+              </View>
+            </View>
+
+            <View style={styles.detailPane}>
+              {effectiveSelectedId ? (
+                <LoanDetailView loanId={effectiveSelectedId} embedded />
+              ) : (
+                <View
+                  style={[
+                    styles.detailPlaceholder,
+                    {
+                      borderColor: colors.border,
+                      borderRadius: colors.radius,
+                    },
+                  ]}
+                >
+                  <Feather
+                    name="bar-chart-2"
+                    size={22}
+                    color={colors.mutedForeground}
+                  />
+                  <Text style={[styles.empty, { color: colors.mutedForeground }]}>
+                    Select a loan to see its full breakdown here.
+                  </Text>
+                </View>
+              )}
+            </View>
+          </View>
+
+          <CollateralSimModal
+            visible={simOpen}
+            onClose={() => setSimOpen(false)}
+            currency={currency}
+            usdToZar={usdToZar}
+            totalDebtUsd={totalDebtUsd}
+            totalColUsd={totalColUsd}
+            currentAggLtv={aggLtv}
+            activeTarget={activeTarget}
+            shortfallUsd={totalShortfall}
+            closest={closest}
+            closestAccountName={closestAccountName}
+          />
+        </Container>
+      </ScrollView>
+    );
+  }
+
   return (
     <ScrollView
       style={{ backgroundColor: colors.background }}
@@ -327,7 +710,7 @@ export default function DashboardScreen() {
         />
       }
     >
-      <Container style={{ gap: 16 }}>
+      <Container maxWidth={WIDE_CONTENT_WIDTH} style={{ gap: 16 }}>
       {showingCached && cachedAt ? (
         <View
           style={{
@@ -409,53 +792,55 @@ export default function DashboardScreen() {
         ))}
       </ScrollView>
 
-      <View
-        style={[
-          styles.hero,
-          {
-            backgroundColor: colors.card,
-            borderColor: colors.border,
-            borderRadius: colors.radius,
-          },
-        ]}
-      >
-        <Text style={[styles.heroLabel, { color: colors.mutedForeground }]}>
-          AGGREGATE LTV
-        </Text>
-        <Text
+      <Grid minColumnWidth={380} gap={16}>
+        <View
           style={[
-            styles.heroValue,
+            styles.hero,
             {
-              color:
-                status === null
-                  ? colors.foreground
-                  : status === "ok"
-                    ? colors.ok
-                    : status === "warn"
-                      ? colors.warn
-                      : colors.danger,
+              backgroundColor: colors.card,
+              borderColor: colors.border,
+              borderRadius: colors.radius,
             },
           ]}
         >
-          {fmtPct(displayAggLtv)}
-        </Text>
-        {status !== null ? (
-          <Pill status={status} label={statusLabel(status)} />
-        ) : null}
-        <View style={styles.heroFooter}>
-          <Text style={[styles.heroSub, { color: colors.mutedForeground }]}>
-            Debt {fmtMoney(displayDebtUsd, currency, { whole: true })}
+          <Text style={[styles.heroLabel, { color: colors.mutedForeground }]}>
+            AGGREGATE LTV
           </Text>
-          <Text style={[styles.heroSub, { color: colors.mutedForeground }]}>
-            Collateral {fmtMoney(displayColUsd, currency, { whole: true })}
+          <Text
+            style={[
+              styles.heroValue,
+              {
+                color:
+                  status === null
+                    ? colors.foreground
+                    : status === "ok"
+                      ? colors.ok
+                      : status === "warn"
+                        ? colors.warn
+                        : colors.danger,
+              },
+            ]}
+          >
+            {fmtPct(displayAggLtv)}
           </Text>
+          {status !== null ? (
+            <Pill status={status} label={statusLabel(status)} />
+          ) : null}
+          <View style={styles.heroFooter}>
+            <Text style={[styles.heroSub, { color: colors.mutedForeground }]}>
+              Debt {fmtMoney(displayDebtUsd, currency, { whole: true })}
+            </Text>
+            <Text style={[styles.heroSub, { color: colors.mutedForeground }]}>
+              Collateral {fmtMoney(displayColUsd, currency, { whole: true })}
+            </Text>
+          </View>
         </View>
-      </View>
 
-      <LtvHistoryChart
-        currentLtv={displayAggLtv}
-        targetLtv={activeTarget ?? undefined}
-      />
+        <LtvHistoryChart
+          currentLtv={displayAggLtv}
+          targetLtv={activeTarget ?? undefined}
+        />
+      </Grid>
 
       {closest ? (
         <Pressable
@@ -559,29 +944,30 @@ export default function DashboardScreen() {
         <Text style={[styles.sectionTitle, { color: colors.foreground }]}>
           Loans
         </Text>
-        <View style={{ gap: 10 }}>
-          {loans.map((l) => {
-            const acc = accounts.find((a) => a.id === l.accountId);
-            return (
-              <LoanRow
-                key={l.id}
-                loan={l}
-                accountName={acc?.name ?? "—"}
-                onPress={() => router.push(`/loan/${l.id}`)}
-              />
-            );
-          })}
-          {loans.length === 0 ? (
-            <View style={[styles.emptyCard, { borderColor: colors.border, borderRadius: colors.radius }]}>
-              <Text style={[styles.emptyTitle, { color: colors.foreground }]}>
-                No open loans
-              </Text>
-              <Text style={[styles.empty, { color: colors.mutedForeground }]}>
-                When you open a loan on Binance it will show up here on next refresh.
-              </Text>
-            </View>
-          ) : null}
-        </View>
+        {loans.length === 0 ? (
+          <View style={[styles.emptyCard, { borderColor: colors.border, borderRadius: colors.radius }]}>
+            <Text style={[styles.emptyTitle, { color: colors.foreground }]}>
+              No open loans
+            </Text>
+            <Text style={[styles.empty, { color: colors.mutedForeground }]}>
+              When you open a loan on Binance it will show up here on next refresh.
+            </Text>
+          </View>
+        ) : (
+          <Grid minColumnWidth={340} gap={10}>
+            {loans.map((l) => {
+              const acc = accounts.find((a) => a.id === l.accountId);
+              return (
+                <LoanRow
+                  key={l.id}
+                  loan={l}
+                  accountName={acc?.name ?? "—"}
+                  onPress={() => router.push(`/loan/${l.id}`)}
+                />
+              );
+            })}
+          </Grid>
+        )}
       </View>
       </Container>
     </ScrollView>
@@ -739,4 +1125,13 @@ const styles = StyleSheet.create({
   empty: { textAlign: "center", fontSize: 12, fontFamily: "Inter_400Regular", marginTop: 6 },
   emptyCard: { padding: 24, borderWidth: StyleSheet.hairlineWidth, alignItems: "center" },
   emptyTitle: { fontSize: 14, fontFamily: "Inter_600SemiBold" },
+  masterDetail: { flexDirection: "row", gap: 20, alignItems: "flex-start" },
+  masterPane: { width: 360, gap: 16 },
+  detailPane: { flex: 1 },
+  detailPlaceholder: {
+    padding: 32,
+    borderWidth: StyleSheet.hairlineWidth,
+    alignItems: "center",
+    gap: 10,
+  },
 });

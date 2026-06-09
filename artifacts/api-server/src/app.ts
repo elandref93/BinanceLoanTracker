@@ -143,12 +143,10 @@ app.use("/api", router);
 // requestHandler above — no separate Sentry error middleware needed.
 app.use(
   (err: unknown, req: Request, res: Response, _next: NextFunction): void => {
-    logger.error({ err, path: req.path }, "unhandled route error");
-    if (res.headersSent) return;
-    // Upstream middleware (e.g. body-parser on a malformed JSON body) attaches
-    // a client-error status — that's a 400, not a server fault. Honor 4xx codes
-    // so bad requests don't masquerade as 500s. We never echo `err.message`:
-    // it can contain raw request content, so the response stays generic.
+    // Derive the status FIRST so we can log at the right level. Upstream
+    // middleware (e.g. body-parser on a malformed JSON body, an oversized
+    // payload, or a rejected CORS origin) attaches a client-error status —
+    // that's a 4xx, not a server fault.
     const raw =
       (err as { status?: unknown; statusCode?: unknown } | null) ?? {};
     const status =
@@ -157,7 +155,24 @@ app.use(
         : typeof raw.statusCode === "number"
           ? raw.statusCode
           : 500;
-    if (status >= 400 && status < 500) {
+    const isClientError = status >= 400 && status < 500;
+
+    // The logger mirrors `error`/`fatal` into Sentry (see lib/logger.ts). A
+    // malformed request body is client-driven garbage, not a code defect, so
+    // logging it at `error` floods Sentry with non-actionable issues (e.g.
+    // "SyntaxError: Expected property name ... in JSON"). Log client errors at
+    // `warn` — they stay visible in the Azure log stream but never create a
+    // Sentry issue. Genuine 5xx server faults still log at `error` → Sentry.
+    if (isClientError) {
+      logger.warn({ err, path: req.path, status }, "client request error");
+    } else {
+      logger.error({ err, path: req.path, status }, "unhandled route error");
+    }
+
+    if (res.headersSent) return;
+    // We never echo `err.message`: it can contain raw request content, so the
+    // response stays generic.
+    if (isClientError) {
       res.status(status).json({ error: "Bad request" });
       return;
     }

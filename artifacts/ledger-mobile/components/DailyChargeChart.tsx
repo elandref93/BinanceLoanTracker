@@ -199,7 +199,9 @@ export function DailyChargeChart({
     </View>
   );
 
-  const inlineW = 320;
+  // Measure the available width so the inline chart fills the card on wider
+  // screens (iPad / large windows) instead of being pinned to a phone width.
+  const [inlineW, setInlineW] = useState(320);
 
   return (
     <View
@@ -248,15 +250,23 @@ export function DailyChargeChart({
       )}
 
       {hasRealData && ranged.length > 0 ? (
-        <Bars
-          data={ranged}
-          width={inlineW}
-          height={130}
-          currency={currency}
-          selected={selected}
-          onSelect={setSelected}
-          showLabels
-        />
+        <View
+          style={{ width: "100%" }}
+          onLayout={(e) => {
+            const w = e.nativeEvent.layout.width;
+            if (w > 0 && Math.abs(w - inlineW) > 0.5) setInlineW(w);
+          }}
+        >
+          <Bars
+            data={ranged}
+            width={inlineW}
+            height={130}
+            currency={currency}
+            selected={selected}
+            onSelect={setSelected}
+            showLabels
+          />
+        </View>
       ) : (
         <Text style={[styles.empty, { color: colors.mutedForeground }]}>
           Building daily-charge history — bars appear as data accumulates.

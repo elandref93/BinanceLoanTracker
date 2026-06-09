@@ -9,7 +9,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { Container } from "@/components/Container";
+import { Container, Grid, WIDE_CONTENT_WIDTH } from "@/components/Container";
 import { DailyChargeChart } from "@/components/DailyChargeChart";
 import { ErrorView } from "@/components/ErrorView";
 import { LtvHistoryChart } from "@/components/LtvHistoryChart";
@@ -160,7 +160,7 @@ export default function HistoryScreen() {
         gap: 16,
       }}
     >
-      <Container style={{ gap: 16 }}>
+      <Container maxWidth={WIDE_CONTENT_WIDTH} style={{ gap: 16 }}>
       <View>
         <Text style={[styles.title, { color: colors.foreground }]}>
           Interest
@@ -206,6 +206,7 @@ export default function HistoryScreen() {
         hasRealData={chartHasRealData}
       />
 
+      <Grid minColumnWidth={380} gap={16}>
       <View
         style={[
           styles.card,
@@ -280,7 +281,6 @@ export default function HistoryScreen() {
                   <View style={{ marginTop: 6 }}>
                     <Sparkline
                       values={aprs}
-                      width={300}
                       height={28}
                       reference={b.avg30dApr}
                     />
@@ -332,6 +332,7 @@ export default function HistoryScreen() {
           ))
         )}
       </View>
+      </Grid>
       </Container>
     </ScrollView>
   );

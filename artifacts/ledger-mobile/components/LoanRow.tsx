@@ -12,9 +12,11 @@ interface Props {
   loan: Loan;
   accountName: string;
   onPress: () => void;
+  /** Highlights the row with the accent border (iPad master–detail selection). */
+  selected?: boolean;
 }
 
-export function LoanRow({ loan, accountName, onPress }: Props) {
+export function LoanRow({ loan, accountName, onPress, selected = false }: Props) {
   const colors = useColors();
   const { currency } = useCurrency();
   const { targetForAccountId } = useRiskSettings();
@@ -34,7 +36,8 @@ export function LoanRow({ loan, accountName, onPress }: Props) {
         styles.wrap,
         {
           backgroundColor: colors.card,
-          borderColor: colors.border,
+          borderColor: selected ? colors.primary : colors.border,
+          borderWidth: selected ? 1 : StyleSheet.hairlineWidth,
           borderRadius: colors.radius,
           opacity: pressed ? 0.7 : 1,
         },

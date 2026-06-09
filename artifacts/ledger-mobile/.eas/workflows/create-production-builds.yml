@@ -1,7 +1,65 @@
 name: Create Production Builds
 
+# ---------------------------------------------------------------------------
+# Fingerprint-aware iOS release pipeline.
+#
+# WHY: native EAS builds intermittently die with EAS_BUILD_UNKNOWN_FASTLANE_ERROR
+# (transient Apple code-signing / archive flakiness — see the signing config
+# plugins for details). The single most effective way to reduce breakage is to
+# run the flaky native build LESS OFTEN: only when the native fingerprint
+# actually changes. JS-only changes never need a TestFlight build — they ship
+# over-the-air via `.github/workflows/publish-update.yml`.
+#
+# This pairs with `runtimeVersion: { policy: "fingerprint" }` in app.json: the
+# fingerprint that gates a rebuild here is the same one that gates OTA delivery,
+# so the two pipelines can never disagree about what counts as a native change.
+#
+# FLOW:
+#   fingerprint       -> hash the native project (ios_fingerprint_hash)
+#   get_ios_build     -> is there already a STORE build for this fingerprint?
+#   build_ios         -> only if NO matching build exists (native truly changed)
+#   submit_ios_build  -> push the fresh build to TestFlight
+#
+# When the fingerprint is unchanged, build_ios is skipped (so submit_ios_build
+# skips too) and nothing is rebuilt — the existing TestFlight binary stays valid
+# and any JS changes arrive via OTA.
+#
+# OTA updates are deliberately NOT published from this workflow: publish-update.yml
+# is the single source of OTA truth, so adding an `update` job here would
+# double-publish. Trigger is intentionally left external (Expo GitHub App /
+# `eas workflow:run`) to preserve current behaviour.
+# ---------------------------------------------------------------------------
+
 jobs:
+  fingerprint:
+    name: Fingerprint
+    type: fingerprint
+    # Match the build profile's environment so the hash reflects the same
+    # config/env the production build is compiled with.
+    environment: production
+
+  get_ios_build:
+    name: Check for existing iOS build
+    needs: [fingerprint]
+    type: get-build
+    params:
+      platform: ios
+      profile: production
+      fingerprint_hash: ${{ needs.fingerprint.outputs.ios_fingerprint_hash }}
+
   build_ios:
+    name: Build iOS
+    needs: [get_ios_build]
+    # Only build when no store build already exists for this fingerprint.
+    if: ${{ !needs.get_ios_build.outputs.build_id }}
     type: build
     params:
       platform: ios
+      profile: production
+
+  submit_ios_build:
+    name: Submit to TestFlight
+    needs: [build_ios]
+    type: submit
+    params:
+      build_id: ${{ needs.build_ios.outputs.build_id }}

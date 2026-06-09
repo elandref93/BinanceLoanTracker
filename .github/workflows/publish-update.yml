@@ -22,9 +22,13 @@ name: Publish OTA Update
 # auto-update integration once this workflow is in place — otherwise both will
 # publish an update for every push.
 #
-# The runtimeVersion policy is `appVersion`, so an OTA update only reaches
-# builds whose native version matches. A native/SDK change still needs a fresh
-# TestFlight build (see `pnpm --filter @workspace/ledger-mobile run tf:build`).
+# The runtimeVersion policy is `fingerprint`, so an OTA update only reaches
+# builds whose native fingerprint matches the one it was published against. A
+# native/SDK/config change produces a new fingerprint, so the update is NOT
+# served to older binaries that lack the matching native code — it waits for a
+# fresh TestFlight build with the same fingerprint (see
+# `pnpm --filter @workspace/ledger-mobile run tf:build`). This is what prevents
+# "Cannot find native module" startup crashes from mismatched OTA bundles.
 # ---------------------------------------------------------------------------
 
 on:
@@ -61,7 +65,10 @@ jobs:
       - name: Set up EAS
         uses: expo/expo-github-action@v8
         with:
-          eas-version: latest
+          # Pinned (not `latest`) so OTA publishing is reproducible and can't
+          # break from an unattended EAS CLI release. Keep in sync with
+          # eas.json `cli.version` and the eas-cli devDependency.
+          eas-version: 20.1.0
           token: ${{ secrets.EXPO_TOKEN }}
 
       # Publish to the production channel. The commit message is passed via an

@@ -1,0 +1,1474 @@
+Creating Gymfile
+Gymfile created
+Successfully loaded '/Users/expo/workingdir/build/artifacts/ledger-mobile/ios/Gymfile' 📄
++---------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+|                                                                  Detected Values from './Gymfile'                                                                   |
++-----------------------+---------------------------------------------------------------------------------------------------------------------------------------------+
+| suppress_xcode_output | true                                                                                                                                        |
+| clean                 | false                                                                                                                                       |
+| scheme                | Ledger                                                                                                                                      |
+| configuration         | Release                                                                                                                                     |
+| export_options        |                                                                                                                                             |
+| export_xcargs         | OTHER_CODE_SIGN_FLAGS="--keychain /var/folders/5_/4knlryn57n39p2c_jw8567z00000gn/T/eas-build-224594b4-d894-4a9e-82ef-7453d25112b8.keychain" |
+| disable_xcpretty      | true                                                                                                                                        |
+| buildlog_path         | /Users/expo/workingdir/logs                                                                                                                 |
+| derived_data_path     | ./build                                                                                                                                     |
+| result_bundle         | true                                                                                                                                        |
+| result_bundle_path    | /var/folders/5_/4knlryn57n39p2c_jw8567z00000gn/T/result-bundle-1780980012601.xcresult                                                       |
+| output_directory      | ./build                                                                                                                                     |
++-----------------------+---------------------------------------------------------------------------------------------------------------------------------------------+
+Resolving Swift Package Manager dependencies...
+$ xcodebuild -resolvePackageDependencies -workspace ./Ledger.xcworkspace -scheme Ledger -configuration Release -derivedDataPath ./build
+▸ Command line invocation:
+▸     /Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild -resolvePackageDependencies -workspace ./Ledger.xcworkspace -scheme Ledger -configuration Release -derivedDataPath ./build
+▸ resolved source packages:
+$ xcodebuild -showBuildSettings -workspace ./Ledger.xcworkspace -scheme Ledger -configuration Release -derivedDataPath ./build 2>&1
+Detected provisioning profile mapping: {:"com.ubuntu.life.ledger"=>"b209af49-92dd-4e89-a9f5-8d8f8275d2e4", :"com.ubuntu.life.ledger.watchkitapp"=>"4713ce8f-062c-474c-b575-32e392531e65", :"com.ubuntu.life.ledger.watchkitapp.widget"=>"f2e4fff0-9916-4de0-aa96-ce694b53fd40", :"com.ubuntu.life.ledger.widget"=>"7d947785-54de-4817-bc31-27e5bc2dd581"}
+
++-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+|                                                                                                   Summary for gym 2.228.0                                                                                                   |
++-------------------------------------------------------------------------------+---------------------------------------------------------------------------------------------------------------------------------------------+
+| workspace                                                                     | ./Ledger.xcworkspace                                                                                                                        |
+| scheme                                                                        | Ledger                                                                                                                                      |
+| clean                                                                         | false                                                                                                                                       |
+| output_directory                                                              | ./build                                                                                                                                     |
+| output_name                                                                   | Ledger                                                                                                                                      |
+| configuration                                                                 | Release                                                                                                                                     |
+| silent                                                                        | false                                                                                                                                       |
+| skip_package_ipa                                                              | false                                                                                                                                       |
+| skip_package_pkg                                                              | false                                                                                                                                       |
+| export_options.method                                                         | app-store                                                                                                                                   |
+| export_options.provisioningProfiles.com.ubuntu.life.ledger                    | b209af49-92dd-4e89-a9f5-8d8f8275d2e4                                                                                                        |
+| export_options.provisioningProfiles.com.ubuntu.life.ledger.watchkitapp        | 4713ce8f-062c-474c-b575-32e392531e65                                                                                                        |
+| export_options.provisioningProfiles.com.ubuntu.life.ledger.watchkitapp.widget | f2e4fff0-9916-4de0-aa96-ce694b53fd40                                                                                                        |
+| export_options.provisioningProfiles.com.ubuntu.life.ledger.widget             | 7d947785-54de-4817-bc31-27e5bc2dd581                                                                                                        |
+| export_xcargs                                                                 | OTHER_CODE_SIGN_FLAGS="--keychain /var/folders/5_/4knlryn57n39p2c_jw8567z00000gn/T/eas-build-224594b4-d894-4a9e-82ef-7453d25112b8.keychain" |
+| build_path                                                                    | /Users/expo/Library/Developer/Xcode/Archives/2026-06-08                                                                                     |
+| derived_data_path                                                             | ./build                                                                                                                                     |
+| result_bundle                                                                 | true                                                                                                                                        |
+| result_bundle_path                                                            | /var/folders/5_/4knlryn57n39p2c_jw8567z00000gn/T/result-bundle-1780980012601.xcresult                                                       |
+| buildlog_path                                                                 | /Users/expo/workingdir/logs                                                                                                                 |
+| destination                                                                   | generic/platform=iOS                                                                                                                        |
+| suppress_xcode_output                                                         | true                                                                                                                                        |
+| xcodebuild_formatter                                                          | xcpretty                                                                                                                                    |
+| build_timing_summary                                                          | false                                                                                                                                       |
+| disable_xcpretty                                                              | true                                                                                                                                        |
+| skip_profile_detection                                                        | false                                                                                                                                       |
+| xcodebuild_command                                                            | xcodebuild                                                                                                                                  |
+| skip_package_dependencies_resolution                                          | false                                                                                                                                       |
+| disable_package_automatic_updates                                             | false                                                                                                                                       |
+| use_system_scm                                                                | false                                                                                                                                       |
+| xcode_path                                                                    | /Applications/Xcode.app                                                                                                                     |
++-------------------------------------------------------------------------------+---------------------------------------------------------------------------------------------------------------------------------------------+
+$ set -o pipefail && xcodebuild -workspace ./Ledger.xcworkspace -scheme Ledger -configuration Release -derivedDataPath ./build -destination 'generic/platform=iOS' -archivePath /Users/expo/Library/Developer/Xcode/Archives/2026-06-08/Ledger\ 2026-06-08\ 21.40.17.xcarchive -resultBundlePath '/var/folders/5_/4knlryn57n39p2c_jw8567z00000gn/T/result-bundle-1780980012601.xcresult' archive | tee /Users/expo/workingdir/logs/Ledger-Ledger.log > /dev/null
+› Executing react-native Pods/ReactNativeDependencies » [CP-User] [RNDeps] Replace React Native Dependencies for the right configuration, if needed
+› Executing react-native Pods/hermes-engine » [CP-User] [Hermes] Replace Hermes for the right configuration, if needed
+› Executing react-native Pods/hermes-engine » [CP] Copy XCFrameworks
+› Preparing Pods/Sentry-Sentry » ResourceBundle-Sentry-Sentry-Info.plist
+› Copying   ios/build/Build/Intermediates.noindex/ArchiveIntermediates/Ledger/IntermediateBuildFilesPath/UninstalledProducts/iphoneos/Sentry.bundle/PrivacyInfo.xcprivacy ➜ ../../../Users/expo/workingdir/build/artifacts/ledger-mobile/ios/Pods/Sentry/Sources/Resources/PrivacyInfo.xcprivacy
+› Executing react-native Pods/ReactNativeDependencies » [CP] Copy XCFrameworks
+› Creating  Pods/Sentry-Sentry » Sentry.bundle
+› Preparing expo-image Pods/SDWebImage-SDWebImage » ResourceBundle-SDWebImage-SDWebImage-Info.plist
+› Copying   expo-image ios/build/Build/Intermediates.noindex/ArchiveIntermediates/Ledger/IntermediateBuildFilesPath/UninstalledProducts/iphoneos/SDWebImage.bundle/PrivacyInfo.xcprivacy ➜ ../../../Users/expo/workingdir/build/artifacts/ledger-mobile/ios/Pods/SDWebImage/WebImage/PrivacyInfo.xcprivacy
+› Creating  expo-image Pods/SDWebImage-SDWebImage » SDWebImage.bundle
+› Preparing Pods/React-cxxreact-React-cxxreact_privacy » ResourceBundle-React-cxxreact_privacy-React-cxxreact-Info.plist
+› Copying   ios/build/Build/Intermediates.noindex/ArchiveIntermediates/Ledger/IntermediateBuildFilesPath/UninstalledProducts/iphoneos/React-cxxreact_privacy.bundle/PrivacyInfo.xcprivacy ➜ ../../../Users/expo/workingdir/build/node_modules/.pnpm/react-native@0.81.5_@babel+core@7.29.7_@types+react@19.1.17_react@19.1.0/node_modules/react-native/ReactCommon/cxxreact/PrivacyInfo.xcprivacy
+› Preparing Pods/React-Core-React-Core_privacy » ResourceBundle-React-Core_privacy-React-Core-Info.plist
+› Copying   ios/build/Build/Intermediates.noindex/ArchiveIntermediates/Ledger/IntermediateBuildFilesPath/UninstalledProducts/iphoneos/React-Core_privacy.bundle/PrivacyInfo.xcprivacy ➜ ../../../Users/expo/workingdir/build/node_modules/.pnpm/react-native@0.81.5_@babel+core@7.29.7_@types+react@19.1.17_react@19.1.0/node_modules/react-native/React/Resources/PrivacyInfo.xcprivacy
+› Creating  Pods/React-cxxreact-React-cxxreact_privacy » React-cxxreact_privacy.bundle
+› Preparing expo-updates Pods/ReachabilitySwift-ReachabilitySwift » ResourceBundle-ReachabilitySwift-ReachabilitySwift-Info.plist
+› Copying   expo-updates ios/build/Build/Intermediates.noindex/ArchiveIntermediates/Ledger/IntermediateBuildFilesPath/UninstalledProducts/iphoneos/ReachabilitySwift.bundle/PrivacyInfo.xcprivacy ➜ ../../../Users/expo/workingdir/build/artifacts/ledger-mobile/ios/Pods/ReachabilitySwift/Sources/PrivacyInfo.xcprivacy
+› Creating  Pods/React-Core-React-Core_privacy » React-Core_privacy.bundle
+› Creating  expo-updates Pods/ReachabilitySwift-ReachabilitySwift » ReachabilitySwift.bundle
+› Preparing Pods/RNSVG-RNSVGFilters » ResourceBundle-RNSVGFilters-RNSVG-Info.plist
+› Copying   ios/build/Build/Intermediates.noindex/ArchiveIntermediates/Ledger/IntermediateBuildFilesPath/UninstalledProducts/iphoneos/RNSVGFilters.bundle/RNSVGCompositeXor.iphoneos.metallib ➜ ../../../Users/expo/workingdir/build/node_modules/.pnpm/react-native-svg@15.12.1_react-native@0.81.5_@babel+core@7.29.7_@types+react@19.1.17_react@19.1.0__react@19.1.0/node_modules/react-native-svg/apple/Filters/MetalCI/RNSVGCompositeXor.iphoneos.metallib
+› Copying   ios/build/Build/Intermediates.noindex/ArchiveIntermediates/Ledger/IntermediateBuildFilesPath/UninstalledProducts/iphoneos/RNSVGFilters.bundle/RNSVGArithmeticFilter.iphoneos.metallib ➜ ../../../Users/expo/workingdir/build/node_modules/.pnpm/react-native-svg@15.12.1_react-native@0.81.5_@babel+core@7.29.7_@types+react@19.1.17_react@19.1.0__react@19.1.0/node_modules/react-native-svg/apple/Filters/MetalCI/RNSVGArithmeticFilter.iphoneos.metallib
+› Preparing Pods/RNCAsyncStorage-RNCAsyncStorage_resources » ResourceBundle-RNCAsyncStorage_resources-RNCAsyncStorage-Info.plist
+› Copying   ios/build/Build/Intermediates.noindex/ArchiveIntermediates/Ledger/IntermediateBuildFilesPath/UninstalledProducts/iphoneos/RNCAsyncStorage_resources.bundle/PrivacyInfo.xcprivacy ➜ ../../../Users/expo/workingdir/build/node_modules/.pnpm/@react-native-async-storage+async-storage@2.2.0_react-native@0.81.5_@babel+core@7.29.7_@types_mlvz6ddtrp7zd4rlx2jkw65ht4/node_modules/@react-native-async-storage/async-storage/ios/PrivacyInfo.xcprivacy
+› Creating  Pods/RNSVG-RNSVGFilters » RNSVGFilters.bundle
+› Copying   ios/build/Build/Intermediates.noindex/ArchiveIntermediates/Ledger/IntermediateBuildFilesPath/UninstalledProducts/iphoneos/LedgerWidget.appex/README.md ➜ ../../../Users/expo/workingdir/build/artifacts/ledger-mobile/targets/widget/README.md
+› Creating  Pods/RNCAsyncStorage-RNCAsyncStorage_resources » RNCAsyncStorage_resources.bundle
+    using '@_implementationOnly' without enabling library evolution for 'Sentry' may lead to instability during execution
+› Compiling expo-image Pods/libwebp » yuv_sse41.c
+› Compiling expo-image Pods/libwebp » yuv_sse2.c
+› Compiling expo-image Pods/libwebp » yuv_mips_dsp_r2.c
+› Compiling expo-image Pods/libwebp » yuv_mips32.c
+› Compiling expo-image Pods/libwebp » yuv.c
+› Compiling expo-image Pods/libwebp » webp_enc.c
+› Compiling expo-image Pods/libwebp » yuv_neon.c
+› Compiling expo-image Pods/libwebp » vp8l_enc.c
+› Compiling expo-image Pods/libwebp » vp8l_dec.c
+› Compiling expo-image Pods/libwebp » vp8_dec.c
+› Compiling expo-image Pods/libwebp » utils.c
+› Compiling expo-image Pods/libwebp » upsampling_sse41.c
+› Compiling expo-image Pods/libwebp » upsampling_neon.c
+› Compiling expo-image Pods/libwebp » upsampling_msa.c
+› Compiling expo-image Pods/libwebp » upsampling_mips_dsp_r2.c
+› Compiling expo-image Pods/libwebp » upsampling.c
+› Compiling expo-image Pods/libwebp » tree_enc.c
+› Compiling expo-image Pods/libwebp » tree_dec.c
+› Compiling expo-image Pods/libwebp » token_enc.c
+› Compiling expo-image Pods/libwebp » thread_utils.c
+› Compiling expo-image Pods/libwebp » syntax_enc.c
+› Compiling expo-image Pods/libwebp » ssim_sse2.c
+› Compiling expo-image Pods/libwebp » ssim.c
+› Compiling expo-image Pods/libwebp » sharpyuv_sse2.c
+› Compiling expo-image Pods/libwebp » sharpyuv_neon.c
+› Compiling expo-image Pods/libwebp » sharpyuv_dsp.c
+› Compiling expo-image Pods/libwebp » sharpyuv_gamma.c
+› Compiling expo-image Pods/libwebp » sharpyuv_csp.c
+› Compiling expo-image Pods/libwebp » sharpyuv_cpu.c
+› Compiling expo-image Pods/libwebp » rescaler_utils.c
+› Compiling expo-image Pods/libwebp » rescaler_sse2.c
+› Compiling expo-image Pods/libwebp » rescaler_neon.c
+› Compiling expo-image Pods/libwebp » rescaler_msa.c
+› Compiling expo-image Pods/libwebp » rescaler_mips_dsp_r2.c
+› Compiling expo-image Pods/libwebp » rescaler_mips32.c
+› Compiling expo-image Pods/libwebp » rescaler.c
+› Compiling expo-image Pods/libwebp » random_utils.c
+› Compiling expo-image Pods/libwebp » quant_levels_utils.c
+› Compiling expo-image Pods/libwebp » quant_levels_dec_utils.c
+› Compiling expo-image Pods/libwebp » quant_enc.c
+› Compiling expo-image Pods/libwebp » quant_dec.c
+› Compiling expo-image Pods/libwebp » predictor_enc.c
+› Compiling expo-image Pods/libwebp » picture_tools_enc.c
+› Compiling expo-image Pods/libwebp » picture_rescale_enc.c
+› Compiling expo-image Pods/libwebp » picture_psnr_enc.c
+› Compiling expo-image Pods/libwebp » picture_enc.c
+› Compiling expo-image Pods/libwebp » picture_csp_enc.c
+› Compiling expo-image Pods/libwebp » near_lossless_enc.c
+› Compiling expo-image Pods/libwebp » muxread.c
+› Compiling expo-image Pods/libwebp » muxinternal.c
+› Compiling expo-image Pods/libwebp » muxedit.c
+› Compiling expo-image Pods/libwebp » lossless_sse41.c
+› Compiling expo-image Pods/libwebp » lossless_neon.c
+› Compiling expo-image Pods/libwebp » lossless_msa.c
+› Compiling expo-image Pods/libwebp » lossless_mips_dsp_r2.c
+› Compiling expo-image Pods/libwebp » lossless_enc_sse41.c
+› Compiling expo-image Pods/libwebp » lossless_enc_sse2.c
+› Compiling expo-image Pods/libwebp » lossless_enc_msa.c
+› Compiling expo-image Pods/libwebp » lossless_enc_mips_dsp_r2.c
+› Compiling expo-image Pods/libwebp » lossless_enc_mips32.c
+› Compiling expo-image Pods/libwebp » lossless_enc.c
+› Compiling expo-image Pods/libwebp » lossless.c
+› Compiling expo-image Pods/libwebp » iterator_enc.c
+› Compiling expo-image Pods/libwebp » io_dec.c
+› Compiling expo-image Pods/libwebp » idec_dec.c
+› Compiling expo-image Pods/libwebp » huffman_utils.c
+› Compiling expo-image Pods/libwebp » huffman_encode_utils.c
+› Compiling expo-image Pods/libwebp » histogram_enc.c
+› Compiling expo-image Pods/libwebp » frame_enc.c
+› Compiling expo-image Pods/libwebp » frame_dec.c
+› Compiling expo-image Pods/libwebp » filters_utils.c
+› Compiling expo-image Pods/libwebp » filters_sse2.c
+› Compiling expo-image Pods/libwebp » filters_neon.c
+› Compiling expo-image Pods/libwebp » filters_msa.c
+› Compiling expo-image Pods/libwebp » filters.c
+› Compiling expo-image Pods/libwebp » filter_enc.c
+› Compiling expo-image Pods/libwebp » enc_sse41.c
+› Compiling expo-image Pods/libwebp » enc_sse2.c
+› Compiling expo-image Pods/libwebp » enc_neon.c
+› Compiling expo-image Pods/libwebp » enc_msa.c
+› Compiling expo-image Pods/libwebp » enc_mips_dsp_r2.c
+› Compiling expo-image Pods/libwebp » enc_mips32.c
+› Compiling expo-image Pods/libwebp » enc.c
+› Compiling expo-image Pods/libwebp » demux.c
+› Compiling expo-image Pods/libwebp » dec_sse41.c
+› Compiling expo-image Pods/libwebp » dec_sse2.c
+› Compiling expo-image Pods/libwebp » dec_neon.c
+› Compiling expo-image Pods/libwebp » dec_msa.c
+› Compiling expo-image Pods/libwebp » dec_mips_dsp_r2.c
+› Compiling expo-image Pods/libwebp » dec_mips32.c
+› Compiling expo-image Pods/libwebp » dec_clip_tables.c
+› Compiling expo-image Pods/libwebp » dec.c
+› Compiling expo-image Pods/libwebp » cpu.c
+› Compiling expo-image Pods/libwebp » cost_sse2.c
+› Compiling expo-image Pods/libwebp » cost_mips_dsp_r2.c
+› Compiling expo-image Pods/libwebp » cost_mips32.c
+› Compiling expo-image Pods/libwebp » cost_enc.c
+› Compiling expo-image Pods/libwebp » cost.c
+› Compiling expo-image Pods/libwebp » config_enc.c
+› Compiling expo-image Pods/libwebp » color_cache_utils.c
+› Compiling expo-image Pods/libwebp » buffer_dec.c
+› Compiling expo-image Pods/libwebp » bit_writer_utils.c
+› Compiling expo-image Pods/libwebp » bit_reader_utils.c
+› Compiling expo-image Pods/libwebp » backward_references_enc.c
+› Compiling expo-image Pods/libwebp » backward_references_cost_enc.c
+› Compiling expo-image Pods/libwebp » anim_encode.c
+› Compiling expo-image Pods/libwebp » anim_decode.c
+› Compiling expo-image Pods/libwebp » analysis_enc.c
+› Compiling expo-image Pods/libwebp » alpha_processing_sse41.c
+› Compiling expo-image Pods/libwebp » alpha_processing_sse2.c
+› Compiling expo-image Pods/libwebp » alpha_processing_neon.c
+› Compiling expo-image Pods/libwebp » alpha_processing_mips_dsp_r2.c
+› Compiling expo-image Pods/libwebp » alpha_enc.c
+› Compiling expo-image Pods/libwebp » alpha_dec.c
+› Compiling expo-image Pods/libdav1d » wedge.c
+› Compiling expo-image Pods/libdav1d » tables.c
+› Compiling expo-image Pods/libdav1d » scan.c
+› Compiling expo-image Pods/libdav1d » qm.c
+› Compiling expo-image Pods/libdav1d » warpmv.c
+› Compiling expo-image Pods/libdav1d » thread_task.c
+› Compiling expo-image Pods/libdav1d » refmvs.c
+› Compiling expo-image Pods/libdav1d » ref.c
+› Compiling expo-image Pods/libdav1d » recon_tmpl_16.c
+› Compiling expo-image Pods/libdav1d » recon_tmpl.c
+› Compiling expo-image Pods/libdav1d » picture.c
+› Compiling expo-image Pods/libdav1d » obu.c
+› Compiling expo-image Pods/libdav1d » msac.c
+› Compiling expo-image Pods/libdav1d » mem.c
+› Compiling expo-image Pods/libdav1d » mc_tmpl_16.c
+› Compiling expo-image Pods/libdav1d » mc_tmpl.c
+› Compiling expo-image Pods/libdav1d » lr_apply_tmpl_16.c
+› Compiling expo-image Pods/libdav1d » lr_apply_tmpl.c
+› Compiling expo-image Pods/libdav1d » looprestoration_tmpl_16.c
+› Compiling expo-image Pods/libdav1d » looprestoration_tmpl.c
+› Compiling expo-image Pods/libdav1d » loopfilter_tmpl_16.c
+› Compiling expo-image Pods/libdav1d » log.c
+› Compiling expo-image Pods/libdav1d » lib.c
+› Compiling expo-image Pods/libdav1d » lf_mask.c
+› Compiling expo-image Pods/libdav1d » lf_apply_tmpl_16.c
+› Compiling expo-image Pods/libdav1d » lf_apply_tmpl.c
+› Compiling expo-image Pods/libdav1d » itx_tmpl_16.c
+› Compiling expo-image Pods/libdav1d » itx_tmpl.c
+› Compiling expo-image Pods/libdav1d » itx_1d.c
+› Compiling expo-image Pods/libdav1d » ipred_tmpl_16.c
+› Compiling expo-image Pods/libdav1d » ipred_tmpl.c
+› Compiling expo-image Pods/libdav1d » ipred_prepare_tmpl_16.c
+› Compiling expo-image Pods/libdav1d » ipred_prepare_tmpl.c
+› Compiling expo-image Pods/libdav1d » intra_edge.c
+› Compiling expo-image Pods/libdav1d » getbits.c
+› Compiling expo-image Pods/libdav1d » filmgrain_tmpl_16.c
+› Compiling expo-image Pods/libdav1d » filmgrain_tmpl.c
+› Compiling expo-image Pods/libdav1d » fg_apply_tmpl_16.c
+› Compiling expo-image Pods/libwebp » libwebp-dummy.m
+› Compiling expo-image Pods/libdav1d » libdav1d-dummy.m
+› Compiling expo-image Pods/libdav1d » fg_apply_tmpl.c
+› Packaging expo-image Pods/libwebp » liblibwebp.a
+› Compiling expo-image Pods/libdav1d » dequant_tables.c
+› Compiling expo-image Pods/libdav1d » data.c
+› Compiling expo-image Pods/libdav1d » decode.c
+› Compiling expo-image Pods/libdav1d » cpu.c
+› Compiling expo-image Pods/libdav1d » cdf.c
+› Compiling expo-image Pods/libdav1d » cdef_tmpl_16.c
+› Compiling expo-image Pods/libdav1d » cdef_tmpl.c
+› Compiling expo-image Pods/libdav1d » cdef_apply_tmpl.c
+› Compiling expo-image Pods/libdav1d » cpu.c
+› Compiling Pods/libavif » write.c
+› Compiling Pods/libavif » utils.c
+› Compiling Pods/libavif » scale.c
+› Compiling Pods/libavif » reformat_libsharpyuv.c
+› Compiling Pods/libavif » rawdata.c
+› Compiling Pods/libavif » obu.c
+› Compiling Pods/libavif » io.c
+› Compiling Pods/libavif » exif.c
+› Compiling Pods/libavif » diag.c
+› Compiling Pods/libavif » colr.c
+› Compiling Pods/libavif » codec_dav1d.c
+› Compiling Pods/libavif » avif.c
+› Compiling Pods/libavif » alpha.c
+› Compiling Pods/libavif » reformat.c
+› Compiling Pods/libavif » mem.c
+› Packaging expo-image Pods/libdav1d » liblibdav1d.a
+› Compiling Pods/libavif » stream.c
+› Compiling Pods/libavif » read.c
+› Compiling Pods/libavif » libavif-dummy.m
+› Compiling Pods/ZXingObjC » ZXingObjC-dummy.m
+› Compiling Pods/ZXingObjC » ZXWifiResultParser.m
+› Compiling Pods/ZXingObjC » ZXWifiParsedResult.m
+› Compiling Pods/ZXingObjC » ZXWhiteRectangleDetector.m
+› Compiling Pods/ZXingObjC » ZXVINResultParser.m
+› Compiling Pods/ZXingObjC » ZXVINParsedResult.m
+› Compiling Pods/ZXingObjC » ZXVEventResultParser.m
+› Compiling Pods/ZXingObjC » ZXVCardResultParser.m
+› Compiling Pods/ZXingObjC » ZXURLTOResultParser.m
+› Compiling Pods/ZXingObjC » ZXURIResultParser.m
+› Compiling Pods/ZXingObjC » ZXUPCEWriter.m
+› Compiling Pods/ZXingObjC » ZXUPCEReader.m
+› Compiling Pods/ZXingObjC » ZXUPCEANWriter.m
+› Compiling Pods/ZXingObjC » ZXUPCEANReader.m
+› Compiling Pods/ZXingObjC » ZXUPCEANExtensionSupport.m
+› Compiling Pods/ZXingObjC » ZXUPCEANExtension5Support.m
+› Compiling Pods/ZXingObjC » ZXUPCEANExtension2Support.m
+› Compiling Pods/ZXingObjC » ZXUPCAWriter.m
+› Compiling Pods/ZXingObjC » ZXUPCAReader.m
+› Compiling Pods/ZXingObjC » ZXTextParsedResult.m
+› Compiling Pods/ZXingObjC » ZXTelResultParser.m
+› Compiling Pods/ZXingObjC » ZXTelParsedResult.m
+› Compiling Pods/ZXingObjC » ZXStringUtils.m
+› Compiling Pods/ZXingObjC » ZXSMSTOMMSTOResultParser.m
+› Compiling Pods/ZXingObjC » ZXSMSParsedResult.m
+› Compiling Pods/ZXingObjC » ZXSMSMMSResultParser.m
+› Compiling Pods/ZXingObjC » ZXResultPoint.m
+› Compiling Pods/ZXingObjC » ZXResultParser.m
+› Compiling Pods/ZXingObjC » ZXResult.m
+› Compiling Pods/ZXingObjC » ZXReedSolomonEncoder.m
+› Compiling Pods/ZXingObjC » ZXReedSolomonDecoder.m
+› Compiling Pods/ZXingObjC » ZXRSSUtils.m
+› Compiling Pods/ZXingObjC » ZXRSSPair.m
+› Compiling Pods/ZXingObjC » ZXRSSFinderPattern.m
+› Compiling Pods/ZXingObjC » ZXRSSExpandedRow.m
+› Compiling Pods/ZXingObjC » ZXRSSExpandedReader.m
+› Compiling Pods/ZXingObjC » ZXRSSExpandedPair.m
+› Compiling Pods/ZXingObjC » ZXRSSExpandedGeneralAppIdDecoder.m
+› Compiling Pods/ZXingObjC » ZXRSSExpandedFieldParser.m
+› Compiling Pods/ZXingObjC » ZXRSSExpandedDecodedObject.m
+› Compiling Pods/ZXingObjC » ZXRSSExpandedDecodedNumeric.m
+› Compiling Pods/ZXingObjC » ZXRSSExpandedDecodedInformation.m
+› Compiling Pods/ZXingObjC » ZXRSSExpandedDecodedChar.m
+› Compiling Pods/ZXingObjC » ZXRSSExpandedCurrentParsingState.m
+› Compiling Pods/ZXingObjC » ZXRSSExpandedBlockParsedResult.m
+› Compiling Pods/ZXingObjC » ZXRSSDataCharacter.m
+› Compiling Pods/ZXingObjC » ZXRSS14Reader.m
+› Compiling Pods/ZXingObjC » ZXRGBLuminanceSource.m
+› Compiling Pods/ZXingObjC » ZXProductResultParser.m
+› Compiling Pods/ZXingObjC » ZXPlanarYUVLuminanceSource.m
+› Compiling Pods/ZXingObjC » ZXPerspectiveTransform.m
+› Compiling Pods/ZXingObjC » ZXParsedResult.m
+› Compiling Pods/ZXingObjC » ZXPDF417Writer.m
+› Compiling Pods/ZXingObjC » ZXPDF417ScanningDecoder.m
+› Compiling Pods/ZXingObjC » ZXPDF417ResultMetadata.m
+› Compiling Pods/ZXingObjC » ZXPDF417Reader.m
+› Compiling Pods/ZXingObjC » ZXPDF417HighLevelEncoder.m
+› Compiling Pods/ZXingObjC » ZXPDF417ErrorCorrection.m
+› Compiling Pods/ZXingObjC » ZXPDF417ECErrorCorrection.m
+› Compiling Pods/ZXingObjC » ZXPDF417Dimensions.m
+› Compiling Pods/ZXingObjC » ZXPDF417DetectorResult.m
+› Compiling Pods/ZXingObjC » ZXPDF417Detector.m
+› Compiling Pods/ZXingObjC » ZXPDF417DetectionResultRowIndicatorColumn.m
+› Compiling Pods/ZXingObjC » ZXPDF417DetectionResultColumn.m
+› Compiling Pods/ZXingObjC » ZXPDF417DetectionResult.m
+› Compiling Pods/ZXingObjC » ZXPDF417DecodedBitStreamParser.m
+› Compiling Pods/ZXingObjC » ZXPDF417Common.m
+› Compiling Pods/ZXingObjC » ZXPDF417CodewordDecoder.m
+› Compiling Pods/ZXingObjC » ZXPDF417Codeword.m
+› Compiling Pods/ZXingObjC » ZXPDF417BoundingBox.m
+› Compiling Pods/ZXingObjC » ZXPDF417BarcodeValue.m
+› Compiling Pods/ZXingObjC » ZXPDF417BarcodeRow.m
+› Compiling Pods/ZXingObjC » ZXPDF417BarcodeMetadata.m
+› Compiling Pods/ZXingObjC » ZXPDF417BarcodeMatrix.m
+› Compiling Pods/ZXingObjC » ZXPDF417.m
+› Compiling Pods/ZXingObjC » ZXOneDimensionalCodeWriter.m
+› Compiling Pods/ZXingObjC » ZXOneDReader.m
+› Compiling Pods/ZXingObjC » ZXMultiFormatWriter.m
+› Compiling Pods/ZXingObjC » ZXMultiFormatUPCEANReader.m
+› Compiling Pods/ZXingObjC » ZXMultiFormatReader.m
+› Compiling Pods/ZXingObjC » ZXMultiFormatOneDReader.m
+› Compiling Pods/ZXingObjC » ZXModulusPoly.m
+› Compiling ZXModulusGF.m
+› Compiling Pods/ZXingObjC » ZXMathUtils.m
+› Compiling Pods/ZXingObjC » ZXLuminanceSource.m
+› Compiling Pods/ZXingObjC » ZXInvertedLuminanceSource.m
+› Compiling Pods/ZXingObjC » ZXIntArray.m
+› Compiling Pods/ZXingObjC » ZXImage.m
+› Compiling Pods/ZXingObjC » ZXITFWriter.m
+› Compiling Pods/ZXingObjC » ZXITFReader.m
+› Compiling Pods/ZXingObjC » ZXISBNResultParser.m
+› Compiling Pods/ZXingObjC » ZXISBNParsedResult.m
+› Compiling Pods/ZXingObjC » ZXHybridBinarizer.m
+› Compiling Pods/ZXingObjC » ZXGridSampler.m
+› Compiling Pods/ZXingObjC » ZXGlobalHistogramBinarizer.m
+› Compiling Pods/ZXingObjC » ZXGeoResultParser.m
+› Compiling Pods/ZXingObjC » ZXGeoParsedResult.m
+› Compiling Pods/ZXingObjC » ZXGenericMultipleBarcodeReader.m
+› Compiling Pods/ZXingObjC » ZXGenericGFPoly.m
+› Compiling Pods/ZXingObjC » ZXGenericGF.m
+› Compiling Pods/ZXingObjC » ZXExpandedProductResultParser.m
+› Compiling Pods/ZXingObjC » ZXExpandedProductParsedResult.m
+› Compiling Pods/ZXingObjC » ZXErrors.m
+› Compiling Pods/ZXingObjC » ZXEncodeHints.m
+› Compiling Pods/ZXingObjC » ZXEmailDoCoMoResultParser.m
+› Compiling Pods/ZXingObjC » ZXEmailAddressResultParser.m
+› Compiling Pods/ZXingObjC » ZXEmailAddressParsedResult.m
+› Compiling Pods/ZXingObjC » ZXEANManufacturerOrgSupport.m
+› Compiling Pods/ZXingObjC » ZXEAN8Writer.m
+› Compiling Pods/ZXingObjC » ZXEAN8Reader.m
+› Compiling Pods/ZXingObjC » ZXEAN13Writer.m
+› Compiling Pods/ZXingObjC » ZXEAN13Reader.m
+› Compiling Pods/ZXingObjC » ZXDimension.m
+› Compiling Pods/ZXingObjC » ZXDetectorResult.m
+› Compiling Pods/ZXingObjC » ZXDefaultGridSampler.m
+› Compiling Pods/ZXingObjC » ZXDecoderResult.m
+› Compiling Pods/ZXingObjC » ZXDecodeHints.m
+› Compiling Pods/ZXingObjC » ZXDecimal.m
+› Compiling Pods/ZXingObjC » ZXCode93Writer.m
+› Compiling Pods/ZXingObjC » ZXCode93Reader.m
+› Compiling Pods/ZXingObjC » ZXCode128Writer.m
+› Compiling Pods/ZXingObjC » ZXCode128Reader.m
+› Compiling Pods/ZXingObjC » ZXCodaBarWriter.m
+› Compiling Pods/ZXingObjC » ZXCharacterSetECI.m
+› Compiling Pods/ZXingObjC » ZXCGImageLuminanceSourceInfo.m
+› Compiling Pods/ZXingObjC » ZXByteMatrix.m
+› Compiling Pods/ZXingObjC » ZXByteArray.m
+› Compiling Pods/ZXingObjC » ZXByQuadrantReader.m
+› Compiling Pods/ZXingObjC » ZXBoolArray.m
+› Compiling Pods/ZXingObjC » ZXBookmarkDoCoMoResultParser.m
+› Compiling Pods/ZXingObjC » ZXBizcardResultParser.m
+› Compiling Pods/ZXingObjC » ZXBitSource.m
+› Compiling Pods/ZXingObjC » ZXBitArrayBuilder.m
+› Compiling Pods/ZXingObjC » ZXBitArray.m
+› Compiling Pods/ZXingObjC » ZXBinaryBitmap.m
+› Compiling Pods/ZXingObjC » ZXBinarizer.m
+› Compiling Pods/ZXingObjC » ZXAnyAIDecoder.m
+› Compiling Pods/ZXingObjC » ZXAddressBookParsedResult.m
+› Compiling Pods/ZXingObjC » ZXAddressBookDoCoMoResultParser.m
+› Compiling Pods/ZXingObjC » ZXAddressBookAUResultParser.m
+› Compiling Pods/ZXingObjC » ZXAbstractRSSReader.m
+› Compiling Pods/ZXingObjC » ZXAbstractExpandedDecoder.m
+› Compiling Pods/ZXingObjC » ZXAbstractDoCoMoResultParser.m
+› Compiling Pods/ZXingObjC » ZXAI01weightDecoder.m
+› Compiling Pods/ZXingObjC » ZXAI01decoder.m
+› Compiling Pods/ZXingObjC » ZXAI01AndOtherAIs.m
+› Compiling Pods/ZXingObjC » ZXAI013x0xDecoder.m
+› Compiling Pods/ZXingObjC » ZXAI013x0x1xDecoder.m
+› Compiling Pods/ZXingObjC » ZXAI01393xDecoder.m
+› Compiling Pods/ZXingObjC » ZXCapture.m
+› Compiling Pods/ZXingObjC » ZXAI01392xDecoder.m
+› Compiling Pods/ZXingObjC » ZXAI01320xDecoder.m
+› Compiling Pods/ZXingObjC » ZXAI013103decoder.m
+› Packaging Pods/ZXingObjC » libZXingObjC.a
+› Compiling unimodules-app-loader Pods/UMAppLoader » UMAppLoaderProvider.m
+› Compiling unimodules-app-loader Pods/UMAppLoader » UMAppLoader-dummy.m
+› Packaging unimodules-app-loader Pods/UMAppLoader » libUMAppLoader.a
+› Compiling expo-image Pods/SDWebImageSVGCoder » SDWebImageSVGCoderDefine.m
+› Compiling expo-image Pods/SDWebImageSVGCoder » SDWebImageSVGCoder-dummy.m
+› Compiling expo-image Pods/SDWebImageSVGCoder » SDImageSVGCoder.m
+› Compiling expo-image Pods/SDWebImageAVIFCoder » SDWebImageAVIFCoder-dummy.m
+› Compiling expo-image Pods/SDWebImage » UIView+WebCacheOperation.m
+› Compiling expo-image Pods/SDWebImage » UIView+WebCacheState.m
+› Compiling expo-image Pods/SDWebImage » UIView+WebCache.m
+› Compiling expo-image Pods/SDWebImage » UIImageView+WebCache.m
+› Compiling expo-image Pods/SDWebImage » UIImageView+HighlightedWebCache.m
+› Compiling expo-image Pods/SDWebImage » UIImage+MultiFormat.m
+› Compiling expo-image Pods/SDWebImage » UIImage+Metadata.m
+› Compiling expo-image Pods/SDWebImage » UIImage+MemoryCacheCost.m
+› Compiling expo-image Pods/SDWebImage » UIImage+GIF.m
+› Compiling expo-image Pods/SDWebImage » UIImage+ForceDecode.m
+› Compiling expo-image Pods/SDWebImage » UIImage+ExtendedCacheData.m
+› Compiling expo-image Pods/SDWebImageAVIFCoder » SDImageAVIFCoder.m
+› Compiling expo-image Pods/SDWebImageAVIFCoder » Conversion.m
+› Compiling expo-image Pods/SDWebImageAVIFCoder » ColorSpace.m
+› Compiling expo-image Pods/SDWebImage » UIImage+Transform.m
+› Compiling expo-image Pods/SDWebImage » UIColor+SDHexString.m
+› Compiling expo-image Pods/SDWebImage » UIButton+WebCache.m
+› Compiling expo-image Pods/SDWebImage » SDWebImageTransition.m
+› Compiling expo-image Pods/SDWebImage » SDWebImagePrefetcher.m
+› Compiling expo-image Pods/SDWebImage » SDWebImageOptionsProcessor.m
+› Compiling expo-image Pods/SDWebImage » SDWebImageOperation.m
+› Compiling expo-image Pods/SDWebImage » SDWebImageManager.m
+› Compiling expo-image Pods/SDWebImage » SDWebImageIndicator.m
+› Compiling expo-image Pods/SDWebImage » SDWebImageError.m
+› Compiling expo-image Pods/SDWebImage » SDWebImageDownloaderResponseModifier.m
+› Compiling expo-image Pods/SDWebImage » SDWebImageDownloaderRequestModifier.m
+› Compiling expo-image Pods/SDWebImage » SDWebImageDownloaderOperation.m
+› Compiling expo-image Pods/SDWebImage » SDWebImageDownloaderDecryptor.m
+› Compiling expo-image Pods/SDWebImage » SDWebImageDownloaderConfig.m
+› Compiling expo-image Pods/SDWebImage » SDWebImageDownloader.m
+› Compiling expo-image Pods/SDWebImageWebPCoder » UIImage+WebP.m
+› Compiling expo-image Pods/SDWebImageWebPCoder » SDWebImageWebPCoderDefine.m
+› Compiling expo-image Pods/SDWebImageWebPCoder » SDWebImageWebPCoder-dummy.m
+› Compiling expo-image Pods/SDWebImageWebPCoder » SDImageWebPCoder.m
+› Compiling expo-image Pods/SDWebImage » SDWebImageDefine.m
+› Compiling expo-image Pods/SDWebImage » SDWebImageCompat.m
+› Compiling expo-image Pods/SDWebImage » SDWebImageCacheSerializer.m
+› Compiling expo-image Pods/SDWebImage » SDWebImageCacheKeyFilter.m
+› Compiling expo-image Pods/SDWebImage » SDWebImage-dummy.m
+› Compiling expo-image Pods/SDWebImage » SDWeakProxy.m
+› Compiling expo-image Pods/SDWebImage » SDMemoryCache.m
+› Compiling expo-image Pods/SDWebImage » SDInternalMacros.m
+› Compiling expo-image Pods/SDWebImage » SDImageTransformer.m
+› Compiling expo-image Pods/SDWebImage » SDImageLoadersManager.m
+› Compiling expo-image Pods/SDWebImage » SDImageLoader.m
+› Compiling expo-image Pods/SDWebImage » SDImageIOCoder.m
+› Compiling expo-image Pods/SDWebImage » SDImageIOAnimatedCoder.m
+› Compiling expo-image Pods/SDWebImage » SDImageHEICCoder.m
+› Compiling expo-image Pods/SDWebImage » SDImageGraphics.m
+› Compiling expo-image Pods/SDWebImage » SDImageGIFCoder.m
+› Compiling expo-image Pods/SDWebImage » SDImageFramePool.m
+› Compiling expo-image Pods/SDWebImage » SDImageFrame.m
+› Compiling expo-image Pods/SDWebImage » SDImageCodersManager.m
+› Compiling expo-image Pods/SDWebImage » SDImageCachesManagerOperation.m
+› Compiling expo-image Pods/SDWebImage » SDImageCoderHelper.m
+› Compiling expo-image Pods/SDWebImage » SDImageCoder.m
+› Compiling expo-image Pods/SDWebImage » SDImageCachesManager.m
+› Compiling expo-image Pods/SDWebImage » SDImageCacheDefine.m
+› Compiling expo-image Pods/SDWebImage » SDImageCacheConfig.m
+› Compiling expo-image Pods/SDWebImage » SDImageCache.m
+› Compiling expo-image Pods/SDWebImage » SDImageAWebPCoder.m
+› Compiling expo-image Pods/SDWebImage » SDImageAssetManager.m
+› Compiling expo-image Pods/SDWebImage » SDImageAPNGCoder.m
+› Compiling expo-image Pods/SDWebImage » SDGraphicsImageRenderer.m
+› Compiling expo-image Pods/SDWebImage » SDFileAttributeHelper.m
+› Compiling expo-image Pods/SDWebImage » SDDisplayLink.m
+› Compiling expo-image Pods/SDWebImage » SDDeviceHelper.m
+› Compiling expo-image Pods/SDWebImage » SDDiskCache.m
+› Compiling expo-image Pods/SDWebImage » SDCallbackQueue.m
+› Compiling expo-image Pods/SDWebImage » SDAsyncBlockOperation.m
+› Compiling expo-image Pods/SDWebImage » SDAssociatedObject.m
+› Compiling expo-image Pods/SDWebImage » SDAnimatedImageView.m
+› Compiling expo-image Pods/SDWebImage » SDAnimatedImageView+WebCache.m
+› Compiling expo-image Pods/SDWebImage » SDAnimatedImageRep.m
+› Compiling expo-image Pods/SDWebImage » SDAnimatedImage.m
+› Compiling expo-image Pods/SDWebImage » SDAnimatedImagePlayer.m
+› Compiling expo-image Pods/SDWebImage » NSImage+Compatibility.m
+› Compiling expo-image Pods/SDWebImage » NSButton+WebCache.m
+› Compiling expo-image Pods/SDWebImage » NSData+ImageContentType.m
+› Preparing Ledger/LedgerWidget » Info.plist
+› Compiling expo-image Pods/SDWebImage » NSBezierPath+SDRoundedCorners.m
+› Preparing Ledger/LedgerWatchComplication » Info.plist
+› Executing react-native Pods/React-Core-prebuilt » [CP-User] [RNDeps] Replace React Native Core for the right configuration, if needed
+› Packaging expo-image Pods/SDWebImage » libSDWebImage.a
+› Linking   Ledger/LedgerWidget » LedgerWidget
+› Packaging Pods/libavif » liblibavif.a
+› Compiling expo-updates Pods/ReachabilitySwift » ReachabilitySwift-dummy.m
+› Generating debug Ledger/LedgerWidget » LedgerWidget.appex.dSYM
+› Packaging expo-updates Pods/ReachabilitySwift » libReachabilitySwift.a
+› Executing expo-updates Pods/ReachabilitySwift » Copy generated compatibility header
+› Preparing Pods/ExpoSystemUI-ExpoSystemUI_privacy » ResourceBundle-ExpoSystemUI_privacy-ExpoSystemUI-Info.plist
+› Copying   ios/build/Build/Intermediates.noindex/ArchiveIntermediates/Ledger/IntermediateBuildFilesPath/UninstalledProducts/iphoneos/ExpoSystemUI_privacy.bundle/PrivacyInfo.xcprivacy ➜ ../../../Users/expo/workingdir/build/node_modules/.pnpm/expo-system-ui@6.0.9_expo@54.0.35_react-native-web@0.21.2_react-dom@19.1.0_react@19.1.0__reac_bsgsdvkjhkczy434hyks46vz6q/node_modules/expo-system-ui/ios/PrivacyInfo.xcprivacy
+› Compiling Pods/Sentry » SentryTraceProfiler.mm
+› Compiling Pods/Sentry » SentryTime.mm
+› Compiling Pods/Sentry » SentryThreadMetadataCache.cpp
+› Compiling Pods/Sentry » SentryThreadHandle.cpp
+› Compiling Pods/Sentry » SentryThread.mm
+› Compiling Pods/Sentry » SentrySystemWrapper.mm
+› Compiling Pods/Sentry » SentrySamplingProfiler.cpp
+› Compiling Pods/Sentry » SentryProfilerState.mm
+› Compiling Pods/Sentry » SentryProfiler.mm
+› Compiling Pods/Sentry » SentryProfiledTracerConcurrency.mm
+› Compiling Pods/Sentry » SentryProfileCollector.mm
+› Compiling Pods/Sentry » SentryMachLogging.cpp
+› Compiling Pods/Sentry » SentryError.mm
+› Compiling Pods/Sentry » SentryCrashMonitor_CPPException.cpp
+› Compiling Pods/Sentry » SentryContinuousProfiler.mm
+› Compiling Pods/Sentry » SentryBacktrace.cpp
+› Compiling Pods/Sentry » _SentryDispatchQueueWrapperInternal.m
+› Compiling Pods/Sentry » UIViewController+Sentry.m
+› Compiling Pods/Sentry » SentryWeakMap.m
+› Compiling Pods/Sentry » SentyOptionsInternal.m
+› Compiling Pods/Sentry » SentryWatchdogTerminationTrackingIntegration.m
+› Compiling Pods/Sentry » SentryWatchdogTerminationTracker.m
+› Compiling Pods/Sentry » SentryWatchdogTerminationScopeObserver.m
+› Compiling Pods/Sentry » SentryWatchdogTerminationLogic.m
+› Compiling Pods/Sentry » SentryWatchdogTerminationBreadcrumbProcessor.m
+› Compiling Pods/Sentry » SentryViewHierarchyProviderHelper.m
+› Compiling Pods/Sentry » SentryViewHierarchyIntegration.m
+› Compiling Pods/Sentry » SentryUserFeedbackIntegration.m
+› Compiling Pods/Sentry » SentryUserAccess.m
+› Compiling Pods/Sentry » SentryUser.m
+› Compiling Pods/Sentry » SentryUseNSExceptionCallstackWrapper.m
+› Compiling Pods/Sentry » SentryUncaughtNSExceptions.m
+› Compiling Pods/Sentry » SentryUIViewControllerSwizzling.m
+› Compiling Pods/Sentry » SentryUIViewControllerPerformanceTracker.m
+› Compiling Pods/Sentry » SentryUIEventTrackingIntegration.m
+› Compiling Pods/Sentry » SentryUIEventTrackerTransactionMode.m
+› Compiling Pods/Sentry » SentryUIEventTracker.m
+› Compiling Pods/Sentry » SentryTransportAdapter.m
+› Compiling Pods/Sentry » SentryTransaction.m
+› Compiling Pods/Sentry » SentryTransactionContext.m
+› Compiling Pods/Sentry » SentryTracerConfiguration.m
+› Compiling Pods/Sentry » SentryTraceOrigin.m
+› Compiling SentryTracer.m
+› Compiling Pods/Sentry » SentryTraceHeader.m
+› Compiling Pods/Sentry » SentryTraceContext.m
+› Compiling Pods/Sentry » SentryTimeToDisplayTracker.m
+› Compiling Pods/Sentry » SentrySystemEventBreadcrumbs.m
+› Compiling Pods/Sentry » SentrySwizzleWrapper.m
+› Compiling Pods/Sentry » SentrySysctlObjC.m
+› Compiling Pods/Sentry » SentrySwizzle.m
+› Compiling Pods/Sentry » SentrySwiftAsyncIntegration.m
+› Compiling Pods/Sentry » SentryStacktraceBuilder.m
+› Compiling Pods/Sentry » SentryStacktrace.m
+› Compiling Pods/Sentry » SentrySpotlightTransport.m
+› Compiling Pods/Sentry » SentrySpanStatus.m
+› Compiling Pods/Sentry » SentrySpanOperation.m
+› Compiling Pods/Sentry » SentrySpanId.m
+› Compiling Pods/Sentry » SentrySpanDataKey.m
+› Compiling Pods/Sentry » SentrySpanContext.m
+› Compiling Pods/Sentry » SentrySpan.m
+› Compiling Pods/Sentry » SentrySessionTracker.m
+› Compiling Pods/Sentry » SentrySessionInternal.m
+› Compiling Pods/Sentry » SentrySessionReplaySyncC.c
+› Compiling SentrySerialization.m
+› Compiling Pods/Sentry » SentrySessionReplayIntegration.m
+› Compiling Pods/Sentry » SentryScreenshotIntegration.m
+› Compiling Pods/Sentry » SentryScopeSyncC.c
+› Compiling Pods/Sentry » SentryScope.m
+› Compiling Pods/Sentry » SentrySamplingContext.m
+› Compiling Pods/Sentry » SentrySamplerDecision.m
+› Compiling SentrySampling.m
+› Compiling Pods/Sentry » SentrySampleDecision.m
+› Compiling Pods/Sentry » SentrySample.m
+› Compiling Pods/Sentry » SentrySDKInternal.m
+› Compiling Pods/Sentry » SentryRetryAfterHeaderParser.m
+› Compiling Pods/Sentry » SentryRequestOperation.m
+› Compiling Pods/Sentry » SentryRequest.m
+› Compiling Pods/Sentry » SentryReplayApi.m
+› Compiling Pods/Sentry » SentryReachability.m
+› Compiling Pods/Sentry » SentryRateLimitParser.m
+› Compiling Pods/Sentry » SentryQueueableRequestManager.m
+› Compiling Pods/Sentry » SentryPropagationContext.m
+› Compiling Pods/Sentry » SentryProfilingSwiftHelpers.m
+› Compiling Pods/Sentry » SentryProfilerTestHelpers.m
+› Compiling Pods/Sentry » SentryProfilerSerialization.m
+› Compiling Pods/Sentry » SentryProfileTimeseries.m
+› Compiling Pods/Sentry » SentryProfileConfiguration.m
+› Compiling Pods/Sentry » SentryPredicateDescriptor.m
+› Compiling Pods/Sentry » SentryPerformanceTrackingIntegration.m
+› Compiling Pods/Sentry » SentryPerformanceTracker.m
+› Compiling Pods/Sentry » SentryOptions.m
+› Compiling Pods/Sentry » SentryNoOpSpan.m
+› Compiling Pods/Sentry » SentryNetworkTrackingIntegration.m
+› Compiling SentryNetworkTracker.m
+› Compiling Pods/Sentry » SentryNSURLSessionTaskSearch.m
+› Compiling Pods/Sentry » SentryNSURLRequestBuilder.m
+› Compiling SentryNSError.m
+› Compiling Pods/Sentry » SentryNSFileManagerSwizzling.m
+› Compiling Pods/Sentry » SentryNSDictionarySanitize.m
+› Compiling Pods/Sentry » SentryMsgPackSerializer.m
+› Compiling Pods/Sentry » SentryNSDataSwizzling.m
+› Compiling Pods/Sentry » SentryMetricProfiler.m
+› Compiling Pods/Sentry » SentryNSDataUtils.m
+› Compiling Pods/Sentry » SentryMetricKitIntegration.m
+› Compiling Pods/Sentry » SentryMeta.m
+› Compiling Pods/Sentry » SentryMechanismMeta.m
+› Compiling Pods/Sentry » SentryMechanism.m
+› Compiling SentryMeasurementUnit.m
+› Compiling Pods/Sentry » SentryLogC.m
+› Compiling Pods/Sentry » SentryLevelMapper.m
+› Compiling Pods/Sentry » SentryLevelHelper.m
+› Compiling Pods/Sentry » SentryLaunchProfiling.m
+› Compiling Pods/Sentry » SentryInstallation.m
+› Compiling Pods/Sentry » SentryHub.m
+› Compiling Pods/Sentry » SentryHttpTransport.m
+› Compiling Pods/Sentry » SentryHttpDateParser.m
+› Compiling Pods/Sentry » SentryGeo.m
+› Compiling Pods/Sentry » SentryFramesTrackingIntegration.m
+› Compiling Pods/Sentry » SentryFramesTracker.m
+› Compiling Pods/Sentry » SentryFrame.m
+› Compiling Pods/Sentry » SentryFileIOTrackingIntegration.m
+› Compiling Pods/Sentry » SentryFileManager.m
+› Compiling Pods/Sentry » SentryFileIOTracker.m
+› Compiling Pods/Sentry » SentryFeedbackAPI.m
+› Compiling SentryExtraContextProvider.m
+› Compiling Pods/Sentry » SentryException.m
+› Compiling Pods/Sentry » SentryEventSwiftHelper.m
+› Compiling Pods/Sentry » SentryEvent.m
+› Compiling Pods/Sentry » SentryEnvelopeItemHeader.m
+› Compiling Pods/Sentry » SentryEnvelopeRateLimit.m
+› Compiling Pods/Sentry » SentryEnvelopeHeaderHelper.m
+› Compiling Pods/Sentry » SentryEnvelopeAttachmentHeader.m
+› Compiling Pods/Sentry » SentryDummyPublicEmptyClass.m
+› Compiling Pods/Sentry » SentryDummyPrivateEmptyClass.m
+› Compiling Pods/Sentry » SentryDsn.m
+› Compiling Pods/Sentry » SentryDisplayLinkWrapper.m
+› Compiling Pods/Sentry » SentryDispatchFactory.m
+› Compiling Pods/Sentry » SentryDiscardReasonMapper.m
+› Compiling Pods/Sentry » SentryDictionaryDeepSearch.m
+› Compiling Pods/Sentry » SentryDependencyContainerSwiftHelper.m
+› Compiling Pods/Sentry » SentryDependencyContainer.m
+› Compiling Pods/Sentry » SentryDelayedFramesTracker.m
+› Compiling Pods/Sentry » SentryDelayedFrame.m
+› Compiling SentryDefaultRateLimits.m
+› Compiling SentryDebugMeta.m
+› Compiling Pods/Sentry » SentryDateUtils.m
+› Compiling Pods/Sentry » SentryDebugImageProvider.m
+› Compiling Pods/Sentry » SentryDateUtil.m
+› Compiling Pods/Sentry » SentryCrashUUIDConversion.c
+› Compiling Pods/Sentry » SentryDataCategoryMapper.m
+› Compiling Pods/Sentry » SentryCrashSysCtl.c
+› Compiling Pods/Sentry » SentryCrashSymbolicator.c
+› Compiling Pods/Sentry » SentryCrashString.c
+› Compiling Pods/Sentry » SentryCrashStackCursor_SelfThread.m
+› Compiling Pods/Sentry » SentryCrashStackCursor_MachineContext.c
+› Compiling Pods/Sentry » SentryCrashStackCursor_Backtrace.c
+› Compiling Pods/Sentry » SentryCrashThread.c
+› Compiling Pods/Sentry » SentryCrashStackCursor.c
+› Compiling Pods/Sentry » SentryCrashSignalInfo.c
+› Compiling Pods/Sentry » SentryCrashScopeObserver.m
+› Compiling Pods/Sentry » SentryCrashReportStore.c
+› Compiling Pods/Sentry » SentryCrashReportSink.m
+› Compiling Pods/Sentry » SentryCrashReportFilterBasic.m
+› Compiling Pods/Sentry » SentryCrashReport.c
+› Compiling Pods/Sentry » SentryCrashReportConverter.m
+› Compiling Pods/Sentry » SentryCrashNSErrorUtil.m
+› Compiling Pods/Sentry » SentryCrashMonitor_System.m
+› Compiling Pods/Sentry » SentryCrashMonitor_Signal.c
+› Compiling Pods/Sentry » SentryCrashMonitor_NSException.m
+› Compiling Pods/Sentry » SentryCrashMonitor_MachException.c
+› Compiling Pods/Sentry » SentryCrashMonitor_AppState.c
+› Compiling Pods/Sentry » SentryCrashMonitorType.c
+› Compiling Pods/Sentry » SentryCrashMonitor.c
+› Compiling Pods/Sentry » SentryCrashMemory.c
+› Compiling Pods/Sentry » SentryCrashMach.c
+› Compiling Pods/Sentry » SentryCrashMachineContext.c
+› Compiling Pods/Sentry » SentryCrashJSONCodecObjC.m
+› Compiling Pods/Sentry » SentryCrashJSONCodec.c
+› Compiling Pods/Sentry » SentryCrashIntegrationSessionHandler.m
+› Compiling Pods/Sentry » SentryCrashIntegration.m
+› Compiling Pods/Sentry » SentryCrashInstallationReporter.m
+› Compiling Pods/Sentry » SentryCrashID.c
+› Compiling Pods/Sentry » SentryCrashFileUtils.c
+› Compiling Pods/Sentry » SentryCrashExceptionApplicationHelper.m
+› Compiling Pods/Sentry » SentryCrashDynamicLinker.c
+› Compiling Pods/Sentry » SentryCrashDoctor.m
+› Compiling Pods/Sentry » SentryCrashDefaultMachineContextWrapper.m
+› Compiling Pods/Sentry » SentryCrashDebug.c
+› Compiling Pods/Sentry » SentryCrashDate.c
+› Compiling Pods/Sentry » SentryCrashCxaThrowSwapper.c
+› Compiling Pods/Sentry » SentryCrashCPU_x86_64.c
+› Compiling Pods/Sentry » SentryCrashCachedData.c
+› Compiling Pods/Sentry » SentryCrashCPU_x86_32.c
+› Compiling Pods/Sentry » SentryCrashCPU_arm64.c
+› Compiling Pods/Sentry » SentryCrashCPU_arm.c
+› Compiling Pods/Sentry » SentryCrashCPU.c
+› Compiling Pods/Sentry » SentryCrashC.c
+› Compiling Pods/Sentry » SentryCrashBinaryImageCache.c
+› Compiling Pods/Sentry » SentryCrash.m
+› Compiling Pods/Sentry » SentryConcurrentRateLimitsDictionary.m
+› Compiling Pods/Sentry » SentryClient.m
+› Compiling Pods/Sentry » SentryByteCountFormatter.m
+› Compiling Pods/Sentry » SentryBuildAppStartSpans.m
+› Compiling Pods/Sentry » SentryBreadcrumbTracker.m
+› Compiling Pods/Sentry » SentryBreadcrumb.m
+› Compiling Pods/Sentry » SentryBinaryImageCacheCallbacks.m
+› Compiling Pods/Sentry » SentryBaggage.m
+› Compiling Pods/Sentry » SentryCoreDataTrackingIntegration.m
+› Compiling Pods/Sentry » SentryCoreDataTracker.m
+› Compiling Pods/Sentry » SentryCoreDataSwizzling.m
+› Compiling Pods/Sentry » SentryAutoSessionTrackingIntegration.m
+› Compiling Pods/Sentry » SentryAttachment.m
+› Compiling Pods/Sentry » SentryAsynchronousOperation.m
+› Compiling Pods/Sentry » SentryAsyncSafeLog.c
+› Compiling Pods/Sentry » SentryAsyncLog.m
+› Compiling Pods/Sentry » SentryArray.m
+› Compiling Pods/Sentry » SentryAppStateManager.m
+› Compiling Pods/Sentry » SentryAppStartTrackingIntegration.m
+› Compiling Pods/Sentry » SentryAppStartMeasurement.m
+› Compiling Pods/Sentry » SentryAppStartTracker.m
+› Compiling Pods/Sentry » SentryANRTrackingIntegration.m
+› Compiling Pods/Sentry » SentryANRTrackerV2.m
+› Compiling Pods/Sentry » SentryANRTrackerV1.m
+› Compiling Pods/Sentry » Sentry-dummy.m
+› Compiling Pods/Sentry » PrivateSentrySDKOnly.m
+› Compiling Pods/Sentry » NSMutableDictionary+Sentry.m
+› Executing react-native Pods/React-Core-prebuilt » [CP] Copy XCFrameworks
+› Packaging expo-image Pods/SDWebImageWebPCoder » libSDWebImageWebPCoder.a
+› Packaging expo-image Pods/SDWebImageSVGCoder » libSDWebImageSVGCoder.a
+› Packaging expo-image Pods/SDWebImageAVIFCoder » libSDWebImageAVIFCoder.a
+› Linking   Ledger/LedgerWatchComplication » LedgerWatchComplication
+› Linking   Ledger/LedgerWatchComplication » LedgerWatchComplication
+› Packaging Pods/Sentry » libSentry.a
+› Signing   Ledger/LedgerWidget » LedgerWidget.appex
+› Executing Pods/Sentry » Copy generated compatibility header
+› Creating  Ledger/LedgerWidget » LedgerWidget.appex
+› Generating debug Ledger/LedgerWatchComplication » LedgerWatchComplication.appex.dSYM
+› Signing   Ledger/LedgerWatchComplication » LedgerWatchComplication.appex
+› Preparing ResourceBundle-ExpoFileSystem_privacy-ExpoFileSystem-Info.plist
+› Copying   ios/build/Build/Intermediates.noindex/ArchiveIntermediates/Ledger/IntermediateBuildFilesPath/UninstalledProducts/iphoneos/ExpoFileSystem_privacy.bundle/PrivacyInfo.xcprivacy ➜ ../../../Users/expo/workingdir/build/node_modules/.pnpm/expo-file-system@19.0.23_expo@54.0.35_react-native@0.81.5_@babel+core@7.29.7_@types+react@19.1.17_react@19.1.0_/node_modules/expo-file-system/ios/PrivacyInfo.xcprivacy
+› Executing react-native Pods/React-RCTFBReactNativeSpec » [CP-User] [RN]Check FBReactNativeSpec
+› Creating  Pods/ExpoSystemUI-ExpoSystemUI_privacy » ExpoSystemUI_privacy.bundle
+› Creating  Ledger/LedgerWatchComplication » LedgerWatchComplication.appex
+› Preparing expo-updates Pods/EXUpdates-EXUpdates » ResourceBundle-EXUpdates-EXUpdates-Info.plist
+› Creating  Pods/ExpoFileSystem-ExpoFileSystem_privacy » ExpoFileSystem_privacy.bundle
+› Preparing ResourceBundle-ExpoTaskManager_privacy-EXTaskManager-Info.plist
+› Copying   ios/build/Build/Intermediates.noindex/ArchiveIntermediates/Ledger/IntermediateBuildFilesPath/UninstalledProducts/iphoneos/ExpoTaskManager_privacy.bundle/PrivacyInfo.xcprivacy ➜ ../../../Users/expo/workingdir/build/node_modules/.pnpm/expo-task-manager@14.0.9_expo@54.0.35_react-native@0.81.5_@babel+core@7.29.7_@types+react@19.1.17_react@19.1.0_/node_modules/expo-task-manager/ios/PrivacyInfo.xcprivacy
+› Creating  expo-updates Pods/EXUpdates-EXUpdates » EXUpdates.bundle
+› Compiling expo-structured-headers Pods/EXStructuredHeaders » EXStructuredHeadersParser.m
+› Compiling expo-structured-headers Pods/EXStructuredHeaders » EXStructuredHeaders-dummy.m
+› Preparing Pods/EXNotifications-ExpoNotifications_privacy » ResourceBundle-ExpoNotifications_privacy-EXNotifications-Info.plist
+› Copying   ios/build/Build/Intermediates.noindex/ArchiveIntermediates/Ledger/IntermediateBuildFilesPath/UninstalledProducts/iphoneos/ExpoNotifications_privacy.bundle/PrivacyInfo.xcprivacy ➜ ../../../Users/expo/workingdir/build/node_modules/.pnpm/expo-notifications@0.32.17_expo@54.0.35_react-native@0.81.5_@babel+core@7.29.7_@types+react@1_yyqdbwbe3km5sowip5dnz3yldq/node_modules/expo-notifications/ios/PrivacyInfo.xcprivacy
+› Copying   ios/build/Build/Intermediates.noindex/ArchiveIntermediates/Ledger/IntermediateBuildFilesPath/UninstalledProducts/watchos/LedgerWatch.app/PrivacyInfo.xcprivacy ➜ ../../../Users/expo/workingdir/build/artifacts/ledger-mobile/ios/Ledger/PrivacyInfo.xcprivacy
+› Executing @workspace/ledger-mobile Pods/ReactCodegen » [CP-User] Generate Specs
+› Packaging expo-structured-headers Pods/EXStructuredHeaders » libEXStructuredHeaders.a
+› Compiling react-native-shared-group-preferences Pods/RNReactNativeSharedGroupPreferences » RNReactNativeSharedGroupPreferences-dummy.m
+› Compiling react-native-shared-group-preferences Pods/RNReactNativeSharedGroupPreferences » RNReactNativeSharedGroupPreferences.m
+› Creating  Pods/EXTaskManager-ExpoTaskManager_privacy » ExpoTaskManager_privacy.bundle
+› Packaging react-native-shared-group-preferences Pods/RNReactNativeSharedGroupPreferences » libRNReactNativeSharedGroupPreferences.a
+› Compiling expo-json-utils Pods/EXJSONUtils » NSDictionary+EXJSONUtils.m
+› Compiling expo-json-utils Pods/EXJSONUtils » EXJSONUtils-dummy.m
+› Packaging expo-json-utils Pods/EXJSONUtils » libEXJSONUtils.a
+› Preparing Pods/EXConstants-ExpoConstants_privacy » ResourceBundle-ExpoConstants_privacy-EXConstants-Info.plist
+› Copying   ios/build/Build/Intermediates.noindex/ArchiveIntermediates/Ledger/IntermediateBuildFilesPath/UninstalledProducts/iphoneos/ExpoConstants_privacy.bundle/PrivacyInfo.xcprivacy ➜ ../../../Users/expo/workingdir/build/node_modules/.pnpm/expo-constants@18.0.13_expo@54.0.35_react-native@0.81.5_@babel+core@7.29.7_@types+react@19.1.17_react@19.1.0_/node_modules/expo-constants/ios/PrivacyInfo.xcprivacy
+› Preparing expo-constants Pods/EXConstants-EXConstants » ResourceBundle-EXConstants-EXConstants-Info.plist
+› Copying   ios/build/Build/Intermediates.noindex/ArchiveIntermediates/Ledger/IntermediateBuildFilesPath/UninstalledProducts/iphoneos/ExpoApplication_privacy.bundle/PrivacyInfo.xcprivacy ➜ ../../../Users/expo/workingdir/build/node_modules/.pnpm/expo-application@7.0.8_expo@54.0.35/node_modules/expo-application/ios/PrivacyInfo.xcprivacy
+› Creating  Pods/EXNotifications-ExpoNotifications_privacy » ExpoNotifications_privacy.bundle
+› Creating  Pods/EXConstants-ExpoConstants_privacy » ExpoConstants_privacy.bundle
+› Creating  expo-constants Pods/EXConstants-EXConstants » EXConstants.bundle
+› Creating  Pods/EXApplication-ExpoApplication_privacy » ExpoApplication_privacy.bundle
+› Compiling @workspace/ledger-mobile Pods/ReactCodegen » States.cpp
+› Compiling @workspace/ledger-mobile Pods/ReactCodegen » States.cpp
+› Compiling @workspace/ledger-mobile Pods/ReactCodegen » States.cpp
+› Compiling @workspace/ledger-mobile Pods/ReactCodegen » safeareacontextJSI-generated.cpp
+› Compiling @workspace/ledger-mobile Pods/ReactCodegen » safeareacontext-generated.mm
+› Compiling @workspace/ledger-mobile Pods/ReactCodegen » rnworkletsJSI-generated.cpp
+› Compiling @workspace/ledger-mobile Pods/ReactCodegen » rnworklets-generated.mm
+› Compiling @workspace/ledger-mobile Pods/ReactCodegen » rnsvgJSI-generated.cpp
+› Compiling @workspace/ledger-mobile Pods/ReactCodegen » rnsvg-generated.mm
+› Compiling @workspace/ledger-mobile Pods/ReactCodegen » rnscreensJSI-generated.cpp
+› Compiling @workspace/ledger-mobile Pods/ReactCodegen » rnscreens-generated.mm
+› Compiling @workspace/ledger-mobile Pods/ReactCodegen » rnreanimatedJSI-generated.cpp
+› Compiling @workspace/ledger-mobile Pods/ReactCodegen » rnreanimated-generated.mm
+› Compiling @workspace/ledger-mobile Pods/ReactCodegen » rngesturehandler_codegenJSI-generated.cpp
+› Compiling @workspace/ledger-mobile Pods/ReactCodegen » rngesturehandler_codegen-generated.mm
+› Compiling @workspace/ledger-mobile Pods/ReactCodegen » rnasyncstorageJSI-generated.cpp
+› Compiling @workspace/ledger-mobile Pods/ReactCodegen » rnasyncstorage-generated.mm
+› Compiling @workspace/ledger-mobile Pods/ReactCodegen » reactnativekeyboardcontrollerJSI-generated.cpp
+› Compiling @workspace/ledger-mobile Pods/ReactCodegen » reactnativekeyboardcontroller-generated.mm
+› Compiling @workspace/ledger-mobile Pods/ReactCodegen » States.cpp
+› Compiling @workspace/ledger-mobile Pods/ReactCodegen » States.cpp
+› Compiling @workspace/ledger-mobile Pods/ReactCodegen » States.cpp
+› Compiling @workspace/ledger-mobile Pods/ReactCodegen » ShadowNodes.cpp
+› Compiling @workspace/ledger-mobile Pods/ReactCodegen » ShadowNodes.cpp
+› Compiling @workspace/ledger-mobile Pods/ReactCodegen » ShadowNodes.cpp
+› Compiling @workspace/ledger-mobile Pods/ReactCodegen » ShadowNodes.cpp
+› Compiling @workspace/ledger-mobile Pods/ReactCodegen » ShadowNodes.cpp
+› Compiling @workspace/ledger-mobile Pods/ReactCodegen » ShadowNodes.cpp
+› Compiling @workspace/ledger-mobile Pods/ReactCodegen » RNSentrySpecJSI-generated.cpp
+› Compiling @workspace/ledger-mobile Pods/ReactCodegen » RNSentrySpec-generated.mm
+› Compiling @workspace/ledger-mobile Pods/ReactCodegen » RCTUnstableModulesRequiringMainQueueSetupProvider.mm
+› Compiling @workspace/ledger-mobile Pods/ReactCodegen » RCTThirdPartyComponentsProvider.mm
+› Compiling @workspace/ledger-mobile Pods/ReactCodegen » RCTModulesConformingToProtocolsProvider.mm
+› Compiling @workspace/ledger-mobile Pods/ReactCodegen » RCTModuleProviders.mm
+› Compiling @workspace/ledger-mobile Pods/ReactCodegen » Props.cpp
+› Compiling @workspace/ledger-mobile Pods/ReactCodegen » Props.cpp
+› Compiling @workspace/ledger-mobile Pods/ReactCodegen » Props.cpp
+› Compiling @workspace/ledger-mobile Pods/ReactCodegen » Props.cpp
+› Compiling @workspace/ledger-mobile Pods/ReactCodegen » Props.cpp
+› Compiling @workspace/ledger-mobile Pods/ReactCodegen » Props.cpp
+› Compiling @workspace/ledger-mobile Pods/ReactCodegen » EventEmitters.cpp
+› Compiling @workspace/ledger-mobile Pods/ReactCodegen » EventEmitters.cpp
+› Compiling @workspace/ledger-mobile Pods/ReactCodegen » EventEmitters.cpp
+› Compiling @workspace/ledger-mobile Pods/ReactCodegen » EventEmitters.cpp
+› Compiling @workspace/ledger-mobile Pods/ReactCodegen » EventEmitters.cpp
+› Compiling @workspace/ledger-mobile Pods/ReactCodegen » EventEmitters.cpp
+› Compiling @workspace/ledger-mobile Pods/ReactCodegen » ComponentDescriptors.cpp
+› Compiling @workspace/ledger-mobile Pods/ReactCodegen » ComponentDescriptors.cpp
+› Compiling @workspace/ledger-mobile Pods/ReactCodegen » ComponentDescriptors.cpp
+› Compiling @workspace/ledger-mobile Pods/ReactCodegen » ComponentDescriptors.cpp
+› Compiling @workspace/ledger-mobile Pods/ReactCodegen » ComponentDescriptors.cpp
+› Compiling @workspace/ledger-mobile Pods/ReactCodegen » ComponentDescriptors.cpp
+› Compiling react-native-safe-area-context Pods/react-native-safe-area-context » RNCSafeAreaViewState.cpp
+› Compiling react-native-safe-area-context Pods/react-native-safe-area-context » RNCSafeAreaViewShadowNode.cpp
+› Compiling react-native-safe-area-context Pods/react-native-safe-area-context » RNCSafeAreaViewComponentView.mm
+› Compiling react-native-safe-area-context Pods/react-native-safe-area-context » RNCSafeAreaProviderComponentView.mm
+› Compiling react-native-safe-area-context Pods/react-native-safe-area-context » RNCSafeAreaContext.mm
+› Compiling @workspace/ledger-mobile Pods/ReactCodegen » ReactCodegen-dummy.m
+› Packaging @workspace/ledger-mobile Pods/ReactCodegen » libReactCodegen.a
+› Compiling react-native-safe-area-context Pods/react-native-safe-area-context » react-native-safe-area-context-dummy.m
+› Linking   Ledger/LedgerWatch » LedgerWatch
+› Linking   Ledger/LedgerWatch » LedgerWatch
+› Compiling @workspace/ledger-mobile Pods/ReactAppDependencyProvider » RCTAppDependencyProvider.mm
+› Compiling @workspace/ledger-mobile Pods/ReactAppDependencyProvider » ReactAppDependencyProvider-dummy.m
+› Compiling react-native-worklets Pods/RNWorklets » WorkletsVersion.cpp
+› Compiling react-native-worklets Pods/RNWorklets » WorkletsModuleProxy.cpp
+› Packaging @workspace/ledger-mobile Pods/ReactAppDependencyProvider » libReactAppDependencyProvider.a
+› Compiling react-native-worklets Pods/RNWorklets » WorkletsModule.mm
+› Compiling react-native-worklets Pods/RNWorklets » WorkletsMessageThread.mm
+› Compiling react-native-worklets Pods/RNWorklets » WorkletsJSIUtils.cpp
+› Compiling react-native-worklets Pods/RNWorklets » WorkletRuntimeRegistry.cpp
+› Compiling react-native-worklets Pods/RNWorklets » WorkletRuntimeDecorator.cpp
+› Compiling react-native-worklets Pods/RNWorklets » WorkletRuntime.cpp
+› Compiling react-native-worklets Pods/RNWorklets » WorkletHermesRuntime.cpp
+› Compiling react-native-worklets Pods/RNWorklets » WorkletEventHandler.cpp
+› Compiling react-native-worklets Pods/RNWorklets » VersionUtils.cpp
+› Compiling react-native-worklets Pods/RNWorklets » ValueUnpacker.cpp
+› Compiling react-native-worklets Pods/RNWorklets » UIScheduler.cpp
+› Compiling react-native-worklets Pods/RNWorklets » SynchronizableUnpacker.cpp
+› Compiling react-native-worklets Pods/RNWorklets » SynchronizableAccess.cpp
+› Compiling react-native-worklets Pods/RNWorklets » Synchronizable.cpp
+› Compiling react-native-worklets Pods/RNWorklets » SlowAnimations.mm
+› Compiling react-native-worklets Pods/RNWorklets » Serializable.cpp
+› Compiling react-native-worklets Pods/RNWorklets » RuntimeManager.cpp
+› Compiling react-native-worklets Pods/RNWorklets » RuntimeData.cpp
+› Compiling react-native-worklets Pods/RNWorklets » RNRuntimeWorkletDecorator.cpp
+› Compiling react-native-worklets Pods/RNWorklets » PlatformLogger.mm
+› Compiling react-native-worklets Pods/RNWorklets » JSScheduler.cpp
+› Compiling react-native-worklets Pods/RNWorklets » JSLogger.cpp
+› Compiling react-native-worklets Pods/RNWorklets » JSIWorkletsModuleProxy.cpp
+› Compiling react-native-worklets Pods/RNWorklets » JSISerializer.cpp
+› Compiling react-native-worklets Pods/RNWorklets » IOSUIScheduler.mm
+› Compiling react-native-worklets Pods/RNWorklets » FeatureFlags.cpp
+› Compiling react-native-worklets Pods/RNWorklets » EventLoop.cpp
+› Compiling react-native-worklets Pods/RNWorklets » EventHandlerRegistry.cpp
+› Compiling react-native-worklets Pods/RNWorklets » AsyncQueueImpl.cpp
+› Compiling react-native-worklets Pods/RNWorklets » AnimationFrameQueue.mm
+› Compiling react-native-worklets Pods/RNWorklets » AnimationFrameBatchinator.cpp
+› Compiling react-native-keyboard-controller Pods/react-native-keyboard-controller » RNKCOverKeyboardViewState.cpp
+› Compiling react-native-keyboard-controller Pods/react-native-keyboard-controller » RNKCOverKeyboardViewShadowNode.cpp
+› Compiling react-native-keyboard-controller Pods/react-native-keyboard-controller » RNKCKeyboardGestureAreaShadowNode.cpp
+› Compiling react-native-keyboard-controller Pods/react-native-keyboard-controller » RNKCKeyboardExtenderShadowNode.cpp
+› Compiling react-native-keyboard-controller Pods/react-native-keyboard-controller » RNKCKeyboardControllerViewShadowNode.cpp
+› Compiling react-native-keyboard-controller Pods/react-native-keyboard-controller » RNKCKeyboardBackgroundViewShadowNode.cpp
+› Compiling react-native-keyboard-controller Pods/react-native-keyboard-controller » OverKeyboardViewManager.mm
+› Compiling react-native-keyboard-controller Pods/react-native-keyboard-controller » KeyboardGestureAreaManager.mm
+› Compiling react-native-keyboard-controller Pods/react-native-keyboard-controller » KeyboardExtenderManager.mm
+› Compiling react-native-keyboard-controller Pods/react-native-keyboard-controller » KeyboardControllerViewManager.mm
+› Compiling react-native-keyboard-controller Pods/react-native-keyboard-controller » KeyboardControllerView.mm
+› Compiling react-native-keyboard-controller Pods/react-native-keyboard-controller » KeyboardControllerModule.mm
+› Compiling react-native-keyboard-controller Pods/react-native-keyboard-controller » KeyboardBackgroundViewManager.mm
+› Compiling react-native-keyboard-controller Pods/react-native-keyboard-controller » react-native-keyboard-controller-dummy.m
+› Compiling @sentry/react-native Pods/RNSentry » RNSentryReplayUnmask.mm
+› Compiling @sentry/react-native Pods/RNSentry » RNSentryReplayMask.mm
+› Compiling @sentry/react-native Pods/RNSentry » RNSentryReplay.mm
+› Compiling @sentry/react-native Pods/RNSentry » RNSentry.mm
+› Compiling react-native-safe-area-context Pods/react-native-safe-area-context » RNCSafeAreaViewMode.m
+› Compiling react-native-safe-area-context Pods/react-native-safe-area-context » RNCSafeAreaViewManager.m
+› Compiling react-native-safe-area-context Pods/react-native-safe-area-context » RNCSafeAreaViewLocalData.m
+› Compiling react-native-safe-area-context Pods/react-native-safe-area-context » RNCSafeAreaViewEdges.m
+› Compiling react-native-safe-area-context Pods/react-native-safe-area-context » RNCSafeAreaViewEdgeMode.m
+› Compiling react-native-safe-area-context Pods/react-native-safe-area-context » RNCSafeAreaView.m
+› Compiling react-native-safe-area-context Pods/react-native-safe-area-context » RNCSafeAreaUtils.m
+› Compiling react-native-safe-area-context Pods/react-native-safe-area-context » RNCSafeAreaShadowView.m
+› Compiling react-native-safe-area-context Pods/react-native-safe-area-context » RNCSafeAreaProviderManager.m
+› Compiling react-native-safe-area-context Pods/react-native-safe-area-context » RNCSafeAreaProvider.m
+› Compiling react-native-safe-area-context Pods/react-native-safe-area-context » RNCOnInsetsChangeEvent.m
+› Compiling react-native-keyboard-controller Pods/react-native-keyboard-controller » UITextView+DelegateManager.m
+› Compiling react-native-keyboard-controller Pods/react-native-keyboard-controller » RCTUIManager+LayoutAnimationManager.m
+› Compiling react-native-keyboard-controller Pods/react-native-keyboard-controller » KeyboardMoveEvent.m
+› Compiling react-native-keyboard-controller Pods/react-native-keyboard-controller » FocusedInputTextChangedEvent.m
+› Compiling react-native-keyboard-controller Pods/react-native-keyboard-controller » FocusedInputSelectionChangedEvent.m
+› Compiling react-native-keyboard-controller Pods/react-native-keyboard-controller » FocusedInputLayoutChangedEvent.m
+› Packaging react-native-safe-area-context Pods/react-native-safe-area-context » libreact-native-safe-area-context.a
+› Packaging react-native-keyboard-controller Pods/react-native-keyboard-controller » libreact-native-keyboard-controller.a
+› Executing react-native-keyboard-controller Pods/react-native-keyboard-controller » Copy generated compatibility header
+› Compiling react-native-screens Pods/RNScreens » UIWindow+RNScreens.mm
+› Compiling react-native-screens Pods/RNScreens » UIViewController+RNScreens.mm
+› Compiling react-native-screens Pods/RNScreens » UIView+RNSUtility.mm
+› Compiling react-native-screens Pods/RNScreens » UIScrollView+RNScreens.mm
+› Compiling react-native-screens Pods/RNScreens » UINavigationBar+RNSUtility.mm
+› Compiling @sentry/react-native Pods/RNSentry » RNSentry-dummy.m
+› Compiling react-native-screens Pods/RNScreens » RNScreensTurboModule.cpp
+› Compiling react-native-screens Pods/RNScreens » RNSViewControllerInvalidator.mm
+› Compiling react-native-screens Pods/RNScreens » RNSTabsScreenViewController.mm
+› Compiling react-native-screens Pods/RNScreens » RNSTabBarControllerDelegate.mm
+› Compiling react-native-screens Pods/RNScreens » RNSTabBarController.mm
+› Compiling react-native-screens Pods/RNScreens » RNSTabBarAppearanceCoordinator.mm
+› Compiling react-native-screens Pods/RNScreens » RNSSplitViewScreenShadowNode.cpp
+› Compiling react-native-screens Pods/RNScreens » RNSSearchBar.mm
+› Compiling react-native-screens Pods/RNScreens » RNSScrollViewHelper.mm
+› Compiling react-native-screens Pods/RNScreens » RNSScrollViewFinder.mm
+› Compiling react-native-screens Pods/RNScreens » RNSScreenWindowTraits.mm
+› Compiling react-native-screens Pods/RNScreens » RNSScreenViewEvent.mm
+› Compiling react-native-screens Pods/RNScreens » RNSScreenState.cpp
+› Compiling react-native-screens Pods/RNScreens » RNSScreenStackHeaderSubviewState.cpp
+› Compiling react-native-screens Pods/RNScreens » RNSScreenStackHeaderSubviewShadowNode.cpp
+› Compiling react-native-screens Pods/RNScreens » RNSScreenStackHeaderSubview.mm
+› Compiling react-native-screens Pods/RNScreens » RNSScreenStackHeaderConfigState.cpp
+› Compiling react-native-screens Pods/RNScreens » RNSScreenStackHeaderConfigShadowNode.cpp
+› Compiling react-native-screens Pods/RNScreens » RNSScreenStackHeaderConfig.mm
+› Compiling react-native-screens Pods/RNScreens » RNSScreenStackAnimator.mm
+› Compiling react-native-screens Pods/RNScreens » RNSScreenStack.mm
+› Compiling react-native-screens Pods/RNScreens » RNSScreenShadowNode.cpp
+› Compiling react-native-screens Pods/RNScreens » RNSScreenRemovalListener.cpp
+› Compiling react-native-screens Pods/RNScreens » RNSScreenNavigationContainer.mm
+› Compiling react-native-screens Pods/RNScreens » RNSScreenFooter.mm
+› Compiling react-native-screens Pods/RNScreens » RNSScreenContentWrapper.mm
+› Compiling react-native-screens Pods/RNScreens » RNSScreenContainer.mm
+› Compiling react-native-screens Pods/RNScreens » RNSScreen.mm
+› Compiling react-native-screens Pods/RNScreens » RNSReactBaseView.mm
+› Compiling react-native-screens Pods/RNScreens » RNSPercentDrivenInteractiveTransition.mm
+› Compiling react-native-screens Pods/RNScreens » RNSModule.mm
+› Compiling react-native-screens Pods/RNScreens » RNSModalScreenShadowNode.cpp
+› Compiling react-native-screens Pods/RNScreens » RNSModalScreen.mm
+› Compiling react-native-screens Pods/RNScreens » RNSInvalidatedComponentsRegistry.mm
+› Compiling react-native-screens Pods/RNScreens » RNSHeaderHeightChangeEvent.mm
+› Compiling react-native-screens Pods/RNScreens » RNSGammaStubs.mm
+› Compiling react-native-screens Pods/RNScreens » RNSFullWindowOverlay.mm
+› Compiling react-native-screens Pods/RNScreens » RNSConvert.mm
+› Compiling react-native-screens Pods/RNScreens » RNSConversions.mm
+› Compiling react-native-screens Pods/RNScreens » RNSConversions-SplitView.mm
+› Compiling react-native-screens Pods/RNScreens » RNSConversions-Fabric.mm
+› Compiling react-native-screens Pods/RNScreens » RNSConversions-BottomTabs.mm
+› Compiling react-native-screens Pods/RNScreens » RNSBottomTabsState.cpp
+› Compiling react-native-screens Pods/RNScreens » RNSBottomTabsShadowNode.cpp
+› Compiling react-native-screens Pods/RNScreens » RNSBottomTabsScreenEventEmitter.mm
+› Compiling react-native-screens Pods/RNScreens » RNSBottomTabsScreenComponentViewManager.mm
+› Compiling react-native-screens Pods/RNScreens » RNSBottomTabsScreenComponentView.mm
+› Compiling react-native-screens Pods/RNScreens » RNSBottomTabsHostEventEmitter.mm
+› Compiling react-native-screens Pods/RNScreens » RNSBottomTabsHostComponentViewManager.mm
+› Compiling react-native-screens Pods/RNScreens » RNSBottomTabsHostComponentView.mm
+› Compiling react-native-screens Pods/RNScreens » RNSBottomTabsHostComponentView+RNSImageLoader.mm
+› Compiling react-native-screens Pods/RNScreens » RCTTouchHandler+RNSUtility.mm
+› Compiling react-native-screens Pods/RNScreens » RCTSurfaceTouchHandler+RNSUtility.mm
+› Compiling react-native-screens Pods/RNScreens » RCTImageComponentView+RNSScreenStackHeaderConfig.mm
+› Compiling react-native-screens Pods/RNScreens » RCTConvert+RNScreens.mm
+› Compiling react-native-screens Pods/RNScreens » RCTConvert+RNSBottomTabs.mm
+› Compiling react-native-screens Pods/RNScreens » NSString+RNSUtility.mm
+› Compiling react-native-worklets Pods/RNWorklets » RNWorklets-dummy.m
+› Packaging react-native-worklets Pods/RNWorklets » libRNWorklets.a
+› Compiling react-native-screens Pods/RNScreens » RNScreens-dummy.m
+› Compiling react-native-svg Pods/RNSVG » RNSVGViewBox.mm
+› Compiling react-native-svg Pods/RNSVG » RNSVGUseManager.mm
+› Compiling react-native-svg Pods/RNSVG » RNSVGUse.mm
+› Compiling react-native-svg Pods/RNSVG » RNSVGTopAlignedLabel.ios.mm
+› Compiling react-native-svg Pods/RNSVG » RNSVGTextProperties.mm
+› Packaging react-native-screens Pods/RNScreens » libRNScreens.a
+› Compiling react-native-svg Pods/RNSVG » RNSVGTextPathManager.mm
+› Compiling react-native-svg Pods/RNSVG » RNSVGTextPath.mm
+› Compiling react-native-svg Pods/RNSVG » RNSVGTextManager.mm
+› Compiling react-native-svg Pods/RNSVG » RNSVGText.mm
+› Compiling react-native-svg Pods/RNSVG » RNSVGTSpanManager.mm
+› Compiling react-native-svg Pods/RNSVG » RNSVGTSpan.mm
+› Compiling react-native-svg Pods/RNSVG » RNSVGSymbolManager.mm
+› Compiling react-native-svg Pods/RNSVG » RNSVGSymbol.mm
+› Compiling react-native-svg Pods/RNSVG » RNSVGSvgViewModule.mm
+› Compiling react-native-svg Pods/RNSVG » RNSVGSvgViewManager.mm
+› Compiling react-native-svg Pods/RNSVG » RNSVGSvgView.mm
+› Compiling react-native-svg Pods/RNSVG » RNSVGSolidColorBrush.mm
+› Compiling react-native-svg Pods/RNSVG » RNSVGShadowNodes.cpp
+› Compiling react-native-svg Pods/RNSVG » RNSVGRenderableModule.mm
+› Compiling react-native-svg Pods/RNSVG » RNSVGRenderableManager.mm
+› Compiling react-native-svg Pods/RNSVG » RNSVGRenderable.mm
+› Compiling react-native-svg Pods/RNSVG » RNSVGRenderUtils.mm
+› Compiling react-native-svg Pods/RNSVG » RNSVGRectManager.mm
+› Compiling react-native-svg Pods/RNSVG » RNSVGRect.mm
+› Compiling react-native-svg Pods/RNSVG » RNSVGRadialGradientManager.mm
+› Compiling react-native-svg Pods/RNSVG » RNSVGRadialGradient.mm
+› Compiling react-native-svg Pods/RNSVG » RNSVGPropHelper.mm
+› Compiling react-native-svg Pods/RNSVG » RNSVGPatternManager.mm
+› Compiling react-native-svg Pods/RNSVG » RNSVGPattern.mm
+› Compiling react-native-svg Pods/RNSVG » RNSVGPathParser.mm
+› Compiling react-native-svg Pods/RNSVG » RNSVGPathMeasure.mm
+› Compiling react-native-svg Pods/RNSVG » RNSVGPathManager.mm
+› Compiling react-native-svg Pods/RNSVG » RNSVGPath.mm
+› Compiling react-native-svg Pods/RNSVG » RNSVGPainterBrush.mm
+› Compiling react-native-svg Pods/RNSVG » RNSVGPainter.mm
+› Compiling react-native-svg Pods/RNSVG » RNSVGNodeManager.mm
+› Compiling react-native-svg Pods/RNSVG » RNSVGNode.mm
+› Compiling react-native-svg Pods/RNSVG » RNSVGMaskManager.mm
+› Compiling react-native-svg Pods/RNSVG » RNSVGMask.mm
+› Compiling react-native-svg Pods/RNSVG » RNSVGMarkerPosition.mm
+› Compiling react-native-svg Pods/RNSVG » RNSVGMarkerManager.mm
+› Compiling react-native-svg Pods/RNSVG » RNSVGMarker.mm
+› Compiling react-native-svg Pods/RNSVG » RNSVGLinearGradientManager.mm
+› Compiling react-native-svg Pods/RNSVG » RNSVGLinearGradient.mm
+› Compiling react-native-svg Pods/RNSVG » RNSVGLineManager.mm
+› Compiling react-native-svg Pods/RNSVG » RNSVGLine.mm
+› Compiling react-native-svg Pods/RNSVG » RNSVGLength.mm
+› Compiling react-native-svg Pods/RNSVG » RNSVGLayoutableShadowNode.cpp
+› Compiling react-native-svg Pods/RNSVG » RNSVGImageState.cpp
+› Compiling react-native-svg Pods/RNSVG » RNSVGImageShadowNode.cpp
+› Compiling react-native-svg Pods/RNSVG » RNSVGImageManager.mm
+› Compiling react-native-svg Pods/RNSVG » RNSVGImage.mm
+› Compiling react-native-svg Pods/RNSVG » RNSVGGroupManager.mm
+› Compiling react-native-svg Pods/RNSVG » RNSVGGroup.mm
+› Compiling react-native-svg Pods/RNSVG » RNSVGGlyphContext.mm
+› Compiling react-native-svg Pods/RNSVG » RNSVGForeignObjectManager.mm
+› Compiling react-native-svg Pods/RNSVG » RNSVGForeignObject.mm
+› Compiling react-native-svg Pods/RNSVG » RNSVGFontData.mm
+› Compiling react-native-svg Pods/RNSVG » RNSVGFilterRegion.mm
+› Compiling react-native-svg Pods/RNSVG » RNSVGFilterPrimitiveManager.mm
+› Compiling react-native-svg Pods/RNSVG » RNSVGFilterPrimitive.mm
+› Compiling react-native-svg Pods/RNSVG » RNSVGFilterManager.mm
+› Compiling react-native-svg Pods/RNSVG » RNSVGFilter.mm
+› Compiling react-native-svg Pods/RNSVG » RNSVGFeOffsetManager.mm
+› Compiling react-native-svg Pods/RNSVG » RNSVGFeOffset.mm
+› Compiling react-native-svg Pods/RNSVG » RNSVGFeMergeManager.mm
+› Compiling react-native-svg Pods/RNSVG » RNSVGFeMerge.mm
+› Compiling react-native-svg Pods/RNSVG » RNSVGFeGaussianBlurManager.mm
+› Compiling react-native-svg Pods/RNSVG » RNSVGFeGaussianBlur.mm
+› Compiling react-native-svg Pods/RNSVG » RNSVGFeFloodManager.mm
+› Compiling react-native-svg Pods/RNSVG » RNSVGFeFlood.mm
+› Compiling react-native-svg Pods/RNSVG » RNSVGFeCompositeManager.mm
+› Compiling react-native-svg Pods/RNSVG » RNSVGFeComposite.mm
+› Compiling react-native-svg Pods/RNSVG » RNSVGFeColorMatrixManager.mm
+› Compiling react-native-svg Pods/RNSVG » RNSVGFeColorMatrix.mm
+› Compiling react-native-svg Pods/RNSVG » RNSVGFeBlendManager.mm
+› Compiling react-native-svg Pods/RNSVG » RNSVGFeBlend.mm
+› Compiling react-native-svg Pods/RNSVG » RNSVGEllipseManager.mm
+› Compiling react-native-svg Pods/RNSVG » RNSVGEllipse.mm
+› Compiling react-native-svg Pods/RNSVG » RNSVGDefsManager.mm
+› Compiling react-native-svg Pods/RNSVG » RNSVGDefs.mm
+› Compiling react-native-svg Pods/RNSVG » RNSVGCustomFilter.mm
+› Compiling react-native-svg Pods/RNSVG » RNSVGConvert.mm
+› Compiling react-native-svg Pods/RNSVG » RNSVGContextBrush.mm
+› Compiling react-native-svg Pods/RNSVG » RNSVGCompositeXor.mm
+› Compiling react-native-svg Pods/RNSVG » RNSVGClipPathManager.mm
+› Compiling react-native-svg Pods/RNSVG » RNSVGClipPath.mm
+› Compiling react-native-svg Pods/RNSVG » RNSVGCircleManager.mm
+› Compiling react-native-svg Pods/RNSVG » RNSVGCircle.mm
+› Compiling react-native-svg Pods/RNSVG » RNSVGBrush.mm
+› Compiling react-native-svg Pods/RNSVG » RNSVGBezierElement.mm
+› Compiling react-native-svg Pods/RNSVG » RNSVGArithmeticFilter.mm
+› Compiling react-native-svg Pods/RNSVG » RCTConvert+RNSVG.mm
+› Generating debug Ledger/LedgerWatch » LedgerWatch.app.dSYM
+› Compiling @sentry/react-native Pods/RNSentry » RNSentryVersion.m
+› Compiling @sentry/react-native Pods/RNSentry » RNSentryTimeToDisplay.m
+› Compiling @sentry/react-native Pods/RNSentry » RNSentryRNSScreen.m
+› Compiling @sentry/react-native Pods/RNSentry » RNSentryOnDrawReporter.m
+› Compiling @sentry/react-native Pods/RNSentry » RNSentryFramesTrackerListener.m
+› Compiling @sentry/react-native Pods/RNSentry » RNSentryEvents.m
+› Compiling @sentry/react-native Pods/RNSentry » RNSentryDependencyContainer.m
+› Compiling react-native-reanimated Pods/RNReanimated » vectors.cpp
+› Compiling react-native-reanimated Pods/RNReanimated » steps.cpp
+› Compiling react-native-reanimated Pods/RNReanimated » props.cpp
+› Compiling react-native-reanimated Pods/RNReanimated » matrix.cpp
+› Compiling @sentry/react-native Pods/RNSentry » SentrySDKWrapper.m
+› Compiling @sentry/react-native Pods/RNSentry » RNSentryReplayQuality.m
+› Compiling @sentry/react-native Pods/RNSentry » RNSentryReplayBreadcrumbConverterHelper.m
+› Compiling @sentry/react-native Pods/RNSentry » RNSentryReplayBreadcrumbConverter.m
+› Compiling @sentry/react-native Pods/RNSentry » RNSentryId.m
+› Compiling @sentry/react-native Pods/RNSentry » RNSentryExperimentalOptions.m
+› Compiling @sentry/react-native Pods/RNSentry » RNSentryBreadcrumb.m
+› Compiling @sentry/react-native Pods/RNSentry » RNSentry+fetchNativeStack.m
+› Compiling react-native-reanimated Pods/RNReanimated » linear.cpp
+› Compiling react-native-reanimated Pods/RNReanimated » keyframes.cpp
+› Packaging @sentry/react-native Pods/RNSentry » libRNSentry.a
+› Compiling react-native-reanimated Pods/RNReanimated » interpolators.cpp
+› Compiling react-native-reanimated Pods/RNReanimated » cubicBezier.cpp
+› Compiling react-native-reanimated Pods/RNReanimated » common.cpp
+› Compiling react-native-reanimated Pods/RNReanimated » algorithms.cpp
+› Compiling react-native-reanimated Pods/RNReanimated » ViewStylesRepository.cpp
+› Compiling react-native-reanimated Pods/RNReanimated » ValueInterpolator.cpp
+› Compiling react-native-reanimated Pods/RNReanimated » UpdatesRegistryManager.cpp
+› Compiling react-native-reanimated Pods/RNReanimated » UpdatesRegistry.cpp
+› Compiling react-native-reanimated Pods/RNReanimated » UIRuntimeDecorator.cpp
+› Compiling react-native-reanimated Pods/RNReanimated » TransitionStyleInterpolator.cpp
+› Compiling react-native-reanimated Pods/RNReanimated » TransitionProgressProvider.cpp
+› Compiling react-native-reanimated Pods/RNReanimated » TransformsStyleInterpolator.cpp
+› Compiling react-native-reanimated Pods/RNReanimated » TransformOperationInterpolator.cpp
+› Compiling react-native-reanimated Pods/RNReanimated » TransformOperation.cpp
+› Compiling react-native-reanimated Pods/RNReanimated » TransformOp.cpp
+› Compiling react-native-reanimated Pods/RNReanimated » TransformMatrix3D.cpp
+› Compiling react-native-reanimated Pods/RNReanimated » TransformMatrix2D.cpp
+› Compiling react-native-reanimated Pods/RNReanimated » StaticPropsRegistry.cpp
+› Compiling react-native-reanimated Pods/RNReanimated » SimpleValueInterpolator.cpp
+› Compiling react-native-reanimated Pods/RNReanimated » ShadowTreeCloner.cpp
+› Compiling react-native-reanimated Pods/RNReanimated » SetGestureState.mm
+› Compiling react-native-reanimated Pods/RNReanimated » SVGStrokeDashArray.cpp
+› Compiling react-native-reanimated Pods/RNReanimated » SVGLength.cpp
+› Compiling react-native-reanimated Pods/RNReanimated » ResolvableValueInterpolator.cpp
+› Compiling react-native-reanimated Pods/RNReanimated » RecordPropertiesInterpolator.cpp
+› Compiling react-native-reanimated Pods/RNReanimated » ReanimatedVersion.cpp
+› Compiling react-native-reanimated Pods/RNReanimated » ReanimatedMountHook.cpp
+› Compiling react-native-reanimated Pods/RNReanimated » ReanimatedModuleProxySpec.cpp
+› Compiling react-native-reanimated Pods/RNReanimated » ReanimatedModuleProxy.cpp
+› Compiling react-native-reanimated Pods/RNReanimated » ReanimatedModule.mm
+
+⚠️  (../../../../../../Pods/Headers/Private/RNReanimated/reanimated/apple/REANodesManager.h:17:24)
+
+- (void)dispatchEvent:(id<RCTEvent>)event;
+                       ^ pointer is missing a nullability type specifier [-Wnullability-completeness]
+
+› Compiling react-native-reanimated Pods/RNReanimated » ReanimatedCommitHook.cpp
+› Compiling react-native-reanimated Pods/RNReanimated » RNRuntimeDecorator.cpp
+› Compiling react-native-reanimated Pods/RNReanimated » REANodesManager.mm
+› Compiling react-native-reanimated Pods/RNReanimated » Quaternion.cpp
+› Compiling react-native-reanimated Pods/RNReanimated » PropertyInterpolator.cpp
+› Compiling react-native-reanimated Pods/RNReanimated » PropValueProcessor.cpp
+› Compiling react-native-reanimated Pods/RNReanimated » PlatformDepMethodsHolderImpl.mm
+› Compiling react-native-reanimated Pods/RNReanimated » NativeProxy.mm
+› Compiling react-native-reanimated Pods/RNReanimated » LayoutAnimationsUtils.cpp
+› Compiling react-native-reanimated Pods/RNReanimated » LayoutAnimationsProxy.cpp
+› Compiling react-native-reanimated Pods/RNReanimated » LayoutAnimationsManager.cpp
+› Compiling react-native-reanimated Pods/RNReanimated » InterpolatorRegistry.cpp
+› Compiling react-native-reanimated Pods/RNReanimated » InterpolatorFactory.cpp
+› Compiling react-native-reanimated Pods/RNReanimated » GroupPropertiesInterpolator.cpp
+› Compiling react-native-reanimated Pods/RNReanimated » FeatureFlags.cpp
+› Compiling react-native-reanimated Pods/RNReanimated » EasingFunctions.cpp
+› Compiling react-native-reanimated Pods/RNReanimated » DelayedItemsManager.cpp
+› Compiling react-native-reanimated Pods/RNReanimated » CSSValueVariant.cpp
+› Compiling react-native-reanimated Pods/RNReanimated » CSSTransitionsRegistry.cpp
+› Compiling react-native-reanimated Pods/RNReanimated » CSSTransitionConfig.cpp
+› Compiling react-native-reanimated Pods/RNReanimated » CSSTransition.cpp
+› Compiling react-native-reanimated Pods/RNReanimated » CSSNumber.cpp
+› Compiling react-native-reanimated Pods/RNReanimated » CSSLength.cpp
+› Compiling react-native-reanimated Pods/RNReanimated » CSSKeyword.cpp
+› Compiling react-native-reanimated Pods/RNReanimated » CSSKeyframesRegistry.cpp
+› Compiling react-native-reanimated Pods/RNReanimated » CSSKeyframesConfig.cpp
+› Compiling react-native-reanimated Pods/RNReanimated » CSSDiscreteArray.cpp
+› Compiling react-native-reanimated Pods/RNReanimated » CSSColor.cpp
+› Compiling react-native-reanimated Pods/RNReanimated » CSSBoolean.cpp
+› Compiling react-native-reanimated Pods/RNReanimated » CSSAnimationsRegistry.cpp
+› Compiling react-native-reanimated Pods/RNReanimated » CSSAnimationConfig.cpp
+› Compiling react-native-reanimated Pods/RNReanimated » CSSAnimation.cpp
+› Compiling react-native-reanimated Pods/RNReanimated » CSSAngle.cpp
+› Compiling react-native-reanimated Pods/RNReanimated » ArrayPropertiesInterpolator.cpp
+› Compiling react-native-reanimated Pods/RNReanimated » AnimationProgressProvider.cpp
+› Compiling react-native-reanimated Pods/RNReanimated » AnimatedSensorModule.cpp
+› Compiling react-native-reanimated Pods/RNReanimated » AnimatedPropsRegistry.cpp
+› Compiling react-native-gesture-handler Pods/RNGestureHandler » RNNativeViewHandler.mm
+› Compiling react-native-gesture-handler Pods/RNGestureHandler » RNGestureHandlerRootViewComponentView.mm
+› Compiling react-native-gesture-handler Pods/RNGestureHandler » RNGestureHandlerModule.mm
+› Compiling react-native-gesture-handler Pods/RNGestureHandler » RNGestureHandlerManager.mm
+› Compiling react-native-gesture-handler Pods/RNGestureHandler » RNGestureHandlerButtonManager.mm
+› Compiling react-native-gesture-handler RNGestureHandlerButtonComponentView.mm
+› Compiling react-native-gesture-handler Pods/RNGestureHandler » RNGestureHandlerButton.mm
+› Compiling react-native-gesture-handler Pods/RNGestureHandler » RNGestureHandler.mm
+› Compiling react-native-svg Pods/RNSVG » RNSVG-dummy.m
+› Packaging react-native-svg Pods/RNSVG » libRNSVG.a
+› Compiling react-native-reanimated Pods/RNReanimated » ReanimatedSensorContainer.m
+› Compiling react-native-reanimated Pods/RNReanimated » ReanimatedSensor.m
+› Compiling react-native-reanimated Pods/RNReanimated » RCTUIView+Reanimated.m
+› Compiling @react-native-async-storage/async-storage Pods/RNCAsyncStorage » RNCAsyncStorage.mm
+› Compiling react-native-reanimated Pods/RNReanimated » RNReanimated-dummy.m
+› Compiling react-native-gesture-handler Pods/RNGestureHandler » RNGestureHandler-dummy.m
+› Packaging react-native-reanimated Pods/RNReanimated » libRNReanimated.a
+› Compiling @react-native-async-storage/async-storage Pods/RNCAsyncStorage » RNCAsyncStorage-dummy.m
+
+⚠️  (../../../../../../expo-modules-core/ios/DevTools/ModuleDefinitionEncoder.swift:133:14)
+
+    case let value as Dictionary<String, Any>:
+             ^ immutable value 'value' was never used; consider replacing with '_' or removing it
+
+› Signing   Ledger/LedgerWatch » LedgerWatch.app
+› Creating  Ledger/LedgerWatch » LedgerWatch.app
+› Compiling react-native-gesture-handler Pods/RNGestureHandler » RNTapHandler.m
+› Compiling react-native-gesture-handler Pods/RNGestureHandler » RNRootViewGestureRecognizer.m
+› Compiling react-native-gesture-handler Pods/RNGestureHandler » RNPinchHandler.m
+› Compiling react-native-gesture-handler Pods/RNGestureHandler » RNPanHandler.m
+› Compiling react-native-gesture-handler Pods/RNGestureHandler » RNManualHandler.m
+› Compiling react-native-gesture-handler Pods/RNGestureHandler » RNManualActivationRecognizer.m
+› Compiling react-native-gesture-handler Pods/RNGestureHandler » RNLongPressHandler.m
+› Compiling react-native-gesture-handler Pods/RNGestureHandler » RNHoverHandler.m
+› Packaging @react-native-async-storage/async-storage Pods/RNCAsyncStorage » libRNCAsyncStorage.a
+› Compiling react-native-gesture-handler Pods/RNGestureHandler » RNGestureHandlerRegistry.m
+› Compiling react-native-gesture-handler Pods/RNGestureHandler » RNGestureHandlerPointerTracker.m
+› Compiling react-native-gesture-handler Pods/RNGestureHandler » RNGestureHandlerEvents.m
+› Compiling react-native-gesture-handler Pods/RNGestureHandler » RNGHVector.m
+› Compiling react-native-gesture-handler Pods/RNGestureHandler » RNForceTouchHandler.m
+› Compiling react-native-gesture-handler Pods/RNGestureHandler » RNFlingHandler.m
+› Packaging react-native-gesture-handler Pods/RNGestureHandler » libRNGestureHandler.a
+› Compiling expo-modules-core Pods/ExpoModulesCore » TypedArray.cpp
+› Compiling expo-modules-core Pods/ExpoModulesCore » SwiftUIVirtualViewObjC.mm
+› Compiling expo-modules-core Pods/ExpoModulesCore » SharedRef.cpp
+› Compiling expo-modules-core Pods/ExpoModulesCore » SharedObject.cpp
+› Compiling expo-modules-core Pods/ExpoModulesCore » ObjectDeallocator.cpp
+› Compiling expo-modules-core Pods/ExpoModulesCore » NativeModule.cpp
+› Compiling expo-modules-core Pods/ExpoModulesCore » MainThreadInvoker.mm
+› Compiling expo-modules-core Pods/ExpoModulesCore » LazyObject.cpp
+› Compiling expo-modules-core Pods/ExpoModulesCore » JSIUtils.cpp
+› Compiling expo-modules-core Pods/ExpoModulesCore » ExpoViewShadowNode.cpp
+› Compiling expo-modules-core Pods/ExpoModulesCore » ExpoViewProps.cpp
+› Compiling expo-modules-core Pods/ExpoModulesCore » ExpoViewEventEmitter.cpp
+› Compiling expo-modules-core Pods/ExpoModulesCore » ExpoViewComponentDescriptor.cpp
+› Compiling expo-modules-core Pods/ExpoModulesCore » ExpoModulesHostObject.mm
+› Compiling expo-modules-core Pods/ExpoModulesCore » ExpoFabricViewObjC.mm
+› Compiling expo-modules-core Pods/ExpoModulesCore » ExpoBridgeModule.mm
+
+⚠️  (../../../../../../NativeModulesProxy/EXNativeModulesProxy.h:35:30)
+
+- (void)callMethod:(NSString *)moduleName methodNameOrKey:(id)methodNameOrKey arguments:(NSArray *)arguments resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject;
+                             ^ pointer is missing a nullability type specifier [-Wnullability-completeness]
+
+› Compiling expo-modules-core Pods/ExpoModulesCore » EventEmitter.cpp
+› Compiling expo-modules-core Pods/ExpoModulesCore » EXStringUtils.cpp
+› Compiling expo-modules-core Pods/ExpoModulesCore » EXSharedObjectUtils.mm
+› Compiling expo-modules-core Pods/ExpoModulesCore » EXReactNativeAdapter.mm
+› Compiling expo-modules-core Pods/ExpoModulesCore » EXReactDelegateWrapper.mm
+› Compiling expo-modules-core Pods/ExpoModulesCore » EXRawJavaScriptFunction.mm
+› Compiling expo-modules-core Pods/ExpoModulesCore » EXNativeModulesProxy.mm
+› Compiling expo-modules-core Pods/ExpoModulesCore » EXJavaScriptWeakObject.mm
+› Compiling expo-modules-core Pods/ExpoModulesCore » EXJavaScriptValue.mm
+› Compiling expo-modules-core Pods/ExpoModulesCore » EXJavaScriptTypedArray.mm
+› Compiling expo-modules-core Pods/ExpoModulesCore » EXJavaScriptSharedObjectBinding.mm
+› Compiling expo-modules-core Pods/ExpoModulesCore » EXJavaScriptRuntime.mm
+› Compiling expo-modules-core Pods/ExpoModulesCore » EXJavaScriptObject.mm
+› Compiling expo-modules-core Pods/ExpoModulesCore » EXJSIUtils.mm
+› Compiling expo-modules-core Pods/ExpoModulesCore » EXJSIInstaller.mm
+› Compiling expo-modules-core Pods/ExpoModulesCore » EXJSIConversions.mm
+› Compiling expo-modules-core Pods/ExpoModulesCore » RCTComponentData+Privates.m
+› Compiling expo-modules-core Pods/ExpoModulesCore » EXSingletonModule.m
+› Compiling expo-modules-core Pods/ExpoModulesCore » EXUtilities.m
+› Compiling expo-modules-core Pods/ExpoModulesCore » EXReactNativeUserNotificationCenterProxy.m
+› Compiling expo-modules-core Pods/ExpoModulesCore » EXReactLogHandler.m
+› Compiling expo-modules-core Pods/ExpoModulesCore » EXPermissionsService.m
+› Compiling expo-modules-core Pods/ExpoModulesCore » EXPermissionsMethodsDelegate.m
+› Compiling expo-modules-core Pods/ExpoModulesCore » EXModuleRegistryHolderReactModule.m
+› Compiling expo-modules-core Pods/ExpoModulesCore » EXLogManager.m
+› Compiling expo-modules-core Pods/ExpoModulesCore » EXExportedModule.m
+› Compiling expo-modules-core Pods/ExpoModulesCore » EXAppDefines.m
+› Compiling expo-modules-core Pods/ExpoModulesCore » CoreModuleHelper.m
+› Compiling expo-modules-core Pods/ExpoModulesCore » EXModuleRegistry.m
+› Compiling expo-modules-core Pods/ExpoModulesCore » EXModuleRegistryProvider.m
+› Compiling expo-modules-core Pods/ExpoModulesCore » ExpoModulesCore-dummy.m
+› Packaging expo-modules-core Pods/ExpoModulesCore » libExpoModulesCore.a
+› Executing expo-modules-core Pods/ExpoModulesCore » Copy generated compatibility header
+› Compiling expo-system-ui Pods/ExpoSystemUI » ExpoSystemUI-dummy.m
+› Compiling expo-splash-screen Pods/ExpoSplashScreen » ExpoSplashScreen-dummy.m
+› Compiling expo-symbols Pods/ExpoSymbols » ExpoSymbols-dummy.m
+› Compiling @bacons/apple-targets Pods/ExtensionStorage » ExtensionStorage-dummy.m
+› Compiling expo-web-browser Pods/ExpoWebBrowser » ExpoWebBrowser-dummy.m
+› Compiling expo-secure-store Pods/ExpoSecureStore » ExpoSecureStore-dummy.m
+› Packaging @bacons/apple-targets Pods/ExtensionStorage » libExtensionStorage.a
+› Packaging expo-web-browser Pods/ExpoWebBrowser » libExpoWebBrowser.a
+› Packaging expo-system-ui Pods/ExpoSystemUI » libExpoSystemUI.a
+› Packaging expo-symbols Pods/ExpoSymbols » libExpoSymbols.a
+› Packaging expo-splash-screen Pods/ExpoSplashScreen » libExpoSplashScreen.a
+› Packaging expo-secure-store Pods/ExpoSecureStore » libExpoSecureStore.a
+› Executing @bacons/apple-targets Pods/ExtensionStorage » Copy generated compatibility header
+› Executing expo-web-browser Pods/ExpoWebBrowser » Copy generated compatibility header
+› Executing expo-system-ui Pods/ExpoSystemUI » Copy generated compatibility header
+› Executing expo-symbols Pods/ExpoSymbols » Copy generated compatibility header
+› Executing expo-splash-screen Pods/ExpoSplashScreen » Copy generated compatibility header
+› Executing expo-secure-store Pods/ExpoSecureStore » Copy generated compatibility header
+› Compiling expo-sharing Pods/ExpoSharing » ExpoSharing-dummy.m
+› Compiling expo-screen-orientation Pods/ExpoScreenOrientation » ExpoScreenOrientation-dummy.m
+› Compiling expo-location Pods/ExpoLocation » ExpoLocation-dummy.m
+› Packaging expo-sharing Pods/ExpoSharing » libExpoSharing.a
+› Packaging expo-screen-orientation Pods/ExpoScreenOrientation » libExpoScreenOrientation.a
+› Compiling expo-location Pods/ExpoLocation » EXLocationTaskConsumer.m
+› Compiling expo-location Pods/ExpoLocation » EXLocationPermissionRequester.m
+› Packaging expo-print Pods/ExpoPrint » libExpoPrint.a
+› Compiling expo-location Pods/ExpoLocation » EXLocation.m
+› Compiling expo-location Pods/ExpoLocation » EXGeofencingTaskConsumer.m
+› Compiling expo-location Pods/ExpoLocation » EXForegroundPermissionRequester.m
+› Compiling expo-location Pods/ExpoLocation » EXBaseLocationRequester.m
+› Executing expo-sharing Pods/ExpoSharing » Copy generated compatibility header
+› Compiling expo-location Pods/ExpoLocation » EXBackgroundLocationPermissionRequester.m
+› Executing expo-screen-orientation Pods/ExpoScreenOrientation » Copy generated compatibility header
+› Executing expo-print Pods/ExpoPrint » Copy generated compatibility header
+› Packaging expo-location Pods/ExpoLocation » libExpoLocation.a
+› Executing expo-location Pods/ExpoLocation » Copy generated compatibility header
+› Packaging expo-local-authentication Pods/ExpoLocalAuthentication » libExpoLocalAuthentication.a
+› Compiling expo-linking Pods/ExpoLinking » ExpoLinking-dummy.m
+› Compiling expo-linear-gradient Pods/ExpoLinearGradient » ExpoLinearGradient-dummy.m
+› Packaging expo-linking Pods/ExpoLinking » libExpoLinking.a
+› Packaging expo-linear-gradient Pods/ExpoLinearGradient » libExpoLinearGradient.a
+› Compiling expo-keep-awake Pods/ExpoKeepAwake » ExpoKeepAwake-dummy.m
+› Packaging expo-keep-awake Pods/ExpoKeepAwake » libExpoKeepAwake.a
+› Executing expo-local-authentication Pods/ExpoLocalAuthentication » Copy generated compatibility header
+› Executing expo-linking Pods/ExpoLinking » Copy generated compatibility header
+› Executing expo-linear-gradient Pods/ExpoLinearGradient » Copy generated compatibility header
+› Executing expo-keep-awake Pods/ExpoKeepAwake » Copy generated compatibility header
+› Compiling expo-haptics Pods/ExpoHaptics » ExpoHaptics-dummy.m
+› Packaging expo-haptics Pods/ExpoHaptics » libExpoHaptics.a
+› Executing expo-haptics Pods/ExpoHaptics » Copy generated compatibility header
+› Compiling expo-router Pods/ExpoHead » LinkPreviewNativeNavigation.mm
+› Compiling expo-router Pods/ExpoHead » ExpoHead-dummy.m
+› Packaging expo-router Pods/ExpoHead » libExpoHead.a
+› Compiling expo-image-picker Pods/ExpoImagePicker » ExpoImagePicker-dummy.m
+› Packaging expo-image-picker Pods/ExpoImagePicker » libExpoImagePicker.a
+› Compiling expo-glass-effect Pods/ExpoGlassEffect » ExpoGlassEffect-dummy.m
+› Executing expo-image-picker Pods/ExpoImagePicker » Copy generated compatibility header
+› Compiling expo-font Pods/ExpoFont » ExpoFont-dummy.m
+› Packaging expo-font Pods/ExpoFont » libExpoFont.a
+› Executing expo-router Pods/ExpoHead » Copy generated compatibility header
+› Executing expo-glass-effect Pods/ExpoGlassEffect » Copy generated compatibility header
+› Compiling expo-crypto Pods/ExpoCrypto » ExpoCrypto-dummy.m
+› Executing expo-font Pods/ExpoFont » Copy generated compatibility header
+› Packaging expo-crypto Pods/ExpoCrypto » libExpoCrypto.a
+› Executing expo-crypto Pods/ExpoCrypto » Copy generated compatibility header
+› Compiling expo-file-system Pods/ExpoFileSystem » NSData+EXFileSystem.m
+› Compiling expo-file-system Pods/ExpoFileSystem » ExpoFileSystem-dummy.m
+› Compiling expo-file-system Pods/ExpoFileSystem » EXTaskHandlersManager.m
+› Compiling expo-file-system Pods/ExpoFileSystem » EXSessionUploadTaskDelegate.m
+› Compiling expo-file-system Pods/ExpoFileSystem » EXSessionTaskDispatcher.m
+› Compiling expo-file-system Pods/ExpoFileSystem » EXSessionTaskDelegate.m
+› Compiling expo-file-system Pods/ExpoFileSystem » EXSessionResumableDownloadTaskDelegate.m
+› Compiling expo-file-system Pods/ExpoFileSystem » EXSessionDownloadTaskDelegate.m
+› Compiling expo-blur Pods/ExpoBlur » ExpoBlur-dummy.m
+› Packaging expo-blur Pods/ExpoBlur » libExpoBlur.a
+› Compiling expo-file-system Pods/ExpoFileSystem » EXFileSystemLocalFileHandler.m
+› Compiling expo-clipboard Pods/ExpoClipboard » ExpoClipboard-dummy.m
+› Compiling expo-background-fetch Pods/ExpoBackgroundFetch » ExpoBackgroundFetch-dummy.m
+› Packaging expo-clipboard Pods/ExpoClipboard » libExpoClipboard.a
+› Compiling expo-file-system Pods/ExpoFileSystem » EXFileSystemAssetLibraryHandler.m
+› Packaging expo-background-fetch Pods/ExpoBackgroundFetch » libExpoBackgroundFetch.a
+› Executing expo-clipboard Pods/ExpoClipboard » Copy generated compatibility header
+› Packaging expo-file-system Pods/ExpoFileSystem » libExpoFileSystem.a
+› Executing expo-file-system Pods/ExpoFileSystem » Copy generated compatibility header
+› Executing expo-blur Pods/ExpoBlur » Copy generated compatibility header
+› Compiling expo-asset Pods/ExpoAsset » ExpoAsset-dummy.m
+› Packaging expo-asset Pods/ExpoAsset » libExpoAsset.a
+› Executing expo-background-fetch Pods/ExpoBackgroundFetch » Copy generated compatibility header
+› Executing expo-asset Pods/ExpoAsset » Copy generated compatibility header
+› Compiling expo-image Pods/ExpoImage » ExpoImage-dummy.m
+› Packaging expo-image Pods/ExpoImage » libExpoImage.a
+› Executing expo-image Pods/ExpoImage » Copy generated compatibility header
+› Compiling expo-task-manager Pods/EXTaskManager » EXTaskService.m
+› Compiling expo-task-manager Pods/EXTaskManager » EXTaskManagerAppDelegate.m
+› Compiling expo-task-manager Pods/EXTaskManager » EXTaskManager.m
+› Compiling expo-task-manager Pods/EXTaskManager » EXTaskManager-dummy.m
+› Compiling expo-task-manager Pods/EXTaskManager » EXTaskExecutionRequest.m
+› Compiling expo-task-manager Pods/EXTaskManager » EXTask.m
+› Packaging expo-task-manager Pods/EXTaskManager » libEXTaskManager.a
+› Compiling expo-apple-authentication Pods/ExpoAppleAuthentication » ExpoAppleAuthentication-dummy.m
+› Packaging expo-apple-authentication Pods/ExpoAppleAuthentication » libExpoAppleAuthentication.a
+› Compiling expo-updates-interface Pods/EXUpdatesInterface » noop-file.m
+› Compiling expo-updates-interface Pods/EXUpdatesInterface » EXUpdatesInterface-dummy.m
+› Packaging expo-updates-interface Pods/EXUpdatesInterface » libEXUpdatesInterface.a
+› Compiling expo-manifests Pods/EXManifests » EXManifests-dummy.m
+› Packaging expo-manifests Pods/EXManifests » libEXManifests.a
+› Executing expo-apple-authentication Pods/ExpoAppleAuthentication » Copy generated compatibility header
+› Compiling expo Pods/Expo » EXReactRootViewFactory.mm
+› Compiling expo Pods/Expo » EXAppDelegateWrapper.mm
+› Compiling expo-image-loader Pods/EXImageLoader » EXImageLoader.m
+› Compiling expo-image-loader Pods/EXImageLoader » EXImageLoader-dummy.m
+› Packaging expo-image-loader Pods/EXImageLoader » libEXImageLoader.a
+› Compiling expo Pods/Expo » Expo-dummy.m
+› Executing expo-updates-interface Pods/EXUpdatesInterface » Copy generated compatibility header
+› Executing expo-manifests Pods/EXManifests » Copy generated compatibility header
+› Compiling expo-notifications Pods/EXNotifications » EXUserFacingNotificationsPermissionsRequester.m
+› Compiling expo-notifications Pods/EXNotifications » EXNotifications-dummy.m
+› Compiling expo-notifications Pods/EXNotifications » EXNotificationSerializer.m
+› Packaging expo-notifications Pods/EXNotifications » libEXNotifications.a
+› Executing expo-notifications Pods/EXNotifications » Copy generated compatibility header
+› Executing expo-constants Pods/EXConstants » [CP-User] Generate app.config for prebuilt Constants.manifest
+› Compiling expo Pods/Expo » EXLegacyAppDelegateWrapper.m
+› Compiling expo Pods/Expo » EXAppDelegatesLoader.m
+› Compiling expo Pods/Expo » EXAppDefinesLoader.m
+› Packaging expo Pods/Expo » libExpo.a
+› Executing expo Pods/Expo » Copy generated compatibility header
+› Packaging expo-eas-client Pods/EASClient » libEASClient.a
+› Executing Copy generated compatibility header
+› Compiling expo-application Pods/EXApplication » EXProvisioningProfile.m
+› Compiling expo-application Pods/EXApplication » EXApplication-dummy.m
+› Packaging expo-application Pods/EXApplication » libEXApplication.a
+› Executing expo-application Pods/EXApplication » Copy generated compatibility header
+› Executing expo-updates Pods/EXUpdates » [CP-User] Generate updates resources for expo-updates
+› Compiling expo-constants Pods/EXConstants » EXConstants-dummy.m
+› Compiling expo-constants Pods/EXConstants » EXConstantsInstallationIdProvider.m
+› Compiling expo-constants Pods/EXConstants » EXConstantsService.m
+› Packaging expo-constants Pods/EXConstants » libEXConstants.a
+› Executing expo-constants Pods/EXConstants » Copy generated compatibility header
+› Compiling expo-camera Pods/ExpoCamera » ExpoCamera-dummy.m
+› Packaging expo-camera Pods/ExpoCamera » libExpoCamera.a
+› Executing expo-camera Pods/ExpoCamera » Copy generated compatibility header
+› Compiling expo-updates Pods/EXUpdates » EXUpdates-dummy.m
+› Compiling expo-updates Pods/EXUpdates » EXDeferredRCTRootView.m
+› Packaging expo-updates Pods/EXUpdates » libEXUpdates.a
+› Executing expo-updates Pods/EXUpdates » Copy generated compatibility header
+› Compiling Pods/Pods-Ledger » Pods-Ledger-dummy.m
+› Packaging Pods/Pods-Ledger » libPods-Ledger.a
+› Executing Ledger » [CP] Check Pods Manifest.lock
+› Executing Ledger » [Expo] Configure project
+› Copying   ios/build/Build/Intermediates.noindex/ArchiveIntermediates/Ledger/InstallationBuildProductsLocation/Applications/Ledger.app/PrivacyInfo.xcprivacy ➜ ../../../Users/expo/workingdir/build/artifacts/ledger-mobile/ios/Ledger/PrivacyInfo.xcprivacy
+› Copying   ios/Ledger/Supporting/Expo.plist ➜ ./Expo.plist
+› Compiling Ledger » SplashScreen.storyboard
+› Compiling Ledger » Ledger_vers.c
+› Linking   Ledger » Ledger
+⚠️  ld: ignoring duplicate libraries: '-lc++'
+› Executing Ledger » Bundle React Native code and images
+› Executing Ledger » [CP] Copy Pods Resources
+› Executing Ledger » Upload Debug Symbols to Sentry
+    Run script build phase '[CP-User] [Hermes] Replace Hermes for the right configuration, if needed' will be run during every build because it does not specify any outputs. To address this issue, either add output dependencies to the script phase, or configure it to run in every build by unchecking "Based on dependency analysis" in the script phase. (in target 'hermes-engine' from project 'Pods')
+    Run script build phase 'Upload Debug Symbols to Sentry' will be run during every build because it does not specify any outputs. To address this issue, either add output dependencies to the script phase, or configure it to run in every build by unchecking "Based on dependency analysis" in the script phase. (in target 'Ledger' from project 'Ledger')
+    Run script build phase '[CP-User] Generate updates resources for expo-updates' will be run during every build because it does not specify any outputs. To address this issue, either add output dependencies to the script phase, or configure it to run in every build by unchecking "Based on dependency analysis" in the script phase. (in target 'EXUpdates' from project 'Pods')
+▸ ** ARCHIVE FAILED **
+▸ The following build commands failed:
+▸ 	PhaseScriptExecution Upload\ Debug\ Symbols\ to\ Sentry /Users/expo/workingdir/build/artifacts/ledger-mobile/ios/build/Build/Intermediates.noindex/ArchiveIntermediates/Ledger/IntermediateBuildFilesPath/Ledger.build/Release-iphoneos/Ledger.build/Script-2356477BE0334745A9942B6A.sh (in target 'Ledger' from project 'Ledger')
+▸ 	Archiving workspace Ledger with scheme Ledger
+▸ (2 failures)
+Exit status: 65
+
++---------------------------------------+
+|           Build environment           |
++-------------+-------------------------+
+| xcode_path  | /Applications/Xcode.app |
+| gym_version | 2.228.0                 |
+| sdk         | iPhoneOS26.0.sdk        |
++-------------+-------------------------+
+
+Looks like fastlane ran into a build/archive error with your project
+It's hard to tell what's causing the error, so we wrote some guides on how
+to troubleshoot build and signing issues: https://docs.fastlane.tools/codesigning/getting-started/
+Before submitting an issue on GitHub, please follow the guide above and make
+sure your project is set up correctly.
+fastlane uses `xcodebuild` commands to generate your binary, you can see the
+the full commands printed out in yellow in the above log.
+Make sure to inspect the output above, as usually you'll find more error information there
+
+[!] Error building the application - see the log above
+Error: The "Run fastlane" step failed with an unknown error. Refer to "Xcode Logs" below for additional, more detailed logs.

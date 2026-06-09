@@ -7,7 +7,6 @@ import {
   Text,
   View,
 } from "react-native";
-import * as ScreenOrientation from "expo-screen-orientation";
 import Svg, { Rect, Text as SvgText } from "react-native-svg";
 
 import { useColors } from "@/hooks/useColors";
@@ -132,17 +131,32 @@ export function DailyChargeChart({
   }, [range]);
 
   // Lock to landscape while the fullscreen modal is open; restore on close.
+  // Load expo-screen-orientation lazily and defensively: if the native module
+  // is ever missing from a build, degrade to "no rotation lock" rather than
+  // crashing the entire app at module-load time.
   useEffect(() => {
     if (!fullscreen) return;
     let cancelled = false;
-    void ScreenOrientation.lockAsync(
-      ScreenOrientation.OrientationLock.LANDSCAPE,
-    ).catch((e) => reportError(e, { op: "chart.orientation.lock" }));
+    let ScreenOrientation: typeof import("expo-screen-orientation") | null =
+      null;
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      ScreenOrientation = require("expo-screen-orientation");
+    } catch (e) {
+      reportError(e, { op: "chart.orientation.load" });
+    }
+    if (ScreenOrientation) {
+      void ScreenOrientation.lockAsync(
+        ScreenOrientation.OrientationLock.LANDSCAPE,
+      ).catch((e) => reportError(e, { op: "chart.orientation.lock" }));
+    }
     return () => {
       cancelled = true;
-      void ScreenOrientation.unlockAsync().catch((e) =>
-        reportError(e, { op: "chart.orientation.unlock" }),
-      );
+      if (ScreenOrientation) {
+        void ScreenOrientation.unlockAsync().catch((e) =>
+          reportError(e, { op: "chart.orientation.unlock" }),
+        );
+      }
       if (cancelled) setSelected(null);
     };
   }, [fullscreen]);

@@ -55,3 +55,32 @@ git, which the sandbox blocks (it even blocks `rm .git/index.lock`).
 directly instead of using git, e.g.
 `EAS_NO_VCS=1 EXPO_TOKEN="$EXPO_TOKEN" pnpm --filter @workspace/ledger-mobile run tf:build`.
 A stale empty `.git/index.lock` may be left behind; it's harmless when NO_VCS is set.
+
+## 3. Immediate iOS launch crash: "Cannot find native module 'ExpoXxx'"
+**Symptom:** TestFlight/release build crashes instantly on open; Sentry shows
+`Error: Cannot find native module 'ExpoScreenOrientation'` (`requireNativeModule`)
+plus a cascading `TypeError: Cannot read property 'ErrorBoundary' of undefined`
+(`fromImport`) at the same instant.
+
+**Why:** Expo native modules call `requireNativeModule(...)` at **module-eval
+(top-level import) time**. If the native module isn't in the binary (autolinking
+didn't include it — typically because the package was in package.json but
+node_modules/pnpm-lock were out of sync at build time), the *import itself*
+throws, which is uncatchable and takes down the whole route/module graph → the
+ErrorBoundary cascade. The local tell is the expo dev error: "<pkg> is added as a
+dependency in your project's package.json but it doesn't seem to be installed" →
+fix with `pnpm install`, and confirm autolinking with
+`npx expo-modules-autolinking resolve -p ios -j` (check the package is in the
+resolved `modules` list).
+
+**Hardening:** For any *optional* native feature, don't `import * as X` at top
+level — lazy `require()` it inside the effect/handler wrapped in try/catch so a
+missing module degrades gracefully instead of crashing app launch.
+
+## Diagnosing production iOS crashes via Sentry REST (no MCP)
+Use the repl secret `SENTRY_READ_TOKEN` (has read scope; the separate
+`SENTRY_AUTH_TOKEN` is only `org:ci` and 403s). Org slug `eap-k2`, project
+`react-native`:
+`GET https://sentry.io/api/0/projects/eap-k2/react-native/issues/?statsPeriod=24h&sort=date`
+then `GET /api/0/issues/<id>/events/latest/` and read `entries[type=exception]`
+for the stack. Auth header: `Authorization: Bearer $SENTRY_READ_TOKEN`. Never print the token.

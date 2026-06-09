@@ -22,13 +22,18 @@ name: Publish OTA Update
 # auto-update integration once this workflow is in place — otherwise both will
 # publish an update for every push.
 #
-# The runtimeVersion policy is `fingerprint`, so an OTA update only reaches
-# builds whose native fingerprint matches the one it was published against. A
-# native/SDK/config change produces a new fingerprint, so the update is NOT
-# served to older binaries that lack the matching native code — it waits for a
-# fresh TestFlight build with the same fingerprint (see
-# `pnpm --filter @workspace/ledger-mobile run tf:build`). This is what prevents
-# "Cannot find native module" startup crashes from mismatched OTA bundles.
+# The runtimeVersion policy is `appVersion`, so an OTA update reaches every
+# build that shares the same app version (1.0.0). IMPORTANT: when you add or
+# change a NATIVE module, bump `expo.version` in app.json AND ship a fresh
+# TestFlight build BEFORE publishing the OTA — otherwise the new JS bundle can
+# reach older binaries that lack the native module and crash on startup
+# ("Cannot find native module ..."). Native code referenced from JS should also
+# be loaded defensively (lazy require in a try/catch) as a second line of
+# defence. See `pnpm --filter @workspace/ledger-mobile run tf:build`.
+#
+# NOTE: the `fingerprint` runtime policy would automate this guarantee, but it
+# requires builds to be produced on EAS (server-side) because the fingerprint
+# is not deterministic between a local Windows CLI and the EAS Linux builder.
 # ---------------------------------------------------------------------------
 
 on:

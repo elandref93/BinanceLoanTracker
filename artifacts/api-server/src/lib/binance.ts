@@ -209,6 +209,22 @@ function pickHourlyRate(
       (i) => i.apr >= PLAUSIBLE_APR_LO && i.apr <= PLAUSIBLE_APR_HI,
     );
     if (match) return match.hourly;
+    // Fallback: nothing landed inside the inference band. Rather than zeroing a
+    // legitimate but low rate (e.g. a 0.2% annual APR sits below PLAUSIBLE_APR_LO
+    // yet is real), accept the most conservative reading — the positive
+    // interpretation with the SMALLEST implied APR that still sits under the
+    // high-side cap. This rescues sub-0.5% APR values without reintroducing the
+    // 8760× unit blow-up, since any over-cap interpretation is excluded.
+    const conservative = interpretations
+      .filter((i) => i.apr > 0 && i.apr <= PLAUSIBLE_APR_HI)
+      .sort((a, b) => a.apr - b.apr)[0];
+    if (conservative) {
+      logger.warn(
+        { context, field, value: v, unit: conservative.unit, apr: conservative.apr },
+        "binance ambiguous rate fell below inference band — using conservative low-APR reading",
+      );
+      return conservative.hourly;
+    }
     logger.warn(
       { context, field, value: v, interpretations: interpretations.map((i) => ({ unit: i.unit, apr: i.apr })) },
       "binance ambiguous rate field had no plausible interpretation — skipping",

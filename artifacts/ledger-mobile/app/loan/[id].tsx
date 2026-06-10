@@ -27,7 +27,7 @@ import {
   type AlertRule,
 } from "@/lib/alertRules";
 import { useRiskSettings } from "@/context/RiskSettingsContext";
-import { fmtMoney, fmtPct, fmtQty } from "@/utils/format";
+import { fmtMoney, fmtPct, fmtQty, groupWithSpaces } from "@/utils/format";
 import {
   headroomToTarget,
   LIQ_LTV,
@@ -208,12 +208,14 @@ export function LoanDetailView({
     });
   }, [id]);
   // Local draft strings for the numeric/date inputs (committed on blur).
-  const [sellRateDraft, setSellRateDraft] = useState("");
+  const [borrowedValueDraft, setBorrowedValueDraft] = useState("");
   const [contribDraft, setContribDraft] = useState("");
   const [targetDraft, setTargetDraft] = useState("");
   useEffect(() => {
-    setSellRateDraft(
-      annotation.sellRate != null ? String(annotation.sellRate) : "",
+    setBorrowedValueDraft(
+      annotation.borrowedValueZar != null
+        ? String(annotation.borrowedValueZar)
+        : "",
     );
     setContribDraft(
       annotation.monthlyContribution != null
@@ -222,7 +224,7 @@ export function LoanDetailView({
     );
     setTargetDraft(annotation.targetSettleDate ?? "");
   }, [
-    annotation.sellRate,
+    annotation.borrowedValueZar,
     annotation.monthlyContribution,
     annotation.targetSettleDate,
   ]);
@@ -300,14 +302,55 @@ export function LoanDetailView({
   const hourly = loan.debt * effectiveHourlyRate;
   const daily = hourly * 24;
 
+  // ── Real borrow/repay events for this loan ──
+  const loanTxs = txQ.data?.transactions ?? [];
+  const repayments = loanTxs.filter((t) => t.type === "repay");
+
+  // ── Fixed Luno sell rate ──
+  // The user enters the TOTAL ZAR they received for the borrowed asset; dividing
+  // by the total quantity borrowed yields a fixed ZAR-per-asset-unit rate. We
+  // use this rate (not the live FX rate) to drive the repayment plan, converting
+  // between the user's ZAR contributions and the asset-denominated debt.
+  const totalBorrowedQty = loanTxs
+    .filter((t) => t.type === "borrow")
+    .reduce((sum, t) => sum + t.amount, 0);
+  const borrowedValueZar = annotation.borrowedValueZar ?? null;
+  const fixedSellRate =
+    borrowedValueZar != null && borrowedValueZar > 0 && totalBorrowedQty > 0
+      ? borrowedValueZar / totalBorrowedQty
+      : null;
+  // The plan is fixed-rate-driven: in ZAR a fixed sell rate is required to map
+  // the user's ZAR figures to/from the asset-denominated debt. In USD the
+  // stablecoin asset maps ~1:1, so no rate is needed.
+  const planNeedsRate = currency === "ZAR" && fixedSellRate == null;
+
   // ── Repayment forecasting ──
-  // Work in USD (these loans are stablecoin-borrowed, so debt ≈ debtUsd). The
-  // monthly rate compounds the declining balance against ongoing accrual.
+  // The debt is asset-denominated (≈ USD for stablecoin loans). The monthly rate
+  // compounds the declining balance against ongoing accrual. Contributions are
+  // entered in the display currency: in ZAR we convert to asset units via the
+  // fixed sell rate; in USD they map ~1:1 to the stablecoin asset.
   const goalMode: GoalMode = annotation.goalMode ?? "contribution";
   const monthlyRate = effectiveHourlyRate * 24 * 30.44;
-  const monthlyInterestUsd = loan.debtUsd * monthlyRate;
-  const contribution = annotation.monthlyContribution ?? 0;
-  const settleMonths = monthsToSettle(loan.debtUsd, monthlyRate, contribution);
+  const monthlyInterestAsset = loan.debtUsd * monthlyRate;
+  // Format an asset-denominated amount for the plan, preferring the fixed sell
+  // rate when the user works in ZAR (falls back to the live FX conversion).
+  const fmtPlanMoney = (assetAmount: number): string =>
+    currency === "ZAR" && fixedSellRate != null
+      ? `R${groupWithSpaces(assetAmount * fixedSellRate, 2)}`
+      : fmtMoney(assetAmount, currency);
+  const contributionInput = annotation.monthlyContribution ?? 0;
+  // Monthly contribution expressed in asset units. null ⇒ a ZAR contribution is
+  // set but there is no fixed rate yet, so a payoff can't be projected.
+  const contributionAsset =
+    currency === "ZAR"
+      ? fixedSellRate != null
+        ? contributionInput / fixedSellRate
+        : null
+      : contributionInput;
+  const settleMonths =
+    contributionAsset != null
+      ? monthsToSettle(loan.debtUsd, monthlyRate, contributionAsset)
+      : null;
   const payoffDate =
     settleMonths != null && settleMonths > 0
       ? addMonths(new Date(), settleMonths)
@@ -319,14 +362,12 @@ export function LoanDetailView({
     targetDate && !Number.isNaN(targetDate.getTime())
       ? Math.max(1, Math.round(monthsUntil(targetDate, new Date())))
       : null;
-  const requiredPerMonth =
+  // Required monthly payment to hit the target, in asset units (formatted to the
+  // display currency via the fixed sell rate where applicable).
+  const requiredPerMonthAsset =
     targetMonths != null
       ? requiredMonthly(loan.debtUsd, monthlyRate, targetMonths)
       : null;
-
-  // ── Real borrow/repay events for this loan ──
-  const loanTxs = txQ.data?.transactions ?? [];
-  const repayments = loanTxs.filter((t) => t.type === "repay");
 
   const byLoan = interestQ.data?.byLoan.find((b) => b.loanId === loan.id);
 
@@ -704,7 +745,17 @@ export function LoanDetailView({
             No repayments recorded for this loan.
           </Text>
         ) : (
-          repayments.map((t, i) => (
+          <>
+            <Text
+              style={[
+                styles.simHint,
+                { color: colors.mutedForeground, marginBottom: 10 },
+              ]}
+            >
+              Each repayment reduced the outstanding debt. Rand values shown at
+              today&apos;s market rate.
+            </Text>
+            {repayments.map((t, i) => (
             <View key={`${t.ts}-${i}`} style={styles.txRow}>
               <View style={{ flex: 1 }}>
                 <Text style={[styles.txAmount, { color: colors.ok }]}>
@@ -720,23 +771,26 @@ export function LoanDetailView({
                 {fmtMoney(t.amountUsd, currency)}
               </Text>
             </View>
-          ))
+            ))}
+          </>
         )}
       </Card>
 
       <Card title="Repayment plan">
         <View style={styles.fieldRow}>
           <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>
-            Luno sell rate (ZAR)
+            Borrowed asset value (ZAR)
           </Text>
           <TextInput
-            value={sellRateDraft}
-            onChangeText={setSellRateDraft}
+            value={borrowedValueDraft}
+            onChangeText={setBorrowedValueDraft}
             onEndEditing={() => {
-              const n = Number(sellRateDraft);
+              const n = Number(borrowedValueDraft);
               void setLoanAnnotation(loan.id, {
-                sellRate:
-                  sellRateDraft.trim() === "" || !Number.isFinite(n) ? null : n,
+                borrowedValueZar:
+                  borrowedValueDraft.trim() === "" || !Number.isFinite(n)
+                    ? null
+                    : n,
               });
             }}
             keyboardType="decimal-pad"
@@ -752,6 +806,32 @@ export function LoanDetailView({
             ]}
           />
         </View>
+        {fixedSellRate != null ? (
+          <Row
+            label="Fixed sell rate"
+            value={`R${groupWithSpaces(fixedSellRate, 2)} / ${loan.asset}`}
+          />
+        ) : totalBorrowedQty > 0 ? (
+          <Text
+            style={[
+              styles.simHint,
+              { color: colors.mutedForeground, marginTop: 4 },
+            ]}
+          >
+            Enter the total Rand you received for the{" "}
+            {fmtQty(totalBorrowedQty, loan.asset)} borrowed to set your fixed
+            rate.
+          </Text>
+        ) : (
+          <Text
+            style={[
+              styles.simHint,
+              { color: colors.mutedForeground, marginTop: 4 },
+            ]}
+          >
+            Borrow history unavailable — can&apos;t derive a fixed rate yet.
+          </Text>
+        )}
 
         <View style={[styles.seg, { borderColor: colors.border, marginTop: 4 }]}>
           {(
@@ -821,10 +901,16 @@ export function LoanDetailView({
             </View>
             <Row
               label="Monthly interest"
-              value={fmtMoney(monthlyInterestUsd, currency)}
+              value={fmtPlanMoney(monthlyInterestAsset)}
             />
-            {contribution > 0 ? (
-              settleMonths != null && payoffDate ? (
+            {contributionInput > 0 ? (
+              contributionAsset == null ? (
+                <Text
+                  style={[styles.simHint, { color: colors.warn, marginTop: 4 }]}
+                >
+                  Set the borrowed asset value above to project a payoff date.
+                </Text>
+              ) : settleMonths != null && payoffDate ? (
                 <>
                   <Row
                     label="Settles in"
@@ -837,7 +923,7 @@ export function LoanDetailView({
                   style={[styles.simHint, { color: colors.warn, marginTop: 4 }]}
                 >
                   Contribution must exceed monthly interest (
-                  {fmtMoney(monthlyInterestUsd, currency)}) to ever settle.
+                  {fmtPlanMoney(monthlyInterestAsset)}) to ever settle.
                 </Text>
               )
             ) : (
@@ -882,12 +968,19 @@ export function LoanDetailView({
                 ]}
               />
             </View>
-            {requiredPerMonth != null && targetMonths != null ? (
+            {planNeedsRate ? (
+              <Text
+                style={[styles.simHint, { color: colors.warn, marginTop: 4 }]}
+              >
+                Set the borrowed asset value above to compute the required
+                monthly payment.
+              </Text>
+            ) : requiredPerMonthAsset != null && targetMonths != null ? (
               <>
                 <Row label="Months to target" value={`${targetMonths} mo`} />
                 <Row
                   label="Required / month"
-                  value={fmtMoney(requiredPerMonth, currency)}
+                  value={fmtPlanMoney(requiredPerMonthAsset)}
                 />
               </>
             ) : (

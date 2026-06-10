@@ -24,6 +24,12 @@ export type GoalMode = "contribution" | "target";
 export type LoanAnnotation = {
   /** Manual ZAR sell rate the borrowed asset was sold at on Luno. */
   sellRate?: number;
+  /**
+   * Total ZAR value received for the borrowed asset on Luno. Divided by the
+   * total quantity borrowed to derive a FIXED sell rate (ZAR per asset unit)
+   * used to drive the repayment plan.
+   */
+  borrowedValueZar?: number;
   /** Planned monthly repayment contribution (loan-asset units). */
   monthlyContribution?: number;
   /** Target settlement date (ISO yyyy-mm-dd). */

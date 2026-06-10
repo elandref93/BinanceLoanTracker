@@ -49,7 +49,9 @@ import {
   useListInterest,
   useListLoanTransactions,
   useListLoans,
+  useListLunoTransactions,
 } from "@workspace/api-client-react";
+import { lunoFundingForAsset } from "@/lib/lunoFunding";
 import {
   getLoanAnnotation,
   setLoanAnnotation,
@@ -196,6 +198,10 @@ export function LoanDetailView({
     { loanId: id ?? "" },
     { query: { enabled: !!id } as never },
   );
+  // Luno wallet history, used to surface the real ZAR→asset buys that funded
+  // this loan's repayments and the subsequent moves to Binance. We pull a wide
+  // window (both asset + ZAR wallets) so buys can be paired into a rate.
+  const lunoTxQ = useListLunoTransactions({ limit: 200 });
 
   // Per-loan user annotations (manual sell rate + repayment goal), synced
   // cross-device. Hydrate on mount and react to remote updates.
@@ -305,6 +311,18 @@ export function LoanDetailView({
   // ── Real borrow/repay events for this loan ──
   const loanTxs = txQ.data?.transactions ?? [];
   const repayments = loanTxs.filter((t) => t.type === "repay");
+
+  // ── Luno funding for this loan's borrowed asset ──
+  // The borrowed coin is bought on Luno with ZAR, then moved to Binance to
+  // repay. Surface those real buys (with their rate) and the moves out.
+  const borrowAsset =
+    loanTxs.find((t) => t.type === "borrow")?.asset ??
+    repayments[0]?.asset ??
+    "";
+  const lunoFunding = lunoFundingForAsset(
+    lunoTxQ.data?.transactions ?? [],
+    borrowAsset,
+  );
 
   // ── Fixed Luno sell rate ──
   // The user enters the TOTAL ZAR they received for the borrowed asset; dividing
@@ -776,6 +794,89 @@ export function LoanDetailView({
         )}
       </Card>
 
+      <Card title="Luno funding">
+        {lunoTxQ.isLoading ? (
+          <Text style={[styles.simHint, { color: colors.mutedForeground }]}>
+            Loading Luno activity…
+          </Text>
+        ) : lunoFunding.buys.length === 0 && lunoFunding.moves.length === 0 ? (
+          <Text style={[styles.empty, { color: colors.mutedForeground }]}>
+            No Luno buys or transfers found for {borrowAsset || "this asset"}.
+          </Text>
+        ) : (
+          <>
+            <Text
+              style={[
+                styles.simHint,
+                { color: colors.mutedForeground, marginBottom: 10 },
+              ]}
+            >
+              The {borrowAsset} used to repay this loan was bought on Luno with
+              rand, then transferred out (typically to Binance). Rates shown are
+              the real Luno buy rates. Reflects recent Luno activity, so older
+              entries may not appear.
+            </Text>
+
+            {lunoFunding.buys.length > 0 && (
+              <>
+                <Text
+                  style={[styles.fundingHeading, { color: colors.foreground }]}
+                >
+                  Bought on Luno
+                </Text>
+                {lunoFunding.buys.map((b, i) => (
+                  <View key={`buy-${b.ts}-${i}`} style={styles.txRow}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.txAmount, { color: colors.ok }]}>
+                        +{fmtQty(b.assetQty, borrowAsset)}
+                      </Text>
+                      <Text
+                        style={[styles.txDate, { color: colors.mutedForeground }]}
+                      >
+                        R{groupWithSpaces(b.rate, 2)}/{borrowAsset} ·{" "}
+                        {b.accountName} · {fmtDate(new Date(b.ts))}
+                      </Text>
+                    </View>
+                    <Text style={[styles.txUsd, { color: colors.foreground }]}>
+                      R{groupWithSpaces(b.zarSpent, 2)}
+                    </Text>
+                  </View>
+                ))}
+              </>
+            )}
+
+            {lunoFunding.moves.length > 0 && (
+              <>
+                <Text
+                  style={[
+                    styles.fundingHeading,
+                    { color: colors.foreground, marginTop: 12 },
+                  ]}
+                >
+                  Transferred out
+                </Text>
+                {lunoFunding.moves.map((m, i) => (
+                  <View key={`move-${m.ts}-${i}`} style={styles.txRow}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.txAmount, { color: colors.warn }]}>
+                        −{fmtQty(m.assetQty, borrowAsset)}
+                      </Text>
+                      <Text
+                        style={[styles.txDate, { color: colors.mutedForeground }]}
+                        numberOfLines={1}
+                      >
+                        {m.description ? `${m.description} · ` : ""}
+                        {m.accountName} · {fmtDate(new Date(m.ts))}
+                      </Text>
+                    </View>
+                  </View>
+                ))}
+              </>
+            )}
+          </>
+        )}
+      </Card>
+
       <Card title="Repayment plan">
         <View style={styles.fieldRow}>
           <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>
@@ -1222,6 +1323,13 @@ const styles = StyleSheet.create({
     textAlign: "right",
   },
   simHint: { fontSize: 12, fontFamily: "Inter_400Regular", marginBottom: 4 },
+  fundingHeading: {
+    fontSize: 11,
+    fontFamily: "Inter_600SemiBold",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+    marginBottom: 6,
+  },
   simPriceRow: {
     flexDirection: "row",
     justifyContent: "space-between",

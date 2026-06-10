@@ -110,6 +110,139 @@ function Card({
   );
 }
 
+function fmtMonthLabel(d: Date): string {
+  return d.toLocaleDateString(undefined, { month: "short", year: "2-digit" });
+}
+
+// Expandable month-by-month amortisation table for the repayment plan. Collapsed
+// by default; tapping the header reveals interest accrued, the payment applied,
+// and the remaining balance for each month until the loan is cleared.
+function ScheduleBreakdown({
+  rows,
+  expanded,
+  onToggle,
+  fmt,
+  startDate,
+}: {
+  rows: ScheduleRow[];
+  expanded: boolean;
+  onToggle: () => void;
+  fmt: (assetAmount: number) => string;
+  startDate: Date;
+}) {
+  const colors = useColors();
+  if (rows.length === 0) return null;
+  return (
+    <View style={{ marginTop: 6 }}>
+      <Pressable
+        onPress={onToggle}
+        style={styles.schedToggle}
+        hitSlop={6}
+        accessibilityRole="button"
+      >
+        <Feather
+          name={expanded ? "chevron-down" : "chevron-right"}
+          size={16}
+          color={colors.primary}
+        />
+        <Text style={[styles.schedToggleText, { color: colors.primary }]}>
+          {expanded
+            ? "Hide monthly breakdown"
+            : `Show monthly breakdown (${rows.length} mo)`}
+        </Text>
+      </Pressable>
+      {expanded ? (
+        <View style={{ marginTop: 4 }}>
+          <View
+            style={[styles.schedHeadRow, { borderBottomColor: colors.border }]}
+          >
+            <Text
+              style={[
+                styles.schedHcell,
+                styles.schedMonthCol,
+                { color: colors.mutedForeground },
+              ]}
+            >
+              Month
+            </Text>
+            <Text
+              style={[
+                styles.schedHcell,
+                styles.schedNumCol,
+                { color: colors.mutedForeground },
+              ]}
+            >
+              Interest
+            </Text>
+            <Text
+              style={[
+                styles.schedHcell,
+                styles.schedNumCol,
+                { color: colors.mutedForeground },
+              ]}
+            >
+              Payment
+            </Text>
+            <Text
+              style={[
+                styles.schedHcell,
+                styles.schedNumCol,
+                { color: colors.mutedForeground },
+              ]}
+            >
+              Balance
+            </Text>
+          </View>
+          {rows.map((r) => (
+            <View key={r.month} style={styles.schedRow}>
+              <Text
+                style={[
+                  styles.schedCell,
+                  styles.schedMonthCol,
+                  { color: colors.foreground },
+                ]}
+                numberOfLines={1}
+              >
+                {fmtMonthLabel(addMonths(startDate, r.month))}
+              </Text>
+              <Text
+                style={[
+                  styles.schedCell,
+                  styles.schedNumCol,
+                  { color: colors.mutedForeground },
+                ]}
+                numberOfLines={1}
+              >
+                {fmt(r.interest)}
+              </Text>
+              <Text
+                style={[
+                  styles.schedCell,
+                  styles.schedNumCol,
+                  { color: colors.foreground },
+                ]}
+                numberOfLines={1}
+              >
+                {fmt(r.payment)}
+              </Text>
+              <Text
+                style={[
+                  styles.schedCell,
+                  styles.schedNumCol,
+                  { color: colors.foreground },
+                ]}
+                numberOfLines={1}
+              >
+                {fmt(r.endBalance)}
+              </Text>
+            </View>
+          ))}
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
 // Simulate month-by-month payoff: interest compounds on the declining balance,
 // the contribution is applied at month end. Returns months-to-settle (capped)
 // or null when the contribution never outpaces interest.
@@ -139,6 +272,37 @@ function requiredMonthly(
   if (monthlyRate <= 1e-9) return principal / n;
   const f = Math.pow(1 + monthlyRate, -n);
   return (principal * monthlyRate) / (1 - f);
+}
+
+interface ScheduleRow {
+  month: number;
+  interest: number;
+  payment: number;
+  endBalance: number;
+}
+
+// Build a month-by-month amortisation schedule: each month interest accrues on
+// the outstanding balance, then the payment is applied. The final month's
+// payment is trimmed to exactly clear the debt. Mirrors `monthsToSettle` and
+// `requiredMonthly` so the breakdown always agrees with the headline numbers.
+function buildSchedule(
+  principal: number,
+  monthlyRate: number,
+  payment: number,
+  maxMonths: number,
+): ScheduleRow[] {
+  const rows: ScheduleRow[] = [];
+  let balance = principal;
+  const cap = Math.min(Math.max(0, Math.round(maxMonths)), 600);
+  for (let m = 1; m <= cap && balance > 0; m++) {
+    const interest = balance * monthlyRate;
+    const due = balance + interest;
+    const pay = Math.min(payment, due);
+    const endBalance = Math.max(0, due - pay);
+    rows.push({ month: m, interest, payment: pay, endBalance });
+    balance = endBalance;
+  }
+  return rows;
 }
 
 function addMonths(date: Date, months: number): Date {
@@ -175,7 +339,7 @@ export function LoanDetailView({
   const colors = useColors();
   const { targetForAccountId, containerForAccountId } = useRiskSettings();
   const router = useRouter();
-  const { currency } = useCurrency();
+  const { currency, usdToZar } = useCurrency();
   const id = loanId;
   const loansQ = useListLoans();
   const accountsQ = useListAccounts();
@@ -221,6 +385,7 @@ export function LoanDetailView({
   const [borrowedValueDraft, setBorrowedValueDraft] = useState("");
   const [contribDraft, setContribDraft] = useState("");
   const [targetDraft, setTargetDraft] = useState("");
+  const [showSchedule, setShowSchedule] = useState(false);
   useEffect(() => {
     setBorrowedValueDraft(
       annotation.borrowedValueZar != null
@@ -353,62 +518,65 @@ export function LoanDetailView({
     borrowedValueZar != null && borrowedValueZar > 0 && totalBorrowedQty > 0
       ? borrowedValueZar / totalBorrowedQty
       : null;
-  // Rate that drives the repayment plan. Repayments are funded by BUYING the
-  // asset on Luno with ZAR, so the real Luno buy rate is the most accurate basis
-  // and is preferred when available; otherwise we fall back to the manual
-  // sell-rate the user captured when the loan was opened.
-  const planRate = lunoBuyRate ?? fixedSellRate;
-  const planRateSource: "luno" | "manual" | null =
-    lunoBuyRate != null ? "luno" : fixedSellRate != null ? "manual" : null;
-  // The plan is fixed-rate-driven: in ZAR a rate is required to map the user's
-  // ZAR figures to/from the asset-denominated debt. In USD the stablecoin asset
-  // maps ~1:1, so no rate is needed.
-  const planNeedsRate = currency === "ZAR" && planRate == null;
-
   // ── Repayment forecasting ──
   // The debt is asset-denominated (≈ USD for stablecoin loans). The monthly rate
-  // compounds the declining balance against ongoing accrual. Contributions are
-  // entered in the display currency: in ZAR we convert to asset units via the
-  // fixed sell rate; in USD they map ~1:1 to the stablecoin asset.
+  // compounds the declining balance against ongoing accrual. The user budgets in
+  // the display currency: in ZAR we convert that budget to asset units at the
+  // CURRENT MARKET RATE — what the money actually buys today and going forward —
+  // not the historical Luno buy/sell rate, which only reflects past cost. In USD
+  // the stablecoin asset maps ~1:1, so no conversion is needed.
+  const marketRate = usdToZar; // ZAR per asset unit (asset ≈ USD)
+  const now = new Date();
   const goalMode: GoalMode = annotation.goalMode ?? "contribution";
   const monthlyRate = effectiveHourlyRate * 24 * 30.44;
   const monthlyInterestAsset = loan.debtUsd * monthlyRate;
-  // Format an asset-denominated amount for the plan, using the plan rate (Luno
-  // buy rate, else manual sell rate) when in ZAR; falls back to live FX.
+  // Format an asset-denominated plan figure in the display currency, converting
+  // to ZAR at the current market rate.
   const fmtPlanMoney = (assetAmount: number): string =>
-    currency === "ZAR" && planRate != null
-      ? `R${groupWithSpaces(assetAmount * planRate, 2)}`
+    currency === "ZAR"
+      ? `R${groupWithSpaces(assetAmount * marketRate, 2)}`
       : fmtMoney(assetAmount, currency);
   const contributionInput = annotation.monthlyContribution ?? 0;
-  // Monthly contribution expressed in asset units. null ⇒ a ZAR contribution is
-  // set but there is no rate yet, so a payoff can't be projected.
+  // Monthly contribution in asset units, converted from the ZAR budget at the
+  // current market rate (USD budgets map ~1:1 to the stablecoin asset).
   const contributionAsset =
-    currency === "ZAR"
-      ? planRate != null
-        ? contributionInput / planRate
-        : null
-      : contributionInput;
-  const settleMonths =
-    contributionAsset != null
-      ? monthsToSettle(loan.debtUsd, monthlyRate, contributionAsset)
-      : null;
+    currency === "ZAR" ? contributionInput / marketRate : contributionInput;
+  const settleMonths = monthsToSettle(
+    loan.debtUsd,
+    monthlyRate,
+    contributionAsset,
+  );
   const payoffDate =
     settleMonths != null && settleMonths > 0
-      ? addMonths(new Date(), settleMonths)
+      ? addMonths(now, settleMonths)
       : null;
+  // Month-by-month schedule for the expandable breakdown (contribution mode).
+  const contributionSchedule =
+    settleMonths != null && contributionAsset > 0
+      ? buildSchedule(loan.debtUsd, monthlyRate, contributionAsset, settleMonths)
+      : [];
   const targetDate = annotation.targetSettleDate
     ? new Date(annotation.targetSettleDate)
     : null;
   const targetMonths =
     targetDate && !Number.isNaN(targetDate.getTime())
-      ? Math.max(1, Math.round(monthsUntil(targetDate, new Date())))
+      ? Math.max(1, Math.round(monthsUntil(targetDate, now)))
       : null;
-  // Required monthly payment to hit the target, in asset units (formatted to the
-  // display currency via the fixed sell rate where applicable).
+  // Required monthly payment to clear the debt by the target date, in asset units.
   const requiredPerMonthAsset =
     targetMonths != null
       ? requiredMonthly(loan.debtUsd, monthlyRate, targetMonths)
       : null;
+  // Month-by-month schedule for the expandable breakdown (target mode).
+  const targetSchedule =
+    requiredPerMonthAsset != null && targetMonths != null
+      ? buildSchedule(
+          loan.debtUsd,
+          monthlyRate,
+          requiredPerMonthAsset,
+          targetMonths,
+        )
+      : [];
 
   const byLoan = interestQ.data?.byLoan.find((b) => b.loanId === loan.id);
 
@@ -940,45 +1108,35 @@ export function LoanDetailView({
             ]}
           />
         </View>
-        {planRateSource === "luno" && lunoBuyRate != null ? (
+        {currency === "ZAR" ? (
           <>
             <Row
-              label="Luno buy rate (plan)"
-              value={`R${groupWithSpaces(lunoBuyRate, 2)} / ${loan.asset}`}
+              label="Market rate (now)"
+              value={`R${groupWithSpaces(marketRate, 2)} / ${loan.asset}`}
             />
+            {lunoBuyRate != null ? (
+              <Row
+                label="Avg Luno buy rate"
+                value={`R${groupWithSpaces(lunoBuyRate, 2)} / ${loan.asset}`}
+              />
+            ) : null}
             {fixedSellRate != null ? (
               <Row
                 label="Sell rate when borrowed"
                 value={`R${groupWithSpaces(fixedSellRate, 2)} / ${loan.asset}`}
               />
             ) : null}
+            <Text
+              style={[
+                styles.simHint,
+                { color: colors.mutedForeground, marginTop: 4 },
+              ]}
+            >
+              Projections convert your monthly Rand budget to {loan.asset} at the
+              current market rate.
+            </Text>
           </>
-        ) : fixedSellRate != null ? (
-          <Row
-            label="Fixed sell rate"
-            value={`R${groupWithSpaces(fixedSellRate, 2)} / ${loan.asset}`}
-          />
-        ) : totalBorrowedQty > 0 ? (
-          <Text
-            style={[
-              styles.simHint,
-              { color: colors.mutedForeground, marginTop: 4 },
-            ]}
-          >
-            Enter the total Rand you received for the{" "}
-            {fmtQty(totalBorrowedQty, loan.asset)} borrowed to set your fixed
-            rate.
-          </Text>
-        ) : (
-          <Text
-            style={[
-              styles.simHint,
-              { color: colors.mutedForeground, marginTop: 4 },
-            ]}
-          >
-            Borrow history unavailable — can&apos;t derive a fixed rate yet.
-          </Text>
-        )}
+        ) : null}
 
         <View style={[styles.seg, { borderColor: colors.border, marginTop: 4 }]}>
           {(
@@ -991,9 +1149,10 @@ export function LoanDetailView({
             return (
               <Pressable
                 key={mode}
-                onPress={() =>
-                  void setLoanAnnotation(loan.id, { goalMode: mode })
-                }
+                onPress={() => {
+                  setShowSchedule(false);
+                  void setLoanAnnotation(loan.id, { goalMode: mode });
+                }}
                 style={[
                   styles.segBtn,
                   { flex: 1, alignItems: "center" },
@@ -1051,19 +1210,17 @@ export function LoanDetailView({
               value={fmtPlanMoney(monthlyInterestAsset)}
             />
             {contributionInput > 0 ? (
-              contributionAsset == null ? (
-                <Text
-                  style={[styles.simHint, { color: colors.warn, marginTop: 4 }]}
-                >
-                  Set the borrowed asset value above to project a payoff date.
-                </Text>
-              ) : settleMonths != null && payoffDate ? (
+              settleMonths != null && payoffDate ? (
                 <>
-                  <Row
-                    label="Settles in"
-                    value={`${settleMonths} mo`}
-                  />
+                  <Row label="Settles in" value={`${settleMonths} mo`} />
                   <Row label="Projected payoff" value={fmtDate(payoffDate)} />
+                  <ScheduleBreakdown
+                    rows={contributionSchedule}
+                    expanded={showSchedule}
+                    onToggle={() => setShowSchedule((v) => !v)}
+                    fmt={fmtPlanMoney}
+                    startDate={now}
+                  />
                 </>
               ) : (
                 <Text
@@ -1115,19 +1272,19 @@ export function LoanDetailView({
                 ]}
               />
             </View>
-            {planNeedsRate ? (
-              <Text
-                style={[styles.simHint, { color: colors.warn, marginTop: 4 }]}
-              >
-                Set the borrowed asset value above to compute the required
-                monthly payment.
-              </Text>
-            ) : requiredPerMonthAsset != null && targetMonths != null ? (
+            {requiredPerMonthAsset != null && targetMonths != null ? (
               <>
                 <Row label="Months to target" value={`${targetMonths} mo`} />
                 <Row
                   label="Required / month"
                   value={fmtPlanMoney(requiredPerMonthAsset)}
+                />
+                <ScheduleBreakdown
+                  rows={targetSchedule}
+                  expanded={showSchedule}
+                  onToggle={() => setShowSchedule((v) => !v)}
+                  fmt={fmtPlanMoney}
+                  startDate={now}
                 />
               </>
             ) : (
@@ -1369,6 +1526,23 @@ const styles = StyleSheet.create({
     textAlign: "right",
   },
   simHint: { fontSize: 12, fontFamily: "Inter_400Regular", marginBottom: 4 },
+  schedToggle: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingVertical: 4,
+  },
+  schedToggleText: { fontSize: 13, fontFamily: "Inter_500Medium" },
+  schedHeadRow: {
+    flexDirection: "row",
+    paddingBottom: 4,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  schedHcell: { fontSize: 11, fontFamily: "Inter_500Medium" },
+  schedRow: { flexDirection: "row", paddingVertical: 3 },
+  schedCell: { fontSize: 12, fontFamily: "Inter_400Regular" },
+  schedMonthCol: { flex: 1.1 },
+  schedNumCol: { flex: 1.3, textAlign: "right" },
   fundingHeading: {
     fontSize: 11,
     fontFamily: "Inter_600SemiBold",

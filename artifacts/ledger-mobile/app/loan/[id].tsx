@@ -51,7 +51,11 @@ import {
   useListLoans,
   useListLunoTransactions,
 } from "@workspace/api-client-react";
-import { lunoFundingForAsset } from "@/lib/lunoFunding";
+import {
+  averageBuyRate,
+  lunoFundingForAsset,
+  matchRepaymentsToBuys,
+} from "@/lib/lunoFunding";
 import {
   getLoanAnnotation,
   setLoanAnnotation,
@@ -323,6 +327,18 @@ export function LoanDetailView({
     lunoTxQ.data?.transactions ?? [],
     borrowAsset,
   );
+  // Auto-match each repayment to the nearest preceding Luno buy so each row can
+  // show the real ZAR cost/rate rather than a live-market FX conversion.
+  const repaymentBuys = matchRepaymentsToBuys(
+    repayments.map((t) => ({ ts: t.ts, amount: t.amount })),
+    lunoFunding.buys,
+  );
+  // Plan rate is derived only from buys actually matched to THIS loan's
+  // repayments (not all Luno history), so unrelated activity can't distort it.
+  const matchedBuys = repaymentBuys.filter(
+    (b): b is NonNullable<typeof b> => b != null,
+  );
+  const lunoBuyRate = averageBuyRate(matchedBuys);
 
   // ── Fixed Luno sell rate ──
   // The user enters the TOTAL ZAR they received for the borrowed asset; dividing
@@ -337,10 +353,17 @@ export function LoanDetailView({
     borrowedValueZar != null && borrowedValueZar > 0 && totalBorrowedQty > 0
       ? borrowedValueZar / totalBorrowedQty
       : null;
-  // The plan is fixed-rate-driven: in ZAR a fixed sell rate is required to map
-  // the user's ZAR figures to/from the asset-denominated debt. In USD the
-  // stablecoin asset maps ~1:1, so no rate is needed.
-  const planNeedsRate = currency === "ZAR" && fixedSellRate == null;
+  // Rate that drives the repayment plan. Repayments are funded by BUYING the
+  // asset on Luno with ZAR, so the real Luno buy rate is the most accurate basis
+  // and is preferred when available; otherwise we fall back to the manual
+  // sell-rate the user captured when the loan was opened.
+  const planRate = lunoBuyRate ?? fixedSellRate;
+  const planRateSource: "luno" | "manual" | null =
+    lunoBuyRate != null ? "luno" : fixedSellRate != null ? "manual" : null;
+  // The plan is fixed-rate-driven: in ZAR a rate is required to map the user's
+  // ZAR figures to/from the asset-denominated debt. In USD the stablecoin asset
+  // maps ~1:1, so no rate is needed.
+  const planNeedsRate = currency === "ZAR" && planRate == null;
 
   // ── Repayment forecasting ──
   // The debt is asset-denominated (≈ USD for stablecoin loans). The monthly rate
@@ -350,19 +373,19 @@ export function LoanDetailView({
   const goalMode: GoalMode = annotation.goalMode ?? "contribution";
   const monthlyRate = effectiveHourlyRate * 24 * 30.44;
   const monthlyInterestAsset = loan.debtUsd * monthlyRate;
-  // Format an asset-denominated amount for the plan, preferring the fixed sell
-  // rate when the user works in ZAR (falls back to the live FX conversion).
+  // Format an asset-denominated amount for the plan, using the plan rate (Luno
+  // buy rate, else manual sell rate) when in ZAR; falls back to live FX.
   const fmtPlanMoney = (assetAmount: number): string =>
-    currency === "ZAR" && fixedSellRate != null
-      ? `R${groupWithSpaces(assetAmount * fixedSellRate, 2)}`
+    currency === "ZAR" && planRate != null
+      ? `R${groupWithSpaces(assetAmount * planRate, 2)}`
       : fmtMoney(assetAmount, currency);
   const contributionInput = annotation.monthlyContribution ?? 0;
   // Monthly contribution expressed in asset units. null ⇒ a ZAR contribution is
-  // set but there is no fixed rate yet, so a payoff can't be projected.
+  // set but there is no rate yet, so a payoff can't be projected.
   const contributionAsset =
     currency === "ZAR"
-      ? fixedSellRate != null
-        ? contributionInput / fixedSellRate
+      ? planRate != null
+        ? contributionInput / planRate
         : null
       : contributionInput;
   const settleMonths =
@@ -770,26 +793,36 @@ export function LoanDetailView({
                 { color: colors.mutedForeground, marginBottom: 10 },
               ]}
             >
-              Each repayment reduced the outstanding debt. Rand values shown at
-              today&apos;s market rate.
+              Each repayment reduced the outstanding debt. Where a matching Luno
+              buy was found, its real buy rate and the Rand actually spent are
+              shown; otherwise the value falls back to today&apos;s market rate.
             </Text>
-            {repayments.map((t, i) => (
-            <View key={`${t.ts}-${i}`} style={styles.txRow}>
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.txAmount, { color: colors.ok }]}>
-                  −{fmtQty(t.amount, t.asset)}
-                </Text>
-                <Text
-                  style={[styles.txDate, { color: colors.mutedForeground }]}
-                >
-                  {fmtDate(new Date(t.ts))}
-                </Text>
-              </View>
-              <Text style={[styles.txUsd, { color: colors.foreground }]}>
-                {fmtMoney(t.amountUsd, currency)}
-              </Text>
-            </View>
-            ))}
+            {repayments.map((t, i) => {
+              const buy = repaymentBuys[i];
+              return (
+                <View key={`${t.ts}-${i}`} style={styles.txRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.txAmount, { color: colors.ok }]}>
+                      −{fmtQty(t.amount, t.asset)}
+                    </Text>
+                    <Text
+                      style={[styles.txDate, { color: colors.mutedForeground }]}
+                      numberOfLines={1}
+                    >
+                      {buy
+                        ? `Luno R${groupWithSpaces(buy.rate, 2)}/${t.asset} · `
+                        : ""}
+                      {fmtDate(new Date(t.ts))}
+                    </Text>
+                  </View>
+                  <Text style={[styles.txUsd, { color: colors.foreground }]}>
+                    {buy
+                      ? `R${groupWithSpaces(buy.zarSpent, 2)}`
+                      : fmtMoney(t.amountUsd, currency)}
+                  </Text>
+                </View>
+              );
+            })}
           </>
         )}
       </Card>
@@ -907,7 +940,20 @@ export function LoanDetailView({
             ]}
           />
         </View>
-        {fixedSellRate != null ? (
+        {planRateSource === "luno" && lunoBuyRate != null ? (
+          <>
+            <Row
+              label="Luno buy rate (plan)"
+              value={`R${groupWithSpaces(lunoBuyRate, 2)} / ${loan.asset}`}
+            />
+            {fixedSellRate != null ? (
+              <Row
+                label="Sell rate when borrowed"
+                value={`R${groupWithSpaces(fixedSellRate, 2)} / ${loan.asset}`}
+              />
+            ) : null}
+          </>
+        ) : fixedSellRate != null ? (
           <Row
             label="Fixed sell rate"
             value={`R${groupWithSpaces(fixedSellRate, 2)} / ${loan.asset}`}

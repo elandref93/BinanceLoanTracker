@@ -122,3 +122,83 @@ export function lunoFundingForAsset(
   moves.sort((a, b) => (a.ts < b.ts ? 1 : -1));
   return { buys, moves };
 }
+
+export type RepaymentLike = {
+  /** ISO timestamp of the Binance repayment. */
+  ts: string;
+  /** Asset units repaid (positive). */
+  amount: number;
+};
+
+const DAY_MS = 86_400_000;
+// A buy must fall within this many days before a repayment to be a candidate —
+// you buy on Luno, move to Binance, then repay, so the buy precedes the repay.
+const MATCH_WINDOW_DAYS = 60;
+// Small forward tolerance for clock skew / ordering (buy stamped slightly after).
+const FORWARD_SKEW_DAYS = 2;
+// A 100% asset-amount mismatch costs this many "days" of time distance, so
+// timing and amount both steer the match without one dominating outright.
+const AMOUNT_PENALTY_DAYS = 14;
+// Reject a match when the buy's asset quantity differs from the repayment by
+// more than this fraction — guards against confidently labeling an unrelated
+// buy as "the" funding for a repayment.
+const MAX_AMOUNT_DEVIATION = 0.5;
+
+/**
+ * Match each repayment to the nearest preceding Luno buy of the same asset,
+ * scoring by time proximity and asset-amount similarity. Each buy is consumed
+ * at most once. Returns matched buys aligned to the input `repayments` order
+ * (null where no confident match exists). `buys` should be the asset's buys
+ * from {@link lunoFundingForAsset}.
+ */
+export function matchRepaymentsToBuys(
+  repayments: RepaymentLike[],
+  buys: LunoBuy[],
+): (LunoBuy | null)[] {
+  const result: (LunoBuy | null)[] = repayments.map(() => null);
+  const consumed = new Set<number>();
+  // Assign oldest repayment first for stable, greedy matching.
+  const order = repayments
+    .map((r, i) => ({ r, i }))
+    .sort((a, b) => (a.r.ts < b.r.ts ? -1 : 1));
+
+  for (const { r, i } of order) {
+    const repayMs = new Date(r.ts).getTime();
+    if (Number.isNaN(repayMs)) continue;
+    let bestIdx = -1;
+    let bestScore = Infinity;
+    for (let j = 0; j < buys.length; j++) {
+      if (consumed.has(j)) continue;
+      const b = buys[j];
+      const buyMs = new Date(b.ts).getTime();
+      if (Number.isNaN(buyMs)) continue;
+      const gapDays = (repayMs - buyMs) / DAY_MS; // positive ⇒ buy before repay
+      if (gapDays < -FORWARD_SKEW_DAYS || gapDays > MATCH_WINDOW_DAYS) continue;
+      const amountDiff =
+        r.amount > 0 ? Math.abs(b.assetQty - r.amount) / r.amount : 0;
+      // Don't claim a match when the quantities are too far apart.
+      if (amountDiff > MAX_AMOUNT_DEVIATION) continue;
+      const score = Math.abs(gapDays) + amountDiff * AMOUNT_PENALTY_DAYS;
+      if (score < bestScore) {
+        bestScore = score;
+        bestIdx = j;
+      }
+    }
+    if (bestIdx >= 0) {
+      consumed.add(bestIdx);
+      result[i] = buys[bestIdx];
+    }
+  }
+  return result;
+}
+
+/** Weighted-average ZAR→asset buy rate across all buys (null if none). */
+export function averageBuyRate(buys: LunoBuy[]): number | null {
+  let zar = 0;
+  let asset = 0;
+  for (const b of buys) {
+    zar += b.zarSpent;
+    asset += b.assetQty;
+  }
+  return asset > 0 ? zar / asset : null;
+}

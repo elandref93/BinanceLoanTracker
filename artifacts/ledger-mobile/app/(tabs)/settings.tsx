@@ -192,8 +192,8 @@ export default function SettingsScreen() {
         );
       } else if (result.status === "conflict") {
         Alert.alert(
-          "Synced",
-          "The server had a newer copy — your device pulled the latest profile.",
+          "Already synced",
+          "The server already has your profile. Other devices can pull it now.",
         );
       } else {
         Alert.alert(

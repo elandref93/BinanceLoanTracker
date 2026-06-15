@@ -485,10 +485,10 @@ export async function pushLocalAccountsToServer(): Promise<
       return result;
     }
     let updatedAt = await readLocalUpdatedAt();
-    if (!updatedAt) {
-      updatedAt = nextMonotonicTimestamp();
-      await SecureStore.setItemAsync(UPDATED_AT_KEY, updatedAt);
-    }
+    // Manual sync always bumps the timestamp so a re-tap after auto-backfill
+    // doesn't hit 409 (server rejects equal updatedAt as stale).
+    updatedAt = nextMonotonicTimestamp();
+    await SecureStore.setItemAsync(UPDATED_AT_KEY, updatedAt);
     const pushResult = await pushRemoteBlob({ updatedAt, containers });
     recordPushResult(pushResult);
     if (pushResult.status === "conflict") {

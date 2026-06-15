@@ -53,9 +53,16 @@ import {
 } from "@workspace/api-client-react";
 import {
   averageBuyRate,
+  filterLunoTxsForContainer,
   lunoFundingForAsset,
   matchRepaymentsToBuys,
 } from "@/lib/lunoFunding";
+import {
+  buildSchedule,
+  monthsToSettle,
+  requiredMonthly,
+  type ScheduleRow,
+} from "@/lib/loanRepaymentPlan";
 import {
   getLoanAnnotation,
   setLoanAnnotation,
@@ -246,65 +253,6 @@ function ScheduleBreakdown({
 // Simulate month-by-month payoff: interest compounds on the declining balance,
 // the contribution is applied at month end. Returns months-to-settle (capped)
 // or null when the contribution never outpaces interest.
-function monthsToSettle(
-  principal: number,
-  monthlyRate: number,
-  contribution: number,
-): number | null {
-  if (principal <= 0) return 0;
-  if (contribution <= 0) return null;
-  let balance = principal;
-  for (let m = 1; m <= 600; m++) {
-    balance = balance * (1 + monthlyRate) - contribution;
-    if (balance <= 0) return m;
-  }
-  return null; // > 50 years ⇒ effectively never with this contribution
-}
-
-// Required monthly contribution to clear `principal` in `n` months at
-// `monthlyRate` (standard amortization; falls back to straight-line at r≈0).
-function requiredMonthly(
-  principal: number,
-  monthlyRate: number,
-  n: number,
-): number {
-  if (n <= 0) return principal;
-  if (monthlyRate <= 1e-9) return principal / n;
-  const f = Math.pow(1 + monthlyRate, -n);
-  return (principal * monthlyRate) / (1 - f);
-}
-
-interface ScheduleRow {
-  month: number;
-  interest: number;
-  payment: number;
-  endBalance: number;
-}
-
-// Build a month-by-month amortisation schedule: each month interest accrues on
-// the outstanding balance, then the payment is applied. The final month's
-// payment is trimmed to exactly clear the debt. Mirrors `monthsToSettle` and
-// `requiredMonthly` so the breakdown always agrees with the headline numbers.
-function buildSchedule(
-  principal: number,
-  monthlyRate: number,
-  payment: number,
-  maxMonths: number,
-): ScheduleRow[] {
-  const rows: ScheduleRow[] = [];
-  let balance = principal;
-  const cap = Math.min(Math.max(0, Math.round(maxMonths)), 600);
-  for (let m = 1; m <= cap && balance > 0; m++) {
-    const interest = balance * monthlyRate;
-    const due = balance + interest;
-    const pay = Math.min(payment, due);
-    const endBalance = Math.max(0, due - pay);
-    rows.push({ month: m, interest, payment: pay, endBalance });
-    balance = endBalance;
-  }
-  return rows;
-}
-
 function addMonths(date: Date, months: number): Date {
   const d = new Date(date.getTime());
   d.setMonth(d.getMonth() + months);
@@ -456,6 +404,7 @@ export function LoanDetailView({
     );
   }
   const account = accountsQ.data?.accounts.find((a) => a.id === loan.accountId);
+  const loanContainer = containerForAccountId(loan.accountId);
   const targetLtv = targetForAccountId(loan.accountId);
   const status = statusFromLtv(loan.ltv, targetLtv);
   const headroom = headroomToTarget(loan, targetLtv);
@@ -488,10 +437,11 @@ export function LoanDetailView({
     loanTxs.find((t) => t.type === "borrow")?.asset ??
     repayments[0]?.asset ??
     "";
-  const lunoFunding = lunoFundingForAsset(
+  const scopedLunoTxs = filterLunoTxsForContainer(
     lunoTxQ.data?.transactions ?? [],
-    borrowAsset,
+    loanContainer,
   );
+  const lunoFunding = lunoFundingForAsset(scopedLunoTxs, borrowAsset);
   // Auto-match each repayment to the nearest preceding Luno buy so each row can
   // show the real ZAR cost/rate rather than a live-market FX conversion.
   const repaymentBuys = matchRepaymentsToBuys(
@@ -518,6 +468,13 @@ export function LoanDetailView({
     borrowedValueZar != null && borrowedValueZar > 0 && totalBorrowedQty > 0
       ? borrowedValueZar / totalBorrowedQty
       : null;
+  // Asset-denominated debt drives the repayment plan (not debtUsd, which can be 0
+  // when the server price lookup fails while loan.debt is still valid).
+  const planPrincipal = loan.debt;
+  const assetToUsd =
+    planPrincipal > 0 && loan.debtUsd > 0 ? loan.debtUsd / planPrincipal : 1;
+  const borrowedUsd =
+    loan.debtUsd > 0 ? loan.debtUsd : planPrincipal * assetToUsd;
   // ── Repayment forecasting ──
   // The debt is asset-denominated (≈ USD for stablecoin loans). The monthly rate
   // compounds the declining balance against ongoing accrual. The user budgets in
@@ -525,24 +482,26 @@ export function LoanDetailView({
   // CURRENT MARKET RATE — what the money actually buys today and going forward —
   // not the historical Luno buy/sell rate, which only reflects past cost. In USD
   // the stablecoin asset maps ~1:1, so no conversion is needed.
-  const marketRate = usdToZar; // ZAR per asset unit (asset ≈ USD)
+  const marketRate = usdToZar; // ZAR per USD (asset ≈ USD via assetToUsd)
   const now = new Date();
   const goalMode: GoalMode = annotation.goalMode ?? "contribution";
   const monthlyRate = effectiveHourlyRate * 24 * 30.44;
-  const monthlyInterestAsset = loan.debtUsd * monthlyRate;
-  // Format an asset-denominated plan figure in the display currency, converting
-  // to ZAR at the current market rate.
-  const fmtPlanMoney = (assetAmount: number): string =>
-    currency === "ZAR"
-      ? `R${groupWithSpaces(assetAmount * marketRate, 2)}`
-      : fmtMoney(assetAmount, currency);
+  const monthlyInterestAsset = planPrincipal * monthlyRate;
+  const fmtPlanMoney = (assetAmount: number): string => {
+    const usd = assetAmount * assetToUsd;
+    return currency === "ZAR"
+      ? `R${groupWithSpaces(usd * marketRate, 2)}`
+      : fmtMoney(usd, currency);
+  };
   const contributionInput = annotation.monthlyContribution ?? 0;
   // Monthly contribution in asset units, converted from the ZAR budget at the
   // current market rate (USD budgets map ~1:1 to the stablecoin asset).
   const contributionAsset =
-    currency === "ZAR" ? contributionInput / marketRate : contributionInput;
+    currency === "ZAR"
+      ? contributionInput / (marketRate * assetToUsd)
+      : contributionInput / assetToUsd;
   const settleMonths = monthsToSettle(
-    loan.debtUsd,
+    planPrincipal,
     monthlyRate,
     contributionAsset,
   );
@@ -553,7 +512,7 @@ export function LoanDetailView({
   // Month-by-month schedule for the expandable breakdown (contribution mode).
   const contributionSchedule =
     settleMonths != null && contributionAsset > 0
-      ? buildSchedule(loan.debtUsd, monthlyRate, contributionAsset, settleMonths)
+      ? buildSchedule(planPrincipal, monthlyRate, contributionAsset, settleMonths)
       : [];
   const targetDate = annotation.targetSettleDate
     ? new Date(annotation.targetSettleDate)
@@ -565,13 +524,13 @@ export function LoanDetailView({
   // Required monthly payment to clear the debt by the target date, in asset units.
   const requiredPerMonthAsset =
     targetMonths != null
-      ? requiredMonthly(loan.debtUsd, monthlyRate, targetMonths)
+      ? requiredMonthly(planPrincipal, monthlyRate, targetMonths)
       : null;
   // Month-by-month schedule for the expandable breakdown (target mode).
   const targetSchedule =
     requiredPerMonthAsset != null && targetMonths != null
       ? buildSchedule(
-          loan.debtUsd,
+          planPrincipal,
           monthlyRate,
           requiredPerMonthAsset,
           targetMonths,
@@ -632,7 +591,6 @@ export function LoanDetailView({
   const aprDelta = avg30 > 0 ? ((loan.apr - avg30) / avg30) * 100 : 0;
   const hasRealHistory = chartValues.length >= 2;
 
-  const loanContainer = containerForAccountId(loan.accountId);
   const relevantRules = rules.filter((r) =>
     ruleAppliesTo(r, loan.id, loanContainer?.id),
   );
@@ -653,7 +611,7 @@ export function LoanDetailView({
       <Card title="Position">
         <Row
           label="Borrowed"
-          value={`${fmtMoney(loan.debtUsd, currency)} (${loan.asset})`}
+          value={`${fmtQty(loan.debt, loan.asset)} · ${fmtMoney(borrowedUsd, currency)}`}
         />
         <Row
           label="Collateral"
@@ -961,9 +919,10 @@ export function LoanDetailView({
                 { color: colors.mutedForeground, marginBottom: 10 },
               ]}
             >
-              Each repayment reduced the outstanding debt. Where a matching Luno
-              buy was found, its real buy rate and the Rand actually spent are
-              shown; otherwise the value falls back to today&apos;s market rate.
+              Repayments are from Binance loan history. Amounts shown are what
+              Binance recorded for each repay event. When a matching Luno buy is
+              found, its buy rate and ZAR spent appear below as funding context
+              only — not as the repayment figure.
             </Text>
             {repayments.map((t, i) => {
               const buy = repaymentBuys[i];
@@ -971,22 +930,20 @@ export function LoanDetailView({
                 <View key={`${t.ts}-${i}`} style={styles.txRow}>
                   <View style={{ flex: 1 }}>
                     <Text style={[styles.txAmount, { color: colors.ok }]}>
-                      −{fmtQty(t.amount, t.asset)}
+                      +{fmtQty(Math.abs(t.amount), t.asset)}
                     </Text>
                     <Text
                       style={[styles.txDate, { color: colors.mutedForeground }]}
-                      numberOfLines={1}
+                      numberOfLines={2}
                     >
                       {buy
-                        ? `Luno R${groupWithSpaces(buy.rate, 2)}/${t.asset} · `
+                        ? `Luno buy R${groupWithSpaces(buy.rate, 2)}/${t.asset} · spent R${groupWithSpaces(buy.zarSpent, 2)} · `
                         : ""}
                       {fmtDate(new Date(t.ts))}
                     </Text>
                   </View>
                   <Text style={[styles.txUsd, { color: colors.foreground }]}>
-                    {buy
-                      ? `R${groupWithSpaces(buy.zarSpent, 2)}`
-                      : fmtMoney(t.amountUsd, currency)}
+                    {fmtMoney(t.amountUsd, currency)}
                   </Text>
                 </View>
               );
@@ -1014,8 +971,11 @@ export function LoanDetailView({
             >
               The {borrowAsset} used to repay this loan was bought on Luno with
               rand, then transferred out (typically to Binance). Rates shown are
-              the real Luno buy rates. Reflects recent Luno activity, so older
-              entries may not appear.
+              the real Luno buy rates.
+              {loanContainer
+                ? ` Showing ${loanContainer.name} activity only.`
+                : ""}{" "}
+              Reflects recent Luno activity, so older entries may not appear.
             </Text>
 
             {lunoFunding.buys.length > 0 && (

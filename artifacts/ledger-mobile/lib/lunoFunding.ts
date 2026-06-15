@@ -37,6 +37,30 @@ export type LunoFunding = {
   moves: LunoMove[];
 };
 
+/** Minimal container shape for scoping Luno txs to a Personal/Trust profile. */
+export type LunoContainerLinks = {
+  links: Array<{ id: string; exchange: string }>;
+};
+
+/**
+ * Keep only Luno wallet-ledger rows belonging to the given profile container.
+ * Loans are tied to a Binance link id; the matching Luno link shares the same
+ * container (Personal or Trust).
+ */
+export function filterLunoTxsForContainer(
+  txs: LunoTransaction[],
+  container: LunoContainerLinks | undefined | null,
+): LunoTransaction[] {
+  if (!container) return [];
+  const lunoLinkIds = new Set(
+    container.links
+      .filter((l) => l.exchange === "luno")
+      .map((l) => l.id),
+  );
+  if (lunoLinkIds.size === 0) return [];
+  return txs.filter((t) => lunoLinkIds.has(t.accountId));
+}
+
 type Group = {
   ts: string;
   accountName: string;

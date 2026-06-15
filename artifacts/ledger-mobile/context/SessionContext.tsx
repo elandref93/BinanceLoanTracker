@@ -15,7 +15,11 @@ import {
   type Session,
   type SessionUser,
 } from "@/lib/session";
-import { hydrateFromServer } from "@/lib/accountStore";
+import {
+  hydrateFromServer,
+  pushLocalAccountsToServer,
+} from "@/lib/accountStore";
+import type { PushRemoteResult } from "@/lib/accountSync";
 import { setSyncTokenGetter } from "@/lib/accountSync";
 import { hydrateSettings } from "@/lib/settingsStore";
 import { setSettingsTokenGetter } from "@/lib/settingsSync";
@@ -30,6 +34,7 @@ import {
 import { setAuthFailureHandler } from "@/lib/authEvents";
 import { checkAndApplyUpdate } from "@/lib/otaUpdates";
 import { reportError, reportMessage } from "@/lib/crashReporting";
+import type { AccountsHydrateStatus } from "@/lib/syncDiagnostics";
 
 interface SessionContextValue {
   /** True once the hydration from secure storage has completed. */
@@ -45,12 +50,20 @@ interface SessionContextValue {
    * (stored server-side under the same Apple ID) has been pulled down.
    */
   accountsHydrated: boolean;
+  /** Outcome of the latest account sync pull/push after sign-in or retry. */
+  accountsHydrateStatus: AccountsHydrateStatus;
+  /** Human-readable error when accountsHydrateStatus is "error". */
+  accountsHydrateError: string | null;
   /** Returns the bearer token to attach to /api/* requests, or null. */
   getToken: () => Promise<string | null>;
   /** Run the Apple Sign In flow and persist the resulting session. */
   signInWithApple: () => Promise<Session>;
   /** Clear the persisted session and update local state. */
   signOut: () => Promise<void>;
+  /** Re-run server account hydrate (pull or push-if-empty). */
+  retryAccountSync: () => Promise<void>;
+  /** Force-push local accounts to the server (Settings "Sync now"). */
+  syncNow: () => Promise<PushRemoteResult>;
 }
 
 const SessionContext = createContext<SessionContextValue | null>(null);
@@ -58,12 +71,14 @@ const SessionContext = createContext<SessionContextValue | null>(null);
 export function SessionProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [isLoaded, setIsLoaded] = useState(false);
-  const [accountsHydrated, setAccountsHydrated] = useState(false);
+  const [accountsHydrateStatus, setAccountsHydrateStatus] =
+    useState<AccountsHydrateStatus>("pending");
+  const [accountsHydrateError, setAccountsHydrateError] = useState<string | null>(
+    null,
+  );
 
-  // Ref mirror — read inside getToken() to avoid stale closures when the
-  // session changes after the consumer first captured the function reference
-  // (e.g. setAuthTokenGetter sees the new token immediately after sign-in
-  // without us having to re-register it).
+  const accountsHydrated = accountsHydrateStatus !== "pending";
+
   const sessionRef = useRef<Session | null>(null);
   sessionRef.current = session;
 
@@ -89,9 +104,25 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     return sessionRef.current?.sessionToken ?? null;
   }, []);
 
-  // Register the token getter with accountSync so it can authenticate the
-  // cross-device sync requests, and pull the remote copy whenever the
-  // signed-in user changes (sign-in, sign-out, or initial hydrate).
+  const runAccountHydrate = useCallback(async () => {
+    setAccountsHydrateStatus("pending");
+    setAccountsHydrateError(null);
+    try {
+      const result = await hydrateFromServer();
+      setAccountsHydrateStatus(result.status);
+      setAccountsHydrateError(result.errorMessage ?? null);
+      if (result.status === "ok" || result.status === "empty") {
+        void uploadCredentials();
+      }
+    } catch (e) {
+      reportError(e, { op: "accounts.hydrate" });
+      setAccountsHydrateStatus("error");
+      setAccountsHydrateError(
+        e instanceof Error ? e.message : "Could not sync accounts",
+      );
+    }
+  }, []);
+
   useEffect(() => {
     setSyncTokenGetter(getToken);
     setSettingsTokenGetter(getToken);
@@ -99,22 +130,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     setLoanAnnotationsTokenGetter(getToken);
     if (session) {
       reportMessage("[session] hydrate start", { op: "session.hydrate" });
-      // Reset the gate signal for this (new) session so the onboarding redirect
-      // waits for the pull below before concluding the user has no accounts.
-      setAccountsHydrated(false);
-      // Hydrate accounts first, THEN upload credentials so the server has the
-      // freshest links. Server-side tracking is on by default, so this happens
-      // on every signed-in launch; uploadCredentials no-ops when there are no
-      // linked accounts. `.finally` ensures we still upload locally-stored keys
-      // even if the hydrate pull fails (e.g. offline with cached accounts).
-      void hydrateFromServer()
-        .catch((e) => {
-          reportError(e, { op: "accounts.hydrate" });
-        })
-        .finally(() => {
-          setAccountsHydrated(true);
-          void uploadCredentials();
-        });
+      void runAccountHydrate();
       void hydrateSettings().catch((e) => {
         reportError(e, { op: "settings.hydrate" });
       });
@@ -122,8 +138,8 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         reportError(e, { op: "annotations.hydrate" });
       });
     } else {
-      // Signed out — clear the gate so the next sign-in re-waits for its pull.
-      setAccountsHydrated(false);
+      setAccountsHydrateStatus("pending");
+      setAccountsHydrateError(null);
     }
     return () => {
       setSyncTokenGetter(null);
@@ -131,7 +147,16 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       setCredentialsTokenGetter(null);
       setLoanAnnotationsTokenGetter(null);
     };
-  }, [session, getToken]);
+  }, [session, getToken, runAccountHydrate]);
+
+  const retryAccountSync = useCallback(async () => {
+    if (!sessionRef.current) return;
+    await runAccountHydrate();
+  }, [runAccountHydrate]);
+
+  const syncNow = useCallback(async () => {
+    return pushLocalAccountsToServer();
+  }, []);
 
   const signInWithApple = useCallback(async () => {
     reportMessage("[session] apple sign-in start", { op: "session.signIn" });
@@ -139,15 +164,11 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     try {
       next = await performAppleSignIn();
     } catch (e) {
-      // Log but DO NOT swallow — rethrow so the UI still surfaces the failure.
       reportError(e, { op: "session.signIn" });
       throw e;
     }
     setSession(next);
     reportMessage("[session] apple sign-in success", { op: "session.signIn" });
-    // Stage the latest OTA bundle on login (download only, no reload — applies
-    // on the next cold launch). In-session updates are applied automatically by
-    // components/AutoUpdater on foreground return. No-op in dev / Expo Go.
     void checkAndApplyUpdate();
     return next;
   }, []);
@@ -163,9 +184,6 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     setSession(null);
   }, []);
 
-  // When any authenticated call comes back 401 (token expired, or invalidated
-  // by the RS256 signing cutover), sign out so the user is re-prompted instead
-  // of being stuck with a dead token that fails every request.
   useEffect(() => {
     setAuthFailureHandler(() => {
       void signOut();
@@ -179,11 +197,26 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       isSignedIn: session !== null,
       user: session?.user ?? null,
       accountsHydrated,
+      accountsHydrateStatus,
+      accountsHydrateError,
       getToken,
       signInWithApple,
       signOut,
+      retryAccountSync,
+      syncNow,
     }),
-    [isLoaded, session, accountsHydrated, getToken, signInWithApple, signOut],
+    [
+      isLoaded,
+      session,
+      accountsHydrated,
+      accountsHydrateStatus,
+      accountsHydrateError,
+      getToken,
+      signInWithApple,
+      signOut,
+      retryAccountSync,
+      syncNow,
+    ],
   );
 
   return (

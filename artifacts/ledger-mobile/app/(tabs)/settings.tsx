@@ -89,7 +89,7 @@ export default function SettingsScreen() {
       "number-pad",
     );
   };
-  const { signOut, user } = useSession();
+  const { signOut, user, syncNow, accountsHydrateStatus, accountsHydrateError } = useSession();
   const router = useRouter();
   const email = user?.email ?? null;
   const [containers, setContainers] = useState<StoredContainer[]>([]);
@@ -99,6 +99,7 @@ export default function SettingsScreen() {
   const [appLockSupported, setAppLockSupported] = useState(false);
   const [cacheBytes, setCacheBytes] = useState<number | null>(null);
   const [clearingCache, setClearingCache] = useState(false);
+  const [syncing, setSyncing] = useState(false);
 
   const refreshCacheSize = useCallback(() => {
     estimateCacheBytes().then(setCacheBytes);
@@ -170,6 +171,42 @@ export default function SettingsScreen() {
       };
     }, []),
   );
+
+  const onSyncNow = async () => {
+    const linked = containers.some((c) => c.links.length > 0);
+    if (!linked) {
+      Alert.alert(
+        "Nothing to sync",
+        "Add at least one exchange link before syncing to the server.",
+      );
+      return;
+    }
+    setSyncing(true);
+    haptic.impact();
+    try {
+      const result = await syncNow();
+      if (result.status === "ok") {
+        Alert.alert(
+          "Synced",
+          "Your account profile was uploaded. Other devices signed in with the same Apple ID can now pull it.",
+        );
+      } else if (result.status === "conflict") {
+        Alert.alert(
+          "Synced",
+          "The server had a newer copy — your device pulled the latest profile.",
+        );
+      } else {
+        Alert.alert(
+          "Sync failed",
+          result.reason === "network"
+            ? "Could not reach the server. Check your connection and try again."
+            : "Upload failed. Try again in a moment.",
+        );
+      }
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   const onSignOut = () => {
     Alert.alert("Sign out?", "You'll need to log in again.", [
@@ -331,6 +368,24 @@ export default function SettingsScreen() {
           destructive
           onPress={clearingCache ? undefined : onClearCache}
         />
+      </Section>
+
+      <Section title="Cross-device sync">
+        <Row
+          label={syncing ? "Syncing…" : "Sync now"}
+          value={
+            accountsHydrateStatus === "error"
+              ? "Last pull failed"
+              : "Upload profile to server"
+          }
+          onPress={syncing ? undefined : onSyncNow}
+        />
+        {accountsHydrateError ? (
+          <>
+            <Divider />
+            <Row label="Last sync error" value={accountsHydrateError} />
+          </>
+        ) : null}
       </Section>
 
       <Section title="Diagnostics">

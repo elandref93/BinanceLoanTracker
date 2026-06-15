@@ -29,6 +29,17 @@ export type RemoteBlob = {
   containers: AccountContainer[];
 };
 
+export type FetchRemoteResult =
+  | { status: "ok"; blob: RemoteBlob }
+  | { status: "empty" }
+  | { status: "unauthorized" }
+  | { status: "error"; message: string; httpStatus?: number };
+
+export type PushRemoteResult =
+  | { status: "ok" }
+  | { status: "conflict" }
+  | { status: "skipped"; reason: "no-auth" | "network" | "http"; httpStatus?: number };
+
 type TokenGetter = () => Promise<string | null>;
 
 let tokenGetter: TokenGetter | null = null;
@@ -44,27 +55,31 @@ async function authHeader(): Promise<Record<string, string> | null> {
 }
 
 /**
- * Fetch the server's copy. Returns null when:
- *  - the user isn't signed in (no token)
- *  - the server has no copy yet (404)
- *  - the network is unreachable (offline-tolerant)
+ * Fetch the server's copy with an explicit status so callers can distinguish
+ * a missing blob (404) from network/auth failures.
  */
-export async function fetchRemoteBlob(): Promise<RemoteBlob | null> {
+export async function fetchRemoteBlobDetailed(): Promise<FetchRemoteResult> {
   const headers = await authHeader();
-  if (!headers) return null;
+  if (!headers) {
+    return { status: "error", message: "Not signed in or backend not configured" };
+  }
   try {
     const res = await fetch(`${baseUrl}/api/accounts/sync`, { headers });
-    if (res.status === 404) return null;
+    if (res.status === 404) return { status: "empty" };
     if (res.status === 401) {
       notifyAuthFailure();
-      return null;
+      return { status: "unauthorized" };
     }
     if (!res.ok) {
       reportMessage("[sync] accounts fetch non-ok", {
         op: "accounts.fetch",
         status: res.status,
       });
-      return null;
+      return {
+        status: "error",
+        message: `Server returned ${res.status}`,
+        httpStatus: res.status,
+      };
     }
     const body = (await res.json()) as RemoteBlob;
     if (typeof body?.updatedAt !== "string" || !Array.isArray(body.containers)) {
@@ -72,31 +87,38 @@ export async function fetchRemoteBlob(): Promise<RemoteBlob | null> {
         op: "accounts.fetch",
         status: res.status,
       });
-      return null;
+      return { status: "error", message: "Invalid sync payload from server" };
     }
-    return body;
+    return { status: "ok", blob: body };
   } catch (e) {
     reportError(e, { op: "accounts.fetch" });
-    return null;
+    return {
+      status: "error",
+      message: e instanceof Error ? e.message : "Network error",
+    };
   }
 }
 
+/** @deprecated Prefer fetchRemoteBlobDetailed for new code. */
+export async function fetchRemoteBlob(): Promise<RemoteBlob | null> {
+  const result = await fetchRemoteBlobDetailed();
+  if (result.status === "ok") return result.blob;
+  return null;
+}
+
 /**
- * Push the local copy to the server. Returns:
- *  - "ok"        — the server accepted the write
- *  - "conflict"  — the server has a newer copy (caller should re-pull)
- *  - "skipped"   — not signed in / offline (caller should retry later)
+ * Push the local copy to the server.
  */
 export async function pushRemoteBlob(
   blob: RemoteBlob,
-): Promise<"ok" | "conflict" | "skipped"> {
+): Promise<PushRemoteResult> {
   const headers = await authHeader();
   if (!headers) {
     reportMessage("[sync] accounts push skipped", {
       op: "accounts.push",
       reason: "no-auth",
     });
-    return "skipped";
+    return { status: "skipped", reason: "no-auth" };
   }
   try {
     const res = await fetch(`${baseUrl}/api/accounts/sync`, {
@@ -109,11 +131,11 @@ export async function pushRemoteBlob(
         op: "accounts.push",
         status: res.status,
       });
-      return "conflict";
+      return { status: "conflict" };
     }
     if (res.status === 401) {
       notifyAuthFailure();
-      return "skipped";
+      return { status: "skipped", reason: "no-auth" };
     }
     if (!res.ok) {
       reportMessage("[sync] accounts push skipped", {
@@ -121,15 +143,15 @@ export async function pushRemoteBlob(
         reason: "non-ok",
         status: res.status,
       });
-      return "skipped";
+      return { status: "skipped", reason: "http", httpStatus: res.status };
     }
     reportMessage("[sync] accounts push ok", {
       op: "accounts.push",
       status: res.status,
     });
-    return "ok";
+    return { status: "ok" };
   } catch (e) {
     reportError(e, { op: "accounts.push", reason: "network" });
-    return "skipped";
+    return { status: "skipped", reason: "network" };
   }
 }

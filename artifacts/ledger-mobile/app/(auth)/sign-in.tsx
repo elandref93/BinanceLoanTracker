@@ -15,6 +15,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
 import { useSession } from "@/context/SessionContext";
 import { AuthRequestError } from "@/lib/session";
+import { ExpoGoBanner } from "@/components/ExpoGoBanner";
 
 // User-cancellation reaches us either as Apple's native error code or — on
 // older iOS builds and the simulator — as a generic Error with "cancel" in
@@ -102,6 +103,7 @@ export default function SignInScreen() {
       </View>
 
       <View style={styles.footer}>
+        <ExpoGoBanner />
         {error ? (
           <Text style={[styles.error, { color: colors.danger }]}>{error}</Text>
         ) : null}

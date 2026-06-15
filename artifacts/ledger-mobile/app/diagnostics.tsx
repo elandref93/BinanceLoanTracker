@@ -1,7 +1,7 @@
 import { Feather } from "@expo/vector-icons";
 import * as Clipboard from "expo-clipboard";
 import { Stack, useFocusEffect } from "expo-router";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   Alert,
   Pressable,
@@ -12,13 +12,20 @@ import {
 } from "react-native";
 
 import { Container } from "@/components/Container";
+import { useSession } from "@/context/SessionContext";
 import { useColors } from "@/hooks/useColors";
+import { useStoredAccountsCount } from "@/lib/accountStore";
 import { haptic } from "@/lib/haptics";
 import {
   clearCrashes,
   getRecentCrashes,
   type CrashEntry,
 } from "@/lib/crashReporting";
+import { isExpoGo, syncBackendDomain } from "@/lib/runtime";
+import {
+  getSyncDiagnostics,
+  subscribeSyncDiagnostics,
+} from "@/lib/syncDiagnostics";
 import { fmtAge } from "@/utils/format";
 
 /** Severity label for an entry, tolerant of legacy entries without `level`. */
@@ -41,10 +48,20 @@ function formatEntry(e: CrashEntry): string {
 
 export default function DiagnosticsScreen() {
   const colors = useColors();
+  const { user, accountsHydrateStatus, accountsHydrateError } = useSession();
+  const accountsCount = useStoredAccountsCount();
   const [entries, setEntries] = useState<CrashEntry[]>([]);
+  const [syncDiag, setSyncDiag] = useState(getSyncDiagnostics());
+
+  useEffect(() => {
+    return subscribeSyncDiagnostics(() => {
+      setSyncDiag(getSyncDiagnostics());
+    });
+  }, []);
 
   const load = useCallback(() => {
     void getRecentCrashes().then(setEntries);
+    setSyncDiag(getSyncDiagnostics());
   }, []);
 
   useFocusEffect(
@@ -99,6 +116,63 @@ export default function DiagnosticsScreen() {
           screen, tap “Copy all”, and send the text to the developer to pinpoint
           the cause.
         </Text>
+
+        <View
+          style={[
+            styles.syncPanel,
+            {
+              backgroundColor: colors.card,
+              borderColor: colors.border,
+              borderRadius: colors.radius,
+            },
+          ]}
+        >
+          <Text style={[styles.syncTitle, { color: colors.foreground }]}>
+            Account sync
+          </Text>
+          <SyncRow label="Backend" value={syncBackendDomain()} colors={colors} />
+          <SyncRow
+            label="Client"
+            value={isExpoGo() ? "Expo Go (separate Apple sub)" : "Standalone / TestFlight"}
+            colors={colors}
+          />
+          <SyncRow
+            label="Apple sub"
+            value={user?.sub ? `${user.sub.slice(0, 8)}…` : "—"}
+            colors={colors}
+          />
+          <SyncRow
+            label="Hydrate status"
+            value={accountsHydrateStatus}
+            colors={colors}
+          />
+          {accountsHydrateError ? (
+            <SyncRow label="Hydrate error" value={accountsHydrateError} colors={colors} />
+          ) : null}
+          <SyncRow
+            label="Local profiles"
+            value={accountsCount == null ? "…" : String(accountsCount)}
+            colors={colors}
+          />
+          <SyncRow
+            label="Last hydrate"
+            value={
+              syncDiag.lastHydrateAt
+                ? `${fmtAge(syncDiag.lastHydrateAt)} · ${syncDiag.lastHydrate?.status ?? "?"}`
+                : "—"
+            }
+            colors={colors}
+          />
+          <SyncRow
+            label="Last push"
+            value={
+              syncDiag.lastPushAt
+                ? `${fmtAge(syncDiag.lastPushAt)} · ${syncDiag.lastPush?.status ?? "?"}`
+                : "—"
+            }
+            colors={colors}
+          />
+        </View>
 
         <View style={styles.actions}>
           <Pressable
@@ -194,9 +268,60 @@ export default function DiagnosticsScreen() {
   );
 }
 
+function SyncRow({
+  label,
+  value,
+  colors,
+}: {
+  label: string;
+  value: string;
+  colors: ReturnType<typeof useColors>;
+}) {
+  return (
+    <View style={styles.syncRow}>
+      <Text style={[styles.syncLabel, { color: colors.mutedForeground }]}>
+        {label}
+      </Text>
+      <Text
+        style={[styles.syncValue, { color: colors.foreground }]}
+        numberOfLines={2}
+      >
+        {value}
+      </Text>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   wrap: { padding: 16, gap: 14, paddingBottom: 40 },
   intro: { fontSize: 13, lineHeight: 19, fontFamily: "Inter_400Regular" },
+  syncPanel: {
+    padding: 14,
+    borderWidth: StyleSheet.hairlineWidth,
+    gap: 8,
+  },
+  syncTitle: {
+    fontSize: 14,
+    fontFamily: "Inter_700Bold",
+    marginBottom: 4,
+  },
+  syncRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    gap: 12,
+    alignItems: "flex-start",
+  },
+  syncLabel: {
+    fontSize: 12,
+    fontFamily: "Inter_500Medium",
+    flexShrink: 0,
+  },
+  syncValue: {
+    flex: 1,
+    fontSize: 12,
+    fontFamily: "Inter_400Regular",
+    textAlign: "right",
+  },
   actions: { flexDirection: "row", gap: 10 },
   btn: {
     flexDirection: "row",

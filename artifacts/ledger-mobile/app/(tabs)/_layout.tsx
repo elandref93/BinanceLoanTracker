@@ -1,11 +1,12 @@
 import { Feather } from "@expo/vector-icons";
 import { useQueryClient } from "@tanstack/react-query";
 import { Redirect, Tabs } from "expo-router";
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import { ActivityIndicator, Platform, StyleSheet, View } from "react-native";
 
 import { useColors } from "@/hooks/useColors";
 import { useSession } from "@/context/SessionContext";
+import { AccountSyncError } from "@/components/AccountSyncError";
 import {
   getBinanceLinks,
   getLunoLinks,
@@ -52,10 +53,11 @@ function payloadFor(
 export default function TabLayout() {
   const colors = useColors();
   const isWeb = Platform.OS === "web";
-  const { isLoaded, isSignedIn, getToken, accountsHydrated } = useSession();
+  const { isLoaded, isSignedIn, getToken, accountsHydrated, accountsHydrateStatus, accountsHydrateError, retryAccountSync } = useSession();
   const accountsCount = useStoredAccountsCount();
   const queryClient = useQueryClient();
   const { currency } = useCurrency();
+  const [retrying, setRetrying] = useState(false);
 
   useEffect(() => {
     setAuthTokenGetter(() => getToken());
@@ -161,6 +163,28 @@ export default function TabLayout() {
       >
         <ActivityIndicator color={colors.primary} />
       </View>
+    );
+  }
+  if (
+    accountsCount === 0 &&
+    accountsHydrateStatus === "error"
+  ) {
+    return (
+      <AccountSyncError
+        message={
+          accountsHydrateError ??
+          "Account sync failed. Check your connection and try again."
+        }
+        retrying={retrying}
+        onRetry={async () => {
+          setRetrying(true);
+          try {
+            await retryAccountSync();
+          } finally {
+            setRetrying(false);
+          }
+        }}
+      />
     );
   }
   if (accountsCount === 0) return <Redirect href="/(onboarding)" />;

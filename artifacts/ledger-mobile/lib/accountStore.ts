@@ -1,11 +1,16 @@
 import * as SecureStore from "expo-secure-store";
 import { useEffect, useState } from "react";
 import {
-  fetchRemoteBlob,
+  fetchRemoteBlobDetailed,
   pushRemoteBlob,
   type RemoteBlob,
 } from "./accountSync";
 import { reportError, reportMessage } from "@/lib/crashReporting";
+import {
+  recordHydrateResult,
+  recordPushResult,
+  type HydrateFromServerResult,
+} from "./syncDiagnostics";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Profile model: a single "account" is a Personal or Trust profile that holds
@@ -309,13 +314,26 @@ async function writeAll(containers: AccountContainer[]): Promise<void> {
   const updatedAt = nextMonotonicTimestamp();
   await SecureStore.setItemAsync(V3_KEY, JSON.stringify(containers));
   await SecureStore.setItemAsync(UPDATED_AT_KEY, updatedAt);
-  // Fire-and-forget the server push. Network failures don't block the local
-  // write — the next successful push (or hydrate) reconciles state.
-  void pushRemoteBlob({ updatedAt, containers }).then((result) => {
-    if (result === "conflict") {
-      // The server has a newer copy from another device. Re-pull so this
-      // device shows the merged truth instead of silently overwriting it.
+  // Fire-and-forget the server push with one delayed retry on failure.
+  const blob = { updatedAt, containers };
+  void pushRemoteBlob(blob).then((result) => {
+    recordPushResult(result);
+    if (result.status === "conflict") {
       void hydrateFromServer();
+      return;
+    }
+    if (result.status !== "ok") {
+      setTimeout(() => {
+        void pushRemoteBlob(blob).then((retry) => {
+          recordPushResult(retry);
+          if (retry.status !== "ok" && retry.status !== "conflict") {
+            reportMessage("[sync] accounts push retry failed", {
+              op: "accounts.push",
+              reason: retry.status === "skipped" ? retry.reason : "unknown",
+            });
+          }
+        });
+      }, 2000);
     }
   });
   // Server-side tracking is on by default: re-upload the encrypted credentials
@@ -345,47 +363,144 @@ async function readLocalUpdatedAt(): Promise<string | null> {
 
 /**
  * Pull the server's copy and replace local state when the server is newer
- * (or local has nothing yet). Returns true when local state changed.
+ * (or local has nothing yet). When the server has no blob but local does,
+ * uploads local accounts so other devices can pull them.
  *
  * Called once after sign-in completes, and after a 409 push response.
- * Safe to call when signed out — fetchRemoteBlob returns null and we no-op.
+ * Safe to call when signed out — returns error status and no-ops.
  */
-export async function hydrateFromServer(): Promise<boolean> {
-  const remote = await fetchRemoteBlob();
-  if (!remote) return false;
-  // Pull the high-water mark forward so any local write we issue next is
-  // guaranteed to outrank what's on the server (server compares with `>=`).
+export async function hydrateFromServer(): Promise<HydrateFromServerResult> {
+  const fetchResult = await fetchRemoteBlobDetailed();
+
+  if (fetchResult.status === "unauthorized") {
+    const result: HydrateFromServerResult = {
+      status: "error",
+      changed: false,
+      errorMessage: "Session expired — sign in again",
+    };
+    recordHydrateResult(result);
+    return result;
+  }
+
+  if (fetchResult.status === "error") {
+    const result: HydrateFromServerResult = {
+      status: "error",
+      changed: false,
+      errorMessage: fetchResult.message,
+    };
+    recordHydrateResult(result);
+    return result;
+  }
+
+  if (fetchResult.status === "empty") {
+    return withWriteLock(async () => {
+      const local = await readAll();
+      const hasLinked = local.some((c) => c.links.length > 0);
+      if (!hasLinked) {
+        const result: HydrateFromServerResult = { status: "empty", changed: false };
+        recordHydrateResult(result);
+        return result;
+      }
+      let updatedAt = await readLocalUpdatedAt();
+      if (!updatedAt) {
+        updatedAt = nextMonotonicTimestamp();
+        await SecureStore.setItemAsync(UPDATED_AT_KEY, updatedAt);
+      }
+      const pushResult = await pushRemoteBlob({ updatedAt, containers: local });
+      recordPushResult(pushResult);
+      if (pushResult.status === "ok") {
+        const result: HydrateFromServerResult = {
+          status: "ok",
+          changed: false,
+          pushed: true,
+        };
+        recordHydrateResult(result);
+        reportMessage("[sync] accounts backfill ok", {
+          op: "accounts.hydrate",
+          pushed: true,
+          profileCount: local.length,
+        });
+        return result;
+      }
+      if (pushResult.status === "conflict") {
+        return hydrateFromServer();
+      }
+      const result: HydrateFromServerResult = {
+        status: "error",
+        changed: false,
+        errorMessage: "Could not upload accounts to sync server",
+      };
+      recordHydrateResult(result);
+      return result;
+    });
+  }
+
+  const remote = fetchResult.blob;
   const remoteMs = Date.parse(remote.updatedAt);
   if (Number.isFinite(remoteMs) && remoteMs > lastIssuedMs) {
     lastIssuedMs = remoteMs;
   }
+
   return withWriteLock(async () => {
     const localUpdatedAt = await readLocalUpdatedAt();
     const localExists = (await SecureStore.getItemAsync(V3_KEY)) !== null;
-    // Local wins iff local exists AND has a strictly newer timestamp.
     if (localExists && localUpdatedAt && localUpdatedAt >= remote.updatedAt) {
-      // Local is fresher (or tied) — push it up so the server has the latest.
-      if (!localUpdatedAt || localUpdatedAt > remote.updatedAt) {
+      if (localUpdatedAt > remote.updatedAt) {
         const raw = await SecureStore.getItemAsync(V3_KEY);
         if (raw) {
           const parsed = JSON.parse(raw) as AccountContainer[];
-          void pushRemoteBlob({
+          const pushResult = await pushRemoteBlob({
             updatedAt: localUpdatedAt,
             containers: parsed,
           });
+          recordPushResult(pushResult);
         }
       }
-      return false;
+      const result: HydrateFromServerResult = { status: "ok", changed: false };
+      recordHydrateResult(result);
+      return result;
     }
     await SecureStore.setItemAsync(V3_KEY, JSON.stringify(remote.containers));
     await SecureStore.setItemAsync(UPDATED_AT_KEY, remote.updatedAt);
     notify();
-    return true;
+    const result: HydrateFromServerResult = { status: "ok", changed: true };
+    recordHydrateResult(result);
+    return result;
+  });
+}
+
+/**
+ * Force-push the current local account profile to the server. Used by Settings
+ * "Sync now" to backfill when a prior push failed silently.
+ */
+export async function pushLocalAccountsToServer(): Promise<
+  import("./accountSync").PushRemoteResult
+> {
+  return withWriteLock(async () => {
+    const containers = await readAll();
+    const hasLinked = containers.some((c) => c.links.length > 0);
+    if (!hasLinked) {
+      const result = { status: "skipped" as const, reason: "no-auth" as const };
+      recordPushResult(result);
+      return result;
+    }
+    let updatedAt = await readLocalUpdatedAt();
+    if (!updatedAt) {
+      updatedAt = nextMonotonicTimestamp();
+      await SecureStore.setItemAsync(UPDATED_AT_KEY, updatedAt);
+    }
+    const pushResult = await pushRemoteBlob({ updatedAt, containers });
+    recordPushResult(pushResult);
+    if (pushResult.status === "conflict") {
+      await hydrateFromServer();
+    }
+    return pushResult;
   });
 }
 
 // Re-export for callers that already imported from this module.
 export type { RemoteBlob };
+export type { HydrateFromServerResult } from "./syncDiagnostics";
 
 // ── write serialization ──
 // SecureStore has no compare-and-swap, so two concurrent

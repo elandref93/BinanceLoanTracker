@@ -1,6 +1,8 @@
 import { Feather } from "@expo/vector-icons";
 import { Redirect, useRouter } from "expo-router";
+import { useState } from "react";
 import {
+  ActivityIndicator,
   Pressable,
   StyleSheet,
   Text,
@@ -13,20 +15,42 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
 import { useSession } from "@/context/SessionContext";
 import { useStoredAccountsCount } from "@/lib/binanceKeys";
+import { ExpoGoBanner } from "@/components/ExpoGoBanner";
+import { AccountSyncError } from "@/components/AccountSyncError";
 
 export default function OnboardingIntro() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { isLoaded, isSignedIn, accountsHydrated, signOut } = useSession();
+  const { isLoaded, isSignedIn, accountsHydrated, accountsHydrateStatus, accountsHydrateError, retryAccountSync, signOut } = useSession();
   const count = useStoredAccountsCount();
+  const [retrying, setRetrying] = useState(false);
+
+  const onRetrySync = async () => {
+    setRetrying(true);
+    try {
+      await retryAccountSync();
+    } finally {
+      setRetrying(false);
+    }
+  };
 
   if (!isLoaded || count === null) return null;
   if (!isSignedIn) return <Redirect href="/(auth)/sign-in" />;
   if (count > 0) return <Redirect href="/(tabs)" />;
-  // Don't show the "connect your account" CTA until the server profile pull has
-  // settled — a synced account may still be loading on a fresh device.
   if (!accountsHydrated) return null;
+  if (accountsHydrateStatus === "error") {
+    return (
+      <AccountSyncError
+        message={
+          accountsHydrateError ??
+          "Account sync failed. Check your connection and try again."
+        }
+        retrying={retrying}
+        onRetry={onRetrySync}
+      />
+    );
+  }
 
   const onSignOut = async () => {
     await signOut();
@@ -50,6 +74,7 @@ export default function OnboardingIntro() {
       ]}
     >
       <View style={styles.top}>
+        <ExpoGoBanner />
         <Text style={[styles.step, { color: colors.mutedForeground }]}>
           STEP 1 OF 1 · GET STARTED
         </Text>
@@ -60,6 +85,10 @@ export default function OnboardingIntro() {
           Ledger reads your open loans so it can show your LTV, interest, and
           headroom. Add as many accounts as you like — each one is tracked
           separately.
+        </Text>
+        <Text style={[styles.hint, { color: colors.mutedForeground }]}>
+          Already set up on another device? Open Settings on that device and tap
+          Sync now, then sign in here again.
         </Text>
       </View>
 
@@ -104,6 +133,20 @@ export default function OnboardingIntro() {
             size={16}
             color={colors.primaryForeground}
           />
+        </Pressable>
+        <Pressable
+          disabled={retrying}
+          onPress={onRetrySync}
+          hitSlop={12}
+          style={({ pressed }) => ({ opacity: pressed || retrying ? 0.6 : 1 })}
+        >
+          {retrying ? (
+            <ActivityIndicator color={colors.primary} />
+          ) : (
+            <Text style={[styles.pullSync, { color: colors.primary }]}>
+              Check for synced accounts
+            </Text>
+          )}
         </Pressable>
         <Pressable
           onPress={onSignOut}
@@ -185,6 +228,12 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     marginTop: 4,
   },
+  hint: {
+    fontSize: 12,
+    fontFamily: "Inter_400Regular",
+    lineHeight: 17,
+    marginTop: 8,
+  },
   points: { gap: 10 },
   point: {
     flexDirection: "row",
@@ -221,6 +270,11 @@ const styles = StyleSheet.create({
   ctaText: {
     fontSize: 15,
     fontFamily: "Inter_600SemiBold",
+  },
+  pullSync: {
+    fontSize: 13,
+    fontFamily: "Inter_600SemiBold",
+    textAlign: "center",
   },
   signOut: {
     fontSize: 13,

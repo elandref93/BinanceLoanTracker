@@ -913,11 +913,44 @@ export function createRealBinanceClient(
   const MARGIN_CALL_LTV = round(100 / 1.5, 2); // ≈ 66.67
   const MARGIN_LIQ_LTV = round(100 / 1.1, 2); // ≈ 90.91
 
+  // Most-recent published daily interest rate for one margin asset, converted
+  // to an hourly rate. Used to backfill assets that `next-hourly-interest-rate`
+  // omits or returns 0 for (it can come back empty for some VIP tiers / assets),
+  // so a loan never ships with a misleading 0% APR.
+  async function fetchPublishedHourlyRate(asset: string): Promise<number> {
+    try {
+      const raw = await binanceSignedGet<unknown>(
+        creds,
+        "/sapi/v1/margin/interestRateHistory",
+        { asset },
+      );
+      let bestTs = -1;
+      let dailyRate = 0;
+      for (const r of Array.isArray(raw) ? raw : []) {
+        const row = r as Record<string, unknown>;
+        const ts = num(row["timestamp"]);
+        const rate = num(row["dailyInterestRate"]);
+        if (rate > 0 && ts > bestTs) {
+          bestTs = ts;
+          dailyRate = rate;
+        }
+      }
+      return dailyRate > 0 ? dailyRate / 24 : 0;
+    } catch (err) {
+      logger.warn(
+        { err, accountId, asset },
+        "margin interestRateHistory fallback failed",
+      );
+      return 0;
+    }
+  }
+
   async function fetchNextHourlyRates(
     assets: string[],
     isIsolated: boolean,
   ): Promise<Map<string, number>> {
     if (assets.length === 0) return new Map();
+    const out = new Map<string, number>();
     try {
       const raw = await binanceSignedGet<unknown>(
         creds,
@@ -927,22 +960,34 @@ export function createRealBinanceClient(
           isIsolated: isIsolated ? "TRUE" : "FALSE",
         },
       );
-      const out = new Map<string, number>();
       for (const r of Array.isArray(raw) ? raw : []) {
         const row = r as Record<string, unknown>;
-        out.set(
-          str(row["asset"]).toUpperCase(),
-          num(row["nextHourlyInterestRate"]),
-        );
+        const rate = num(row["nextHourlyInterestRate"]);
+        if (rate > 0) {
+          out.set(str(row["asset"]).toUpperCase(), rate);
+        }
       }
-      return out;
     } catch (err) {
       logger.warn(
         { err, accountId, isIsolated },
         "next-hourly margin rate fetch failed",
       );
-      return new Map();
     }
+
+    // Backfill any asset the primary endpoint didn't price from the published
+    // interest-rate history. Run sequentially-but-parallel only over the gaps.
+    const missing = Array.from(
+      new Set(assets.map((a) => a.toUpperCase())),
+    ).filter((a) => !((out.get(a) ?? 0) > 0));
+    if (missing.length > 0) {
+      const fallbacks = await Promise.all(
+        missing.map(async (a) => [a, await fetchPublishedHourlyRate(a)] as const),
+      );
+      for (const [asset, hourly] of fallbacks) {
+        if (hourly > 0) out.set(asset, hourly);
+      }
+    }
+    return out;
   }
 
   async function fetchCrossMarginLoans(): Promise<BinanceLoan[]> {

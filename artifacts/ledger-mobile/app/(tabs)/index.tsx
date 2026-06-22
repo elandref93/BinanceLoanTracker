@@ -161,6 +161,25 @@ export default function DashboardScreen() {
     cachedLoans != null &&
     (loansQ.isError || loansQ.isLoading);
 
+  // Live Luno price for every borrowed asset, so each loan tile can show the
+  // current market value of the debt (e.g. USDC at today's Luno rate) with a
+  // Luno badge. Fetched once for all loans, then handed to each LoanRow.
+  const borrowPairs = useMemo(
+    () => pairsForAssets(all.map((l) => l.asset), currency),
+    [all, currency],
+  );
+  const loanTickersQ = useGetLunoTickers(
+    { pairs: borrowPairs.join(",") },
+    { query: { enabled: borrowPairs.length > 0 } as never },
+  );
+  const loanTickerMap = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const t of loanTickersQ.data?.tickers ?? []) {
+      m.set(t.pair, t.lastTrade);
+    }
+    return m;
+  }, [loanTickersQ.data]);
+
   // Per-account (container) LTV for the selector chips.
   const containerLtv = useMemo(() => {
     const m = new Map<string, number>();
@@ -636,6 +655,7 @@ export default function DashboardScreen() {
                           key={l.id}
                           loan={l}
                           accountName={acc?.name ?? "—"}
+                          priceTickers={loanTickerMap}
                           selected={l.id === effectiveSelectedId}
                           onPress={() => {
                             haptic.tap();
@@ -962,6 +982,7 @@ export default function DashboardScreen() {
                   key={l.id}
                   loan={l}
                   accountName={acc?.name ?? "—"}
+                  priceTickers={loanTickerMap}
                   onPress={() => router.push(`/loan/${l.id}`)}
                 />
               );

@@ -84,6 +84,11 @@ function RootLayout() {
                         headerTintColor: "#E6F1F7",
                         headerShadowVisible: false,
                         contentStyle: { backgroundColor: "#06090C" },
+                        // Pushed cards (loan/account/crypto) sit on top of the
+                        // tab group, whose route name is "(tabs)". iOS would
+                        // otherwise render that raw group name as the back-button
+                        // label; "minimal" shows just the chevron.
+                        headerBackButtonDisplayMode: "minimal",
                       }}
                     >
                       <Stack.Screen

@@ -44,6 +44,7 @@ import {
   type LoanSnapshot,
 } from "@/lib/loanSnapshots";
 import {
+  useGetLunoTickers,
   useGetRateHistory,
   useListAccounts,
   useListInterest,
@@ -58,11 +59,15 @@ import {
   matchRepaymentsToBuys,
 } from "@/lib/lunoFunding";
 import {
+  buildCollateralSchedule,
   buildSchedule,
   monthsToSettle,
+  monthsToTargetLtv,
   requiredMonthly,
+  type CollateralRow,
   type ScheduleRow,
 } from "@/lib/loanRepaymentPlan";
+import { pairsForAssets, quoteWalletInFiat } from "@/lib/lunoPricing";
 import {
   getLoanAnnotation,
   setLoanAnnotation,
@@ -250,6 +255,135 @@ function ScheduleBreakdown({
   );
 }
 
+// Expandable month-by-month projection for the "Build collateral" plan: how
+// much collateral is added, the running collateral value, and the resulting
+// LTV each month until the target is reached.
+function CollateralBreakdown({
+  rows,
+  expanded,
+  onToggle,
+  fmt,
+  startDate,
+}: {
+  rows: CollateralRow[];
+  expanded: boolean;
+  onToggle: () => void;
+  fmt: (usd: number) => string;
+  startDate: Date;
+}) {
+  const colors = useColors();
+  if (rows.length === 0) return null;
+  return (
+    <View style={{ marginTop: 6 }}>
+      <Pressable
+        onPress={onToggle}
+        style={styles.schedToggle}
+        hitSlop={6}
+        accessibilityRole="button"
+      >
+        <Feather
+          name={expanded ? "chevron-down" : "chevron-right"}
+          size={16}
+          color={colors.primary}
+        />
+        <Text style={[styles.schedToggleText, { color: colors.primary }]}>
+          {expanded
+            ? "Hide monthly breakdown"
+            : `Show monthly breakdown (${rows.length} mo)`}
+        </Text>
+      </Pressable>
+      {expanded ? (
+        <View style={{ marginTop: 4 }}>
+          <View
+            style={[styles.schedHeadRow, { borderBottomColor: colors.border }]}
+          >
+            <Text
+              style={[
+                styles.schedHcell,
+                styles.schedMonthCol,
+                { color: colors.mutedForeground },
+              ]}
+            >
+              Month
+            </Text>
+            <Text
+              style={[
+                styles.schedHcell,
+                styles.schedNumCol,
+                { color: colors.mutedForeground },
+              ]}
+            >
+              +Coll.
+            </Text>
+            <Text
+              style={[
+                styles.schedHcell,
+                styles.schedNumCol,
+                { color: colors.mutedForeground },
+              ]}
+            >
+              Coll. value
+            </Text>
+            <Text
+              style={[
+                styles.schedHcell,
+                styles.schedNumCol,
+                { color: colors.mutedForeground },
+              ]}
+            >
+              LTV
+            </Text>
+          </View>
+          {rows.map((r) => (
+            <View key={r.month} style={styles.schedRow}>
+              <Text
+                style={[
+                  styles.schedCell,
+                  styles.schedMonthCol,
+                  { color: colors.foreground },
+                ]}
+                numberOfLines={1}
+              >
+                {fmtMonthLabel(addMonths(startDate, r.month))}
+              </Text>
+              <Text
+                style={[
+                  styles.schedCell,
+                  styles.schedNumCol,
+                  { color: colors.mutedForeground },
+                ]}
+                numberOfLines={1}
+              >
+                {fmt(r.collateralAdded)}
+              </Text>
+              <Text
+                style={[
+                  styles.schedCell,
+                  styles.schedNumCol,
+                  { color: colors.foreground },
+                ]}
+                numberOfLines={1}
+              >
+                {fmt(r.collateralValue)}
+              </Text>
+              <Text
+                style={[
+                  styles.schedCell,
+                  styles.schedNumCol,
+                  { color: colors.foreground },
+                ]}
+                numberOfLines={1}
+              >
+                {r.ltv.toFixed(0)}%
+              </Text>
+            </View>
+          ))}
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
 // Simulate month-by-month payoff: interest compounds on the declining balance,
 // the contribution is applied at month end. Returns months-to-settle (capped)
 // or null when the contribution never outpaces interest.
@@ -314,10 +448,34 @@ export function LoanDetailView({
     { loanId: id ?? "" },
     { query: { enabled: !!id } as never },
   );
+  // Scope the Luno pull to the loan's own profile (Personal/Trust) when that
+  // container has exactly one Luno link, so the entire fetch budget goes to the
+  // relevant account instead of being split across every linked profile. Read
+  // from the already-cached loans/risk settings (undefined until they load —
+  // react-query refetches once the id resolves).
+  const scopedLoan = loansQ.data?.loans.find((l) => l.id === id);
+  const scopedLunoLinkIds = scopedLoan
+    ? (containerForAccountId(scopedLoan.accountId)?.links ?? [])
+        .filter((l) => l.exchange === "luno")
+        .map((l) => l.id)
+    : [];
+  const scopedLunoAccountId =
+    scopedLunoLinkIds.length === 1 ? scopedLunoLinkIds[0] : undefined;
   // Luno wallet history, used to surface the real ZAR→asset buys that funded
   // this loan's repayments and the subsequent moves to Binance. We pull a wide
   // window (both asset + ZAR wallets) so buys can be paired into a rate.
-  const lunoTxQ = useListLunoTransactions({ limit: 200 });
+  const lunoTxQ = useListLunoTransactions({
+    limit: 200,
+    ...(scopedLunoAccountId ? { accountId: scopedLunoAccountId } : {}),
+  });
+  // Live BTC price (display currency) for the "Build collateral" plan, which
+  // assumes the borrower keeps buying Bitcoin on Luno and adding it to the
+  // collateral. Quoted the same currency-aware way as the dashboard tiles.
+  const btcPair = pairsForAssets(["XBT"], currency)[0] ?? "XBTZAR";
+  const btcTickersQ = useGetLunoTickers(
+    { pairs: btcPair },
+    { query: { enabled: !!btcPair } as never },
+  );
 
   // Per-loan user annotations (manual sell rate + repayment goal), synced
   // cross-device. Hydrate on mount and react to remote updates.
@@ -333,6 +491,7 @@ export function LoanDetailView({
   const [borrowedValueDraft, setBorrowedValueDraft] = useState("");
   const [contribDraft, setContribDraft] = useState("");
   const [targetDraft, setTargetDraft] = useState("");
+  const [collateralContribDraft, setCollateralContribDraft] = useState("");
   const [showSchedule, setShowSchedule] = useState(false);
   useEffect(() => {
     setBorrowedValueDraft(
@@ -346,10 +505,16 @@ export function LoanDetailView({
         : "",
     );
     setTargetDraft(annotation.targetSettleDate ?? "");
+    setCollateralContribDraft(
+      annotation.monthlyCollateralContribution != null
+        ? String(annotation.monthlyCollateralContribution)
+        : "",
+    );
   }, [
     annotation.borrowedValueZar,
     annotation.monthlyContribution,
     annotation.targetSettleDate,
+    annotation.monthlyCollateralContribution,
   ]);
 
   if (loansQ.isLoading || accountsQ.isLoading) {
@@ -412,19 +577,94 @@ export function LoanDetailView({
   const liqPrice = priceAtLtv(loan, LIQ_LTV);
   const warnDrop = priceDropPctTo(loan, WARNING_LTV);
   const liqDrop = priceDropPctTo(loan, LIQ_LTV);
-  // Binance sometimes returns a 0/absent hourly rate even when the loan's APR
-  // is known (the two ship on different endpoints). Derive the hourly rate
-  // from the reliable APR in that case so the "Hourly rate" row and the
-  // debt-growth projections never collapse to a misleading 0.
+  // Asset-denominated debt drives every projection (not debtUsd, which can be
+  // 0 when the server price lookup fails while loan.debt is still valid).
+  const planPrincipal = loan.debt;
+  const assetToUsd =
+    planPrincipal > 0 && loan.debtUsd > 0 ? loan.debtUsd / planPrincipal : 1;
+  const borrowedUsd =
+    loan.debtUsd > 0 ? loan.debtUsd : planPrincipal * assetToUsd;
+
+  // ── Interest-rate history ──
+  // Computed up here (ahead of the hourly/daily interest) so those projections
+  // can fall back to the REAL charged rate when Binance's per-loan hourly/APR
+  // fields come back 0. The server serves real per-day rates for margin loans
+  // (cross + isolated) from Binance's interest history; crypto loans have no
+  // such endpoint, so it returns a flat series. We overlay the app's own
+  // locally-recorded nominal-APR snapshots so "actual charged" vs "quoted" can
+  // be compared, and fall back to the local series entirely when the server is
+  // flat. 30d stats stay on a 30-day basis regardless of the chart window.
+  const byLoan = interestQ.data?.byLoan.find((b) => b.loanId === loan.id);
+  const rateData = rateHistQ.data;
+  const serverSeries = rateData?.points.map((p) => p.apr) ?? [];
+  const serverIsMargin =
+    rateData?.source === "margin" && serverSeries.length >= 2;
+  const localStats = aprStatsFor(snapshots, loan.id, 30);
+  const localWindowSeries = aprSeriesFor(snapshots, loan.id, rateWindow);
+  const chartKind: "margin" | "local" | "flat" | null = serverIsMargin
+    ? "margin"
+    : localWindowSeries.length >= 2
+      ? "local"
+      : serverSeries.length >= 2
+        ? "flat"
+        : null;
+  const chartValues =
+    chartKind === "margin"
+      ? serverSeries
+      : chartKind === "local"
+        ? localWindowSeries
+        : chartKind === "flat"
+          ? serverSeries
+          : [];
+  const overlayValues =
+    serverIsMargin && localWindowSeries.length >= 2
+      ? localWindowSeries
+      : undefined;
+  const avg30 = serverIsMargin
+    ? rateData.avg30dApr
+    : (localStats?.avg ?? rateData?.avg30dApr ?? loan.apr);
+  const min30 = serverIsMargin
+    ? rateData.min30dApr
+    : (localStats?.min ?? rateData?.min30dApr ?? loan.apr);
+  const max30 = serverIsMargin
+    ? rateData.max30dApr
+    : (localStats?.max ?? rateData?.max30dApr ?? loan.apr);
+  // Server always returns a trailing-30d avg/min/max (real for margin, the
+  // current rate for flat-fallback products), so surface stats whenever we
+  // have *any* source — server flat data included, not just margin/local.
+  const hasStats = serverIsMargin || localStats !== null || rateData != null;
+  // A flat series collapses min===max; a "30d range: X – X" row is just noise.
+  const hasRange = min30 !== max30;
+  const hasRealHistory = chartValues.length >= 2;
+
+  // Binance sometimes returns a 0/absent hourly rate AND a 0 APR for margin
+  // loans (the rate ships on a different endpoint that can come back empty).
+  // Fall back through every reliable source — quoted APR, quoted hourly rate,
+  // then the real 30d-average charged rate from interest history — so the APR
+  // headline, the "Hourly rate" / "Hourly interest" rows and the debt-growth
+  // projections never collapse to a misleading 0.
   const HOURS_PER_YEAR = 365 * 24;
+  const effectiveApr =
+    loan.apr > 0
+      ? loan.apr
+      : loan.hourlyInterestRate > 0
+        ? loan.hourlyInterestRate * HOURS_PER_YEAR * 100
+        : avg30 > 0
+          ? avg30
+          : 0;
   const effectiveHourlyRate =
     loan.hourlyInterestRate > 0
       ? loan.hourlyInterestRate
-      : loan.apr > 0
-        ? loan.apr / 100 / HOURS_PER_YEAR
+      : effectiveApr > 0
+        ? effectiveApr / 100 / HOURS_PER_YEAR
         : 0;
-  const hourly = loan.debt * effectiveHourlyRate;
-  const daily = hourly * 24;
+  // `aprDelta` compares the headline rate against the trailing-30d average.
+  const aprDelta = avg30 > 0 ? ((effectiveApr - avg30) / avg30) * 100 : 0;
+  // Interest amounts: asset units for the plan, USD-converted for the cards.
+  const hourlyAsset = loan.debt * effectiveHourlyRate;
+  const dailyAsset = hourlyAsset * 24;
+  const hourlyUsd = hourlyAsset * assetToUsd;
+  const dailyUsd = dailyAsset * assetToUsd;
 
   // ── Real borrow/repay events for this loan ──
   const loanTxs = txQ.data?.transactions ?? [];
@@ -468,13 +708,6 @@ export function LoanDetailView({
     borrowedValueZar != null && borrowedValueZar > 0 && totalBorrowedQty > 0
       ? borrowedValueZar / totalBorrowedQty
       : null;
-  // Asset-denominated debt drives the repayment plan (not debtUsd, which can be 0
-  // when the server price lookup fails while loan.debt is still valid).
-  const planPrincipal = loan.debt;
-  const assetToUsd =
-    planPrincipal > 0 && loan.debtUsd > 0 ? loan.debtUsd / planPrincipal : 1;
-  const borrowedUsd =
-    loan.debtUsd > 0 ? loan.debtUsd : planPrincipal * assetToUsd;
   // ── Repayment forecasting ──
   // The debt is asset-denominated (≈ USD for stablecoin loans). The monthly rate
   // compounds the declining balance against ongoing accrual. The user budgets in
@@ -537,59 +770,46 @@ export function LoanDetailView({
         )
       : [];
 
-  const byLoan = interestQ.data?.byLoan.find((b) => b.loanId === loan.id);
-
-  // Interest-rate history. The server now serves REAL per-day rates for margin
-  // loans (cross + isolated) from Binance's interest history; crypto loans have
-  // no such endpoint, so it returns a flat series. We overlay the app's own
-  // locally-recorded nominal-APR snapshots so "actual charged" vs "quoted" can
-  // be compared, and fall back to the local series entirely when the server is
-  // flat. 30d stats stay on a 30-day basis regardless of the chart window.
-  const rateData = rateHistQ.data;
-  const serverSeries = rateData?.points.map((p) => p.apr) ?? [];
-  const serverIsMargin =
-    rateData?.source === "margin" && serverSeries.length >= 2;
-
-  const localStats = aprStatsFor(snapshots, loan.id, 30);
-  const localWindowSeries = aprSeriesFor(snapshots, loan.id, rateWindow);
-
-  const chartKind: "margin" | "local" | "flat" | null = serverIsMargin
-    ? "margin"
-    : localWindowSeries.length >= 2
-      ? "local"
-      : serverSeries.length >= 2
-        ? "flat"
-        : null;
-  const chartValues =
-    chartKind === "margin"
-      ? serverSeries
-      : chartKind === "local"
-        ? localWindowSeries
-        : chartKind === "flat"
-          ? serverSeries
-          : [];
-  const overlayValues =
-    serverIsMargin && localWindowSeries.length >= 2
-      ? localWindowSeries
-      : undefined;
-
-  const avg30 = serverIsMargin
-    ? rateData.avg30dApr
-    : (localStats?.avg ?? rateData?.avg30dApr ?? loan.apr);
-  const min30 = serverIsMargin
-    ? rateData.min30dApr
-    : (localStats?.min ?? rateData?.min30dApr ?? loan.apr);
-  const max30 = serverIsMargin
-    ? rateData.max30dApr
-    : (localStats?.max ?? rateData?.max30dApr ?? loan.apr);
-  // Server always returns a trailing-30d avg/min/max (real for margin, the
-  // current rate for flat-fallback products), so surface stats whenever we
-  // have *any* source — server flat data included, not just margin/local.
-  const hasStats = serverIsMargin || localStats !== null || rateData != null;
-  // A flat series collapses min===max; a "30d range: X – X" row is just noise.
-  const hasRange = min30 !== max30;
-  const aprDelta = avg30 > 0 ? ((loan.apr - avg30) / avg30) * 100 : 0;
-  const hasRealHistory = chartValues.length >= 2;
+  // ── "Build collateral" plan ──
+  // The borrower keeps buying BTC at today's rate and adds it to collateral
+  // instead of repaying. Interest still accrues on the debt, but the growing
+  // collateral lowers LTV until the target is reached. Math is done in USD
+  // (fmtMoney converts to the display currency); BTC quantity uses the live
+  // Luno price in the display currency.
+  const btcTickerMap = new Map<string, number>();
+  for (const t of btcTickersQ.data?.tickers ?? []) {
+    btcTickerMap.set(t.pair, t.lastTrade);
+  }
+  const btcPriceDisplay = quoteWalletInFiat("XBT", 1, btcTickerMap, currency);
+  const btcPriceUsd =
+    currency === "ZAR"
+      ? usdToZar > 0
+        ? btcPriceDisplay / usdToZar
+        : 0
+      : btcPriceDisplay;
+  const collateralContribInput = annotation.monthlyCollateralContribution ?? 0;
+  const collateralContribUsd =
+    currency === "ZAR"
+      ? usdToZar > 0
+        ? collateralContribInput / usdToZar
+        : 0
+      : collateralContribInput;
+  const btcPerMonth = btcPriceUsd > 0 ? collateralContribUsd / btcPriceUsd : 0;
+  const collateralPlanInput = {
+    debt: borrowedUsd,
+    collateralValue: loan.collateral.valueUsd,
+    monthlyRate,
+    monthlyContribution: collateralContribUsd,
+    targetLtv,
+  };
+  const collateralMonths =
+    collateralContribUsd > 0 ? monthsToTargetLtv(collateralPlanInput) : null;
+  const collateralPayoffDate =
+    collateralMonths != null && collateralMonths > 0
+      ? addMonths(now, collateralMonths)
+      : null;
+  const collateralSchedule: CollateralRow[] =
+    collateralContribUsd > 0 ? buildCollateralSchedule(collateralPlanInput) : [];
 
   const relevantRules = rules.filter((r) =>
     ruleAppliesTo(r, loan.id, loanContainer?.id),
@@ -674,7 +894,7 @@ export function LoanDetailView({
       >
         <View style={styles.bigRow}>
           <Text style={[styles.bigValue, { color: colors.foreground }]}>
-            {fmtPct(loan.apr, 2)}
+            {fmtPct(effectiveApr, 2)}
           </Text>
           <Text style={[styles.bigUnit, { color: colors.mutedForeground }]}>
             APR
@@ -772,7 +992,14 @@ export function LoanDetailView({
           label="Hourly rate"
           value={`${(effectiveHourlyRate * 100).toFixed(5)}%`}
         />
-        <Row label="Hourly interest" value={fmtMoney(hourly, currency)} />
+        <Row label="Hourly interest" value={fmtMoney(hourlyUsd, currency)} />
+        <Row label="Daily interest" value={fmtMoney(dailyUsd, currency)} />
+        {loan.apr <= 0 && effectiveApr > 0 ? (
+          <Text style={[styles.simHint, { color: colors.mutedForeground }]}>
+            Binance didn&apos;t return a live rate for this loan; APR shown is
+            the trailing-30d average actually charged.
+          </Text>
+        ) : null}
       </Card>
 
       <Card title="Price simulator">
@@ -870,20 +1097,20 @@ export function LoanDetailView({
             ? "Interest accrues into the debt; repayments reduce the amount due."
             : "Interest accrues into the debt. No repayments recorded yet."}
         </Text>
-        <Row label="Today" value={fmtMoney(loan.debtUsd, currency)} />
+        <Row label="Today" value={fmtMoney(borrowedUsd, currency)} />
         <Row
           label="In 30 days"
-          value={fmtMoney(loan.debtUsd + daily * 30, currency)}
+          value={fmtMoney(borrowedUsd + dailyUsd * 30, currency)}
         />
         <Row
           label="In 90 days"
-          value={fmtMoney(loan.debtUsd + daily * 90, currency)}
+          value={fmtMoney(borrowedUsd + dailyUsd * 90, currency)}
         />
         <Row
           label="In 365 days"
-          value={fmtMoney(loan.debtUsd + daily * 365, currency)}
+          value={fmtMoney(borrowedUsd + dailyUsd * 365, currency)}
         />
-        <Row label="Daily interest" value={fmtMoney(daily, currency)} />
+        <Row label="Daily interest" value={fmtMoney(dailyUsd, currency)} />
         {byLoan ? (
           <Row
             label="Accrued last 30d"
@@ -902,7 +1129,16 @@ export function LoanDetailView({
         ) : null}
       </Card>
 
-      <Card title="Repayments">
+      <Card
+        title="Repayments"
+        right={
+          repayments.length > 0 ? (
+            <Text style={[styles.countBadge, { color: colors.mutedForeground }]}>
+              {repayments.length}
+            </Text>
+          ) : null
+        }
+      >
         {txQ.isLoading ? (
           <Text style={[styles.simHint, { color: colors.mutedForeground }]}>
             Loading repayment history…
@@ -924,35 +1160,50 @@ export function LoanDetailView({
               found, its buy rate and ZAR spent appear below as funding context
               only — not as the repayment figure.
             </Text>
-            {repayments.map((t, i) => {
-              const buy = repaymentBuys[i];
-              return (
-                <View key={`${t.ts}-${i}`} style={styles.txRow}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.txAmount, { color: colors.ok }]}>
-                      +{fmtQty(Math.abs(t.amount), t.asset)}
-                    </Text>
-                    <Text
-                      style={[styles.txDate, { color: colors.mutedForeground }]}
-                      numberOfLines={2}
-                    >
-                      {buy
-                        ? `Luno buy R${groupWithSpaces(buy.rate, 2)}/${t.asset} · spent R${groupWithSpaces(buy.zarSpent, 2)} · `
-                        : ""}
-                      {fmtDate(new Date(t.ts))}
+            <ScrollView
+              style={styles.txScroll}
+              nestedScrollEnabled
+              showsVerticalScrollIndicator
+            >
+              {repayments.map((t, i) => {
+                const buy = repaymentBuys[i];
+                return (
+                  <View key={`${t.ts}-${i}`} style={styles.txRow}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.txAmount, { color: colors.ok }]}>
+                        +{fmtQty(Math.abs(t.amount), t.asset)}
+                      </Text>
+                      <Text
+                        style={[styles.txDate, { color: colors.mutedForeground }]}
+                        numberOfLines={2}
+                      >
+                        {buy
+                          ? `Luno buy R${groupWithSpaces(buy.rate, 2)}/${t.asset} · spent R${groupWithSpaces(buy.zarSpent, 2)} · `
+                          : ""}
+                        {fmtDate(new Date(t.ts))}
+                      </Text>
+                    </View>
+                    <Text style={[styles.txUsd, { color: colors.foreground }]}>
+                      {fmtMoney(t.amountUsd, currency)}
                     </Text>
                   </View>
-                  <Text style={[styles.txUsd, { color: colors.foreground }]}>
-                    {fmtMoney(t.amountUsd, currency)}
-                  </Text>
-                </View>
-              );
-            })}
+                );
+              })}
+            </ScrollView>
           </>
         )}
       </Card>
 
-      <Card title="Luno funding">
+      <Card
+        title="Luno funding"
+        right={
+          lunoFunding.buys.length + lunoFunding.moves.length > 0 ? (
+            <Text style={[styles.countBadge, { color: colors.mutedForeground }]}>
+              {lunoFunding.buys.length + lunoFunding.moves.length}
+            </Text>
+          ) : null
+        }
+      >
         {lunoTxQ.isLoading ? (
           <Text style={[styles.simHint, { color: colors.mutedForeground }]}>
             Loading Luno activity…
@@ -978,62 +1229,74 @@ export function LoanDetailView({
               Reflects recent Luno activity, so older entries may not appear.
             </Text>
 
-            {lunoFunding.buys.length > 0 && (
-              <>
-                <Text
-                  style={[styles.fundingHeading, { color: colors.foreground }]}
-                >
-                  Bought on Luno
-                </Text>
-                {lunoFunding.buys.map((b, i) => (
-                  <View key={`buy-${b.ts}-${i}`} style={styles.txRow}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={[styles.txAmount, { color: colors.ok }]}>
-                        +{fmtQty(b.assetQty, borrowAsset)}
-                      </Text>
-                      <Text
-                        style={[styles.txDate, { color: colors.mutedForeground }]}
-                      >
-                        R{groupWithSpaces(b.rate, 2)}/{borrowAsset} ·{" "}
-                        {b.accountName} · {fmtDate(new Date(b.ts))}
+            <ScrollView
+              style={styles.txScroll}
+              nestedScrollEnabled
+              showsVerticalScrollIndicator
+            >
+              {lunoFunding.buys.length > 0 && (
+                <>
+                  <Text
+                    style={[styles.fundingHeading, { color: colors.foreground }]}
+                  >
+                    Bought on Luno ({lunoFunding.buys.length})
+                  </Text>
+                  {lunoFunding.buys.map((b, i) => (
+                    <View key={`buy-${b.ts}-${i}`} style={styles.txRow}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.txAmount, { color: colors.ok }]}>
+                          +{fmtQty(b.assetQty, borrowAsset)}
+                        </Text>
+                        <Text
+                          style={[
+                            styles.txDate,
+                            { color: colors.mutedForeground },
+                          ]}
+                        >
+                          R{groupWithSpaces(b.rate, 2)}/{borrowAsset} ·{" "}
+                          {b.accountName} · {fmtDate(new Date(b.ts))}
+                        </Text>
+                      </View>
+                      <Text style={[styles.txUsd, { color: colors.foreground }]}>
+                        R{groupWithSpaces(b.zarSpent, 2)}
                       </Text>
                     </View>
-                    <Text style={[styles.txUsd, { color: colors.foreground }]}>
-                      R{groupWithSpaces(b.zarSpent, 2)}
-                    </Text>
-                  </View>
-                ))}
-              </>
-            )}
+                  ))}
+                </>
+              )}
 
-            {lunoFunding.moves.length > 0 && (
-              <>
-                <Text
-                  style={[
-                    styles.fundingHeading,
-                    { color: colors.foreground, marginTop: 12 },
-                  ]}
-                >
-                  Transferred out
-                </Text>
-                {lunoFunding.moves.map((m, i) => (
-                  <View key={`move-${m.ts}-${i}`} style={styles.txRow}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={[styles.txAmount, { color: colors.warn }]}>
-                        −{fmtQty(m.assetQty, borrowAsset)}
-                      </Text>
-                      <Text
-                        style={[styles.txDate, { color: colors.mutedForeground }]}
-                        numberOfLines={1}
-                      >
-                        {m.description ? `${m.description} · ` : ""}
-                        {m.accountName} · {fmtDate(new Date(m.ts))}
-                      </Text>
+              {lunoFunding.moves.length > 0 && (
+                <>
+                  <Text
+                    style={[
+                      styles.fundingHeading,
+                      { color: colors.foreground, marginTop: 12 },
+                    ]}
+                  >
+                    Transferred out ({lunoFunding.moves.length})
+                  </Text>
+                  {lunoFunding.moves.map((m, i) => (
+                    <View key={`move-${m.ts}-${i}`} style={styles.txRow}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.txAmount, { color: colors.warn }]}>
+                          −{fmtQty(m.assetQty, borrowAsset)}
+                        </Text>
+                        <Text
+                          style={[
+                            styles.txDate,
+                            { color: colors.mutedForeground },
+                          ]}
+                          numberOfLines={1}
+                        >
+                          {m.description ? `${m.description} · ` : ""}
+                          {m.accountName} · {fmtDate(new Date(m.ts))}
+                        </Text>
+                      </View>
                     </View>
-                  </View>
-                ))}
-              </>
-            )}
+                  ))}
+                </>
+              )}
+            </ScrollView>
           </>
         )}
       </Card>
@@ -1103,6 +1366,7 @@ export function LoanDetailView({
             [
               ["contribution", "Monthly → date"],
               ["target", "Date → monthly"],
+              ["collateral", "Build collateral"],
             ] as const
           ).map(([mode, label]) => {
             const on = goalMode === mode;
@@ -1201,7 +1465,7 @@ export function LoanDetailView({
               </Text>
             )}
           </>
-        ) : (
+        ) : goalMode === "target" ? (
           <>
             <View style={styles.fieldRow}>
               <Text
@@ -1255,6 +1519,120 @@ export function LoanDetailView({
                 ]}
               >
                 Enter a target date to compute the required monthly payment.
+              </Text>
+            )}
+          </>
+        ) : (
+          <>
+            <View style={styles.fieldRow}>
+              <Text
+                style={[styles.fieldLabel, { color: colors.mutedForeground }]}
+              >
+                Monthly contribution ({currency})
+              </Text>
+              <TextInput
+                value={collateralContribDraft}
+                onChangeText={setCollateralContribDraft}
+                onEndEditing={() => {
+                  const n = Number(collateralContribDraft);
+                  void setLoanAnnotation(loan.id, {
+                    monthlyCollateralContribution:
+                      collateralContribDraft.trim() === "" ||
+                      !Number.isFinite(n)
+                        ? null
+                        : n,
+                  });
+                }}
+                keyboardType="decimal-pad"
+                placeholder="0"
+                placeholderTextColor={colors.mutedForeground}
+                style={[
+                  styles.input,
+                  {
+                    color: colors.foreground,
+                    borderColor: colors.border,
+                    borderRadius: 8,
+                  },
+                ]}
+              />
+            </View>
+            <Text
+              style={[
+                styles.simHint,
+                { color: colors.mutedForeground, marginBottom: 4 },
+              ]}
+            >
+              Keep your debt and instead buy BTC each month at today&apos;s Luno
+              rate, adding it to collateral. Interest still accrues, but the
+              growing collateral lowers your LTV.
+            </Text>
+            <Row
+              label="BTC price now"
+              value={btcPriceUsd > 0 ? fmtMoney(btcPriceUsd, currency) : "—"}
+            />
+            <Row
+              label="Monthly interest"
+              value={fmtPlanMoney(monthlyInterestAsset)}
+            />
+            {collateralContribInput > 0 ? (
+              btcPriceUsd <= 0 ? (
+                <Text
+                  style={[
+                    styles.simHint,
+                    { color: colors.mutedForeground, marginTop: 4 },
+                  ]}
+                >
+                  Waiting for a live BTC price to project collateral growth.
+                </Text>
+              ) : collateralMonths != null && collateralPayoffDate ? (
+                <>
+                  <Row
+                    label="BTC added / month"
+                    value={`${btcPerMonth.toFixed(6)} BTC`}
+                  />
+                  <Row
+                    label={`Reach ${targetLtv}% LTV in`}
+                    value={`${collateralMonths} mo`}
+                  />
+                  <Row
+                    label="Projected date"
+                    value={fmtDate(collateralPayoffDate)}
+                  />
+                  <CollateralBreakdown
+                    rows={collateralSchedule}
+                    expanded={showSchedule}
+                    onToggle={() => setShowSchedule((v) => !v)}
+                    fmt={(usd) => fmtMoney(usd, currency)}
+                    startDate={now}
+                  />
+                </>
+              ) : (
+                <>
+                  <Row
+                    label="BTC added / month"
+                    value={`${btcPerMonth.toFixed(6)} BTC`}
+                  />
+                  <Text
+                    style={[
+                      styles.simHint,
+                      { color: colors.warn, marginTop: 4 },
+                    ]}
+                  >
+                    At this contribution the collateral does not grow fast
+                    enough to reach {targetLtv}% LTV within 50 years — interest
+                    outpaces it.
+                  </Text>
+                </>
+              )
+            ) : (
+              <Text
+                style={[
+                  styles.simHint,
+                  { color: colors.mutedForeground, marginTop: 4 },
+                ]}
+              >
+                Enter a monthly contribution to project how fast buying BTC into
+                collateral lowers your LTV.
               </Text>
             )}
           </>
@@ -1451,6 +1829,12 @@ const styles = StyleSheet.create({
   },
   ruleScope: { fontSize: 11, fontFamily: "Inter_400Regular", marginTop: 2 },
   empty: { fontSize: 12, fontFamily: "Inter_400Regular", paddingVertical: 4 },
+  txScroll: { maxHeight: 320 },
+  countBadge: {
+    fontSize: 11,
+    fontFamily: "Inter_600SemiBold",
+    fontVariant: ["tabular-nums"],
+  },
   txRow: {
     flexDirection: "row",
     alignItems: "center",

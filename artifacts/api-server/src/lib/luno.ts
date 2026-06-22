@@ -227,7 +227,17 @@ export function createRealLunoClient(
             (w) => w.asset.toUpperCase() === opts.asset?.toUpperCase(),
           )
         : wallets;
-      const perWallet = Math.max(1, Math.floor((opts?.limit ?? 25) / Math.max(1, filtered.length)));
+      // Most Luno wallets are empty/irrelevant, so dividing the caller's budget
+      // evenly across ALL wallets starved the few active ones (e.g. the asset +
+      // ZAR wallets that fund a loan) down to a handful of rows. Guarantee a
+      // useful per-wallet depth (≥50) while never exceeding the caller's limit,
+      // then merge/sort/slice below. Asset-filtered calls hit one wallet and get
+      // the full limit.
+      const limit = opts?.limit ?? 25;
+      const perWallet = Math.min(
+        limit,
+        Math.max(50, Math.ceil(limit / Math.max(1, filtered.length))),
+      );
       const out: LunoTransaction[] = [];
       for (const w of filtered) {
         try {

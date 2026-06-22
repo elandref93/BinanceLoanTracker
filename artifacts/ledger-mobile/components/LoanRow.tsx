@@ -1,10 +1,12 @@
 import { Feather } from "@expo/vector-icons";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
+import { ExchangeLogo } from "@/components/ExchangeLogo";
 import { useColors } from "@/hooks/useColors";
 import { useCurrency } from "@/context/CurrencyContext";
 import { useRiskSettings } from "@/context/RiskSettingsContext";
-import { fmtMoney, fmtPct } from "@/utils/format";
+import { fmtMoney, fmtPct, fmtQty } from "@/utils/format";
+import { quoteWalletInFiat } from "@/lib/lunoPricing";
 import { headroomToTarget, statusFromLtv } from "@/utils/risk";
 import type { Loan } from "@workspace/api-client-react";
 
@@ -12,11 +14,22 @@ interface Props {
   loan: Loan;
   accountName: string;
   onPress: () => void;
+  /**
+   * Luno ticker map (pair → lastTrade) used to value the borrowed asset at the
+   * current market rate. Optional so the row still renders without prices.
+   */
+  priceTickers?: Map<string, number>;
   /** Highlights the row with the accent border (iPad master–detail selection). */
   selected?: boolean;
 }
 
-export function LoanRow({ loan, accountName, onPress, selected = false }: Props) {
+export function LoanRow({
+  loan,
+  accountName,
+  onPress,
+  priceTickers,
+  selected = false,
+}: Props) {
   const colors = useColors();
   const { currency } = useCurrency();
   const { targetForAccountId } = useRiskSettings();
@@ -29,6 +42,13 @@ export function LoanRow({ loan, accountName, onPress, selected = false }: Props)
         ? colors.warn
         : colors.danger;
   const headroom = headroomToTarget(loan, targetLtv);
+  // Current market value of the borrowed asset at Luno's live rate, falling
+  // back to the server's USD valuation when no ticker is available.
+  const borrowedValue =
+    priceTickers != null
+      ? quoteWalletInFiat(loan.asset, loan.debt, priceTickers, currency)
+      : 0;
+  const borrowedValueFiat = borrowedValue > 0 ? borrowedValue : loan.debtUsd;
   return (
     <Pressable
       onPress={onPress}
@@ -57,6 +77,15 @@ export function LoanRow({ loan, accountName, onPress, selected = false }: Props)
             {fmtMoney(loan.collateral.valueUsd, currency, { whole: true })}{" "}
             collateral
           </Text>
+          <View style={styles.borrowedRow}>
+            <ExchangeLogo exchange="Luno" size={14} />
+            <Text style={[styles.borrowed, { color: colors.foreground }]}>
+              {fmtQty(loan.debt, loan.asset)}
+            </Text>
+            <Text style={[styles.borrowedValue, { color: colors.mutedForeground }]}>
+              ≈ {fmtMoney(borrowedValueFiat, currency, { whole: true })}
+            </Text>
+          </View>
         </View>
         <View style={styles.right}>
           <Text style={[styles.ltv, { color: tone }]}>
@@ -105,6 +134,22 @@ const styles = StyleSheet.create({
   asset: { fontSize: 15, fontFamily: "Inter_600SemiBold" },
   account: { fontSize: 13, fontFamily: "Inter_400Regular" },
   debt: {
+    fontSize: 12,
+    fontFamily: "Inter_400Regular",
+    fontVariant: ["tabular-nums"],
+  },
+  borrowedRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginTop: 2,
+  },
+  borrowed: {
+    fontSize: 13,
+    fontFamily: "Inter_600SemiBold",
+    fontVariant: ["tabular-nums"],
+  },
+  borrowedValue: {
     fontSize: 12,
     fontFamily: "Inter_400Regular",
     fontVariant: ["tabular-nums"],

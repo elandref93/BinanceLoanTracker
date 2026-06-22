@@ -4,7 +4,11 @@ import { describe, it } from "node:test";
 import type { LunoTransaction } from "@workspace/api-client-react";
 
 import { filterLunoTxsForContainer } from "./lunoFunding";
-import { buildSchedule } from "./loanRepaymentPlan";
+import {
+  buildCollateralSchedule,
+  buildSchedule,
+  monthsToTargetLtv,
+} from "./loanRepaymentPlan";
 
 function lunoTx(
   accountId: string,
@@ -60,5 +64,44 @@ describe("buildSchedule", () => {
     assert.ok(rows.length >= 1);
     assert.ok(rows[0]!.interest > 0);
     assert.equal(rows[0]!.interest, 100);
+  });
+});
+
+describe("buildCollateralSchedule", () => {
+  it("lowers LTV as collateral grows and stops at the target", () => {
+    const rows = buildCollateralSchedule({
+      debt: 50_000,
+      collateralValue: 100_000, // start LTV 50%
+      monthlyRate: 0.005,
+      monthlyContribution: 20_000,
+      targetLtv: 30,
+    });
+    assert.ok(rows.length >= 1);
+    // LTV is monotonically decreasing while contribution outpaces interest.
+    assert.ok(rows[0]!.ltv < 50);
+    const last = rows[rows.length - 1]!;
+    assert.ok(last.ltv <= 30);
+  });
+
+  it("never reaches target when interest outpaces contribution", () => {
+    const months = monthsToTargetLtv({
+      debt: 50_000,
+      collateralValue: 60_000, // LTV ~83%
+      monthlyRate: 0.05,
+      monthlyContribution: 1, // negligible
+      targetLtv: 30,
+    });
+    assert.equal(months, null);
+  });
+
+  it("returns 0 months when already at/below target", () => {
+    const months = monthsToTargetLtv({
+      debt: 20_000,
+      collateralValue: 100_000, // LTV 20%
+      monthlyRate: 0.01,
+      monthlyContribution: 1_000,
+      targetLtv: 30,
+    });
+    assert.equal(months, 0);
   });
 });

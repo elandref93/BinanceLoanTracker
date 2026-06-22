@@ -19,7 +19,7 @@ const baseUrl = process.env.EXPO_PUBLIC_DOMAIN
 const STORE_KEY = "ledger.loanAnnotations.v1";
 const UPDATED_AT_KEY = "ledger.loanAnnotations.updatedAt";
 
-export type GoalMode = "contribution" | "target";
+export type GoalMode = "contribution" | "target" | "collateral";
 
 export type LoanAnnotation = {
   /** Manual ZAR sell rate the borrowed asset was sold at on Luno. */
@@ -34,6 +34,11 @@ export type LoanAnnotation = {
   monthlyContribution?: number;
   /** Target settlement date (ISO yyyy-mm-dd). */
   targetSettleDate?: string;
+  /**
+   * Planned monthly contribution used to BUY collateral (display-currency
+   * amount) in "Build collateral" mode, instead of paying down the debt.
+   */
+  monthlyCollateralContribution?: number;
   /** Which forecasting input the user is driving. */
   goalMode?: GoalMode;
 };

@@ -72,6 +72,8 @@ describe("buildCollateralSchedule", () => {
     const rows = buildCollateralSchedule({
       debt: 50_000,
       collateralValue: 100_000, // start LTV 50%
+      collateralQty: 2,
+      collateralPriceUsd: 50_000,
       monthlyRate: 0.005,
       monthlyContribution: 20_000,
       targetLtv: 30,
@@ -81,12 +83,16 @@ describe("buildCollateralSchedule", () => {
     assert.ok(rows[0]!.ltv < 50);
     const last = rows[rows.length - 1]!;
     assert.ok(last.ltv <= 30);
+    assert.ok(last.collateralQty > 2);
+    assert.ok(last.liqPrice > 0);
   });
 
   it("never reaches target when interest outpaces contribution", () => {
     const months = monthsToTargetLtv({
       debt: 50_000,
       collateralValue: 60_000, // LTV ~83%
+      collateralQty: 1,
+      collateralPriceUsd: 60_000,
       monthlyRate: 0.05,
       monthlyContribution: 1, // negligible
       targetLtv: 30,
@@ -98,6 +104,8 @@ describe("buildCollateralSchedule", () => {
     const months = monthsToTargetLtv({
       debt: 20_000,
       collateralValue: 100_000, // LTV 20%
+      collateralQty: 2,
+      collateralPriceUsd: 50_000,
       monthlyRate: 0.01,
       monthlyContribution: 1_000,
       targetLtv: 30,

@@ -255,20 +255,22 @@ function ScheduleBreakdown({
   );
 }
 
-// Expandable month-by-month projection for the "Build collateral" plan: how
-// much collateral is added, the running collateral value, and the resulting
-// LTV each month until the target is reached.
+// Expandable month-by-month projection for the "Build collateral" plan: running
+// collateral value/qty, liquidation target price, and LTV each month until the
+// target is reached.
 function CollateralBreakdown({
   rows,
   expanded,
   onToggle,
-  fmt,
+  fmtMoneyValue,
+  collateralAsset,
   startDate,
 }: {
   rows: CollateralRow[];
   expanded: boolean;
   onToggle: () => void;
-  fmt: (usd: number) => string;
+  fmtMoneyValue: (usd: number, whole?: boolean) => string;
+  collateralAsset: string;
   startDate: Date;
 }) {
   const colors = useColors();
@@ -313,7 +315,7 @@ function CollateralBreakdown({
                 { color: colors.mutedForeground },
               ]}
             >
-              +Coll.
+              Coll. value
             </Text>
             <Text
               style={[
@@ -322,7 +324,16 @@ function CollateralBreakdown({
                 { color: colors.mutedForeground },
               ]}
             >
-              Coll. value
+              Coll. amt
+            </Text>
+            <Text
+              style={[
+                styles.schedHcell,
+                styles.schedNumCol,
+                { color: colors.mutedForeground },
+              ]}
+            >
+              Liq. target
             </Text>
             <Text
               style={[
@@ -350,11 +361,11 @@ function CollateralBreakdown({
                 style={[
                   styles.schedCell,
                   styles.schedNumCol,
-                  { color: colors.mutedForeground },
+                  { color: colors.foreground },
                 ]}
                 numberOfLines={1}
               >
-                {fmt(r.collateralAdded)}
+                {fmtMoneyValue(r.collateralValue, true)}
               </Text>
               <Text
                 style={[
@@ -364,7 +375,17 @@ function CollateralBreakdown({
                 ]}
                 numberOfLines={1}
               >
-                {fmt(r.collateralValue)}
+                {fmtQty(r.collateralQty, collateralAsset)}
+              </Text>
+              <Text
+                style={[
+                  styles.schedCell,
+                  styles.schedNumCol,
+                  { color: colors.foreground },
+                ]}
+                numberOfLines={1}
+              >
+                {r.liqPrice > 0 ? fmtMoneyValue(r.liqPrice) : "—"}
               </Text>
               <Text
                 style={[
@@ -798,9 +819,12 @@ export function LoanDetailView({
   const collateralPlanInput = {
     debt: borrowedUsd,
     collateralValue: loan.collateral.valueUsd,
+    collateralQty: loan.collateral.qty,
+    collateralPriceUsd: btcPriceUsd,
     monthlyRate,
     monthlyContribution: collateralContribUsd,
     targetLtv,
+    liqLtv: LIQ_LTV,
   };
   const collateralMonths =
     collateralContribUsd > 0 ? monthsToTargetLtv(collateralPlanInput) : null;
@@ -1608,7 +1632,10 @@ export function LoanDetailView({
                     rows={collateralSchedule}
                     expanded={showSchedule}
                     onToggle={() => setShowSchedule((v) => !v)}
-                    fmt={(usd) => fmtMoney(usd, currency)}
+                    fmtMoneyValue={(usd, whole) =>
+                      fmtMoney(usd, currency, whole ? { whole: true } : {})
+                    }
+                    collateralAsset={loan.collateral.asset}
                     startDate={now}
                   />
                 </>

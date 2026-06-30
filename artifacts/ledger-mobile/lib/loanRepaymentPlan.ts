@@ -65,12 +65,14 @@ export type CollateralRow = {
   month: number;
   /** Debt interest accrued this month. */
   interest: number;
-  /** Collateral value added this month (= the monthly contribution). */
-  collateralAdded: number;
   /** Debt outstanding at month end. */
   debt: number;
   /** Total collateral value at month end. */
   collateralValue: number;
+  /** Collateral asset quantity at month end (flat-price model). */
+  collateralQty: number;
+  /** Collateral asset price at which the loan hits `liqLtv`. */
+  liqPrice: number;
   /** LTV (%) at month end. */
   ltv: number;
 };
@@ -78,11 +80,17 @@ export type CollateralRow = {
 export type CollateralPlanInput = {
   debt: number;
   collateralValue: number;
+  /** Starting collateral asset quantity (e.g. BTC on the loan). */
+  collateralQty: number;
+  /** Assumed flat collateral price (USD per unit) for qty projections. */
+  collateralPriceUsd: number;
   monthlyRate: number;
   /** Value added to collateral each month (collateral price assumed flat). */
   monthlyContribution: number;
   /** Stop once LTV reaches/drops below this (%). */
   targetLtv: number;
+  /** Liquidation LTV threshold used for {@link CollateralRow.liqPrice}. */
+  liqLtv?: number;
   maxMonths?: number;
 };
 
@@ -95,26 +103,36 @@ export function buildCollateralSchedule(input: CollateralPlanInput): CollateralR
   const {
     debt,
     collateralValue,
+    collateralQty,
+    collateralPriceUsd,
     monthlyRate,
     monthlyContribution,
     targetLtv,
+    liqLtv = 91,
     maxMonths = 600,
   } = input;
   const rows: CollateralRow[] = [];
   let bal = debt;
   let col = collateralValue;
+  let qty = collateralQty;
+  const qtyPerMonth =
+    collateralPriceUsd > 0 ? monthlyContribution / collateralPriceUsd : 0;
   const cap = Math.min(Math.max(0, Math.round(maxMonths)), 600);
   for (let m = 1; m <= cap; m++) {
     const interest = bal * monthlyRate;
     bal = bal + interest;
     col = col + monthlyContribution;
+    qty = qty + qtyPerMonth;
     const ltv = col > 0 ? (bal / col) * 100 : Infinity;
+    const liqPrice =
+      qty > 0 && liqLtv > 0 ? bal / qty / (liqLtv / 100) : 0;
     rows.push({
       month: m,
       interest,
-      collateralAdded: monthlyContribution,
       debt: bal,
       collateralValue: col,
+      collateralQty: qty,
+      liqPrice,
       ltv,
     });
     if (ltv <= targetLtv) break;

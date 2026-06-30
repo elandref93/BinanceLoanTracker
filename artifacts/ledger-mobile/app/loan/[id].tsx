@@ -825,7 +825,13 @@ export function LoanDetailView({
       </View>
 
       <View style={{ alignItems: "center", marginVertical: 6 }}>
-        <RiskGauge ltv={loan.ltv} size={220} target={targetLtv} />
+        <RiskGauge
+          ltv={loan.ltv}
+          size={220}
+          target={targetLtv}
+          loan={loan}
+          currency={currency}
+        />
       </View>
 
       <Card title="Position">

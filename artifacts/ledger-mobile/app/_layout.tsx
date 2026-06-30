@@ -9,7 +9,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { setBaseUrl } from "@workspace/api-client-react";
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
-import React, { useEffect } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -43,6 +43,7 @@ const queryClient = new QueryClient({
 });
 
 function RootLayout() {
+  const [launchReady, setLaunchReady] = useState(false);
   const [fontsLoaded, fontError] = useFonts({
     Inter_400Regular,
     Inter_500Medium,
@@ -50,20 +51,27 @@ function RootLayout() {
     Inter_700Bold,
   });
 
+  const onLaunchReady = useCallback(() => {
+    setLaunchReady(true);
+  }, []);
+
   useEffect(() => {
-    if (fontsLoaded || fontError) {
+    if ((fontsLoaded || fontError) && launchReady) {
       SplashScreen.hideAsync();
     }
-  }, [fontsLoaded, fontError]);
+  }, [fontsLoaded, fontError, launchReady]);
 
   useEffect(() => {
     void registerBackgroundRefresh();
   }, []);
 
-  if (!fontsLoaded && !fontError) return null;
+  const fontsReady = fontsLoaded || !!fontError;
 
   return (
-    <SessionProvider>
+    <>
+      <AutoUpdater onLaunchReady={onLaunchReady} />
+      {fontsReady ? (
+        <SessionProvider>
       <SafeAreaProvider>
         <ErrorBoundary
           onError={(error, componentStack) =>
@@ -132,7 +140,6 @@ function RootLayout() {
                       />
                     </Stack>
                   </AppLockGate>
-                  <AutoUpdater />
                   </RiskSettingsProvider>
                 </CurrencyProvider>
               </KeyboardProvider>
@@ -141,6 +148,8 @@ function RootLayout() {
         </ErrorBoundary>
       </SafeAreaProvider>
     </SessionProvider>
+      ) : null}
+    </>
   );
 }
 

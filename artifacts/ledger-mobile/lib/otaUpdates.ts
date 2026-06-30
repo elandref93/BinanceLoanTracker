@@ -17,9 +17,9 @@ let inFlight = false;
  *     binary.
  *   - The *other* documented crash (expo/expo#21347) only happens when the
  *     Updates API is exercised during the cold-start window, racing the native
- *     ON_LOAD check. We therefore NEVER reload at startup — callers only pass
- *     `reload: true` once the app is fully running (on a delay / on foreground
- *     return). See `components/AutoUpdater`.
+ *     ON_LOAD check. Launch reload is deferred a few seconds and runs while
+ *     the splash is still visible (see `components/AutoUpdater`). Foreground
+ *     reload runs once the app is fully running.
  *
  * Safe to call anywhere: it's a no-op in development / Expo Go (where
  * `Updates.isEnabled` is false), guards against overlapping runs, and swallows

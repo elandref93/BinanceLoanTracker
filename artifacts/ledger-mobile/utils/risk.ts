@@ -125,6 +125,40 @@ export function liqPriceWithExtraCollateral(
 }
 
 /**
+ * Liquidation price for `loan` after removing `removedUsd` of collateral value
+ * at the current price. Less collateral qty → higher liquidation price.
+ */
+export function liqPriceAfterRemovingCollateral(
+  loan: Loan,
+  removedUsd: number,
+): number {
+  const price = currentCollateralPrice(loan);
+  if (price <= 0 || removedUsd <= 0) return priceAtLtv(loan, LIQ_LTV);
+  const removedQty = removedUsd / price;
+  const newQty = loan.collateral.qty - removedQty;
+  if (newQty <= 0) return 0;
+  return loan.debtUsd / newQty / (LIQ_LTV / 100);
+}
+
+/**
+ * Liquidation price once the loan sits exactly at `targetLtv`, reached by
+ * adding or removing collateral at the current collateral price.
+ */
+export function liqPriceAtTargetLtv(
+  loan: Loan,
+  targetLtv: number,
+): number {
+  const headroom = headroomToTarget(loan, targetLtv);
+  if (headroom < 0) {
+    return liqPriceWithExtraCollateral(loan, -headroom);
+  }
+  if (headroom > 0) {
+    return liqPriceAfterRemovingCollateral(loan, headroom);
+  }
+  return priceAtLtv(loan, LIQ_LTV);
+}
+
+/**
  * Price-drop-until-liquidation % for `loan` after adding `addedUsd` collateral.
  * Larger than the current buffer because the liquidation price moves down.
  */

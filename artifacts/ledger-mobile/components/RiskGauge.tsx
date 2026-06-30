@@ -15,7 +15,7 @@ import { fmtMoney } from "@/utils/format";
 import {
   headroomToTarget,
   LIQ_LTV,
-  priceAtLtv,
+  liqPriceAtTargetLtv,
   statusFromLtv,
   WARNING_LTV,
 } from "@/utils/risk";
@@ -30,7 +30,7 @@ interface Props {
   /**
    * The loan this gauge represents. When supplied the ring becomes
    * interactive: press and drag around it to scrub a hypothetical LTV and
-   * read off the matching collateral price and the collateral you'd need to
+   * read off the liquidation price at that LTV and the collateral you'd need to
    * add (or could remove) to reach it.
    */
   loan?: Loan;
@@ -168,11 +168,11 @@ export function RiskGauge({
   const markerX = center + Math.cos(markerA) * r;
   const markerY = center + Math.sin(markerA) * r;
 
-  // Scrub readouts: the collateral price that yields the selected LTV, and the
-  // signed collateral delta needed to move the loan there (negative headroom →
-  // add collateral, positive → could remove).
+  // Scrub readouts: once positioned at the selected LTV (via the add/remove
+  // amount below), the collateral price that triggers liquidation, and the
+  // signed collateral delta needed to move the loan there.
   const scrubbing = scrub != null && loan != null;
-  const scrubPrice = scrubbing ? priceAtLtv(loan, scrub) : 0;
+  const scrubLiqPrice = scrubbing ? liqPriceAtTargetLtv(loan, scrub) : 0;
   const scrubHeadroom = scrubbing ? headroomToTarget(loan, scrub) : 0;
 
   return (
@@ -228,10 +228,10 @@ export function RiskGauge({
               <Text
                 style={[styles.scrubLabel, { color: colors.mutedForeground }]}
               >
-                {loan.collateral.asset} at
+                liq at
               </Text>
               <Text style={[styles.scrubValue, { color: colors.foreground }]}>
-                {scrubPrice > 0 ? fmtMoney(scrubPrice, currency) : "—"}
+                {scrubLiqPrice > 0 ? fmtMoney(scrubLiqPrice, currency) : "—"}
               </Text>
             </View>
             <View style={styles.scrubRow}>

@@ -1,0 +1,53 @@
+name: TestFlight Build
+
+# Native iOS release: builds the production profile on EAS and auto-submits to
+# TestFlight. Required for widget extension changes, native module updates, and
+# any other change that OTA cannot ship.
+#
+# REQUIRED: EXPO_TOKEN secret (same as publish-update.yml).
+#
+# Trigger manually from GitHub Actions, or push to main when native paths change.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'artifacts/ledger-mobile/app.json'
+      - 'artifacts/ledger-mobile/eas.json'
+      - 'artifacts/ledger-mobile/targets/**'
+      - 'artifacts/ledger-mobile/plugins/**'
+      - 'artifacts/ledger-mobile/package.json'
+      - '.github/workflows/testflight-build.yml'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.18.3
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Set up EAS
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: 20.1.0
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Build and submit to TestFlight
+        working-directory: artifacts/ledger-mobile
+        env:
+          EXPO_USE_METRO_WORKSPACE_ROOT: '1'
+          EXPO_PUBLIC_DOMAIN: binance-loan-tracker-backend.azurewebsites.net
+        run: eas build -p ios --profile production --non-interactive --auto-submit --no-wait

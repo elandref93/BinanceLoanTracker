@@ -30,8 +30,10 @@ import {
   type ServerLtvSnapshot,
 } from "@/lib/serverCredentials";
 import {
+  buildMarketQuotes,
   buildSnapshot,
   weightedApr,
+  widgetMarketPairs,
   writeWidgetSnapshot,
 } from "@/lib/widgetSnapshot";
 import { AccountChip } from "@/components/AccountChip";
@@ -168,9 +170,13 @@ export default function DashboardScreen() {
     () => pairsForAssets(all.map((l) => l.asset), currency),
     [all, currency],
   );
+  const widgetPairs = useMemo(() => {
+    const set = new Set([...borrowPairs, ...widgetMarketPairs(all)]);
+    return Array.from(set);
+  }, [borrowPairs, all]);
   const loanTickersQ = useGetLunoTickers(
-    { pairs: borrowPairs.join(",") },
-    { query: { enabled: borrowPairs.length > 0 } as never },
+    { pairs: widgetPairs.join(",") },
+    { query: { enabled: widgetPairs.length > 0 } as never },
   );
   const loanTickerMap = useMemo(() => {
     const m = new Map<string, number>();
@@ -306,10 +312,11 @@ export default function DashboardScreen() {
         weightedAprPct: weightedApr(ls),
       };
     });
+    const markets = buildMarketQuotes(freshLoans, loanTickerMap);
     void writeWidgetSnapshot(
-      buildSnapshot(freshLoans, targetLtv, accountBreakdown),
+      buildSnapshot(freshLoans, targetLtv, accountBreakdown, markets),
     );
-  }, [freshLoans, targetLtv, containers, targetForContainer]);
+  }, [freshLoans, targetLtv, containers, targetForContainer, loanTickerMap]);
 
   const refreshing = accountsQ.isFetching || loansQ.isFetching;
   const wasRefreshing = useRef(false);

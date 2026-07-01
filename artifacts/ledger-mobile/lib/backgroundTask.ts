@@ -12,10 +12,10 @@ import {
 import { toBase64 } from "@/lib/encoding";
 import { recordLtvSample } from "@/lib/ltvHistory";
 import { recordLoanSnapshots } from "@/lib/loanSnapshots";
+import { publishWidgetSnapshot } from "@/lib/widgetRefresh";
 import {
   buildSnapshot,
   weightedApr,
-  writeWidgetSnapshot,
   type AccountBreakdown,
 } from "@/lib/widgetSnapshot";
 import { DEFAULT_TARGET_LTV } from "@/utils/risk";
@@ -86,7 +86,10 @@ async function runRefresh(): Promise<BackgroundFetch.BackgroundFetchResult> {
     if (loans.length === 0) {
       // No open loans: still refresh the widget so it zeroes out instead of
       // showing stale debt/LTV from before the loans were closed.
-      await writeWidgetSnapshot(buildSnapshot([], DEFAULT_TARGET_LTV, []));
+      await publishWidgetSnapshot([], DEFAULT_TARGET_LTV, [], {
+        domain,
+        sessionToken: session.sessionToken,
+      });
       return BackgroundFetch.BackgroundFetchResult.NewData;
     }
     const totalDebt = loans.reduce((s, l) => s + l.debtUsd, 0);
@@ -131,8 +134,14 @@ async function runRefresh(): Promise<BackgroundFetch.BackgroundFetchResult> {
     // fields present here. Cast through unknown to placate the structural
     // check — bg-fetch keeps the JS bundle as cold-start small as possible.
     const fullLoans = loans as unknown as Parameters<typeof buildSnapshot>[0];
-    await writeWidgetSnapshot(
-      buildSnapshot(fullLoans, DEFAULT_TARGET_LTV, accountBreakdown),
+    await publishWidgetSnapshot(
+      fullLoans,
+      DEFAULT_TARGET_LTV,
+      accountBreakdown,
+      {
+        domain,
+        sessionToken: session.sessionToken,
+      },
     );
     await checkAndNotifyLoans(fullLoans);
     return BackgroundFetch.BackgroundFetchResult.NewData;

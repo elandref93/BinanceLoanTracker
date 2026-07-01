@@ -3,6 +3,7 @@ import { ExtensionStorage } from "@bacons/apple-targets";
 
 import type { Loan } from "@workspace/api-client-react";
 import { reportError } from "@/lib/crashReporting";
+import { displayAsset } from "@/lib/lunoPricing";
 import { DEFAULT_TARGET_LTV, LIQ_LTV, priceDropPctTo } from "@/utils/risk";
 
 const APP_GROUP = "group.com.ledger.shared";
@@ -21,6 +22,16 @@ export type AccountBreakdown = {
   weightedAprPct: number | null;
 };
 
+/** Live Luno quotes written alongside loan health for widget market rows. */
+export type MarketQuotes = {
+  btcUsd: number | null;
+  btcZar: number | null;
+  /** Dominant borrowed asset by USD debt (e.g. USDC). */
+  lendAsset: string | null;
+  /** Luno {asset}ZAR last trade for the lend asset. */
+  lendAssetZar: number | null;
+};
+
 export type LoanSnapshot = {
   aggregateLtv: number;
   totalDebtUsd: number;
@@ -34,6 +45,7 @@ export type LoanSnapshot = {
   priceDropPctToLiq: number | null;
   targetLtv: number;
   accounts: AccountBreakdown[];
+  markets: MarketQuotes | null;
   updatedAt: string;
 };
 
@@ -46,10 +58,76 @@ export function weightedApr(
   return loans.reduce((s, l) => s + l.apr * l.debtUsd, 0) / debt;
 }
 
+/** Borrowed asset with the largest USD debt across open loans. */
+export function dominantBorrowAsset(
+  loans: { asset: string; debtUsd: number }[],
+): string | null {
+  if (loans.length === 0) return null;
+  const byDebt = new Map<string, number>();
+  for (const l of loans) {
+    byDebt.set(l.asset, (byDebt.get(l.asset) ?? 0) + l.debtUsd);
+  }
+  let best = "";
+  let bestDebt = 0;
+  for (const [asset, debt] of byDebt) {
+    if (debt > bestDebt) {
+      best = asset;
+      bestDebt = debt;
+    }
+  }
+  return best || null;
+}
+
+/** Luno pairs the widget snapshot needs (BTC USD/ZAR + dominant lend asset ZAR). */
+export function widgetMarketPairs(
+  loans: { asset: string }[],
+): string[] {
+  const set = new Set<string>(["XBTUSDC", "XBTZAR"]);
+  const lend = dominantBorrowAsset(
+    loans as { asset: string; debtUsd: number }[],
+  );
+  if (lend) {
+    const a = lend.toUpperCase();
+    if (a === "USDC" || a === "USDT") {
+      set.add("USDCZAR");
+    } else {
+      set.add(`${a}ZAR`);
+    }
+  }
+  return Array.from(set);
+}
+
+export function buildMarketQuotes(
+  loans: { asset: string; debtUsd: number }[],
+  tickers: Map<string, number> | Record<string, number>,
+): MarketQuotes {
+  const map =
+    tickers instanceof Map
+      ? tickers
+      : new Map(Object.entries(tickers as Record<string, number>));
+  const lendAsset = dominantBorrowAsset(loans);
+  let lendAssetZar: number | null = null;
+  if (lendAsset) {
+    const a = lendAsset.toUpperCase();
+    if (a === "USDC" || a === "USDT") {
+      lendAssetZar = map.get("USDCZAR") ?? map.get(`${a}ZAR`) ?? null;
+    } else {
+      lendAssetZar = map.get(`${a}ZAR`) ?? null;
+    }
+  }
+  return {
+    btcUsd: map.get("XBTUSDC") ?? null,
+    btcZar: map.get("XBTZAR") ?? null,
+    lendAsset: lendAsset ? displayAsset(lendAsset) : null,
+    lendAssetZar,
+  };
+}
+
 export function buildSnapshot(
   loans: Loan[],
   targetLtv: number = DEFAULT_TARGET_LTV,
   accounts: AccountBreakdown[] = [],
+  markets: MarketQuotes | null = null,
 ): LoanSnapshot {
   const totalDebt = loans.reduce((s, l) => s + l.debtUsd, 0);
   const totalCol = loans.reduce((s, l) => s + l.collateral.valueUsd, 0);
@@ -67,6 +145,7 @@ export function buildSnapshot(
     priceDropPctToLiq: worst ? priceDropPctTo(worst, LIQ_LTV) : null,
     targetLtv,
     accounts,
+    markets,
     updatedAt: new Date().toISOString(),
   };
 }
@@ -76,10 +155,6 @@ export function buildSnapshot(
  * (see `targets/widget/`) can read it via UserDefaults(suiteName:), then asks
  * WidgetCenter to reload so the change shows up immediately rather than on the
  * widget's own ~15-minute timeline.
- *
- * Uses `ExtensionStorage` from `@bacons/apple-targets` (the same native module
- * that backs the widget targets). It is a safe no-op in Expo Go / on Android,
- * where the native module isn't present.
  */
 export async function writeWidgetSnapshot(
   snapshot: LoanSnapshot,
@@ -88,12 +163,8 @@ export async function writeWidgetSnapshot(
   try {
     const storage = new ExtensionStorage(APP_GROUP);
     storage.set(KEY, JSON.stringify(snapshot));
-    // Force the home-screen, lock-screen and watch complications to refetch
-    // the snapshot now instead of waiting for the next timeline tick.
     ExtensionStorage.reloadWidget();
   } catch (err) {
-    // Don't crash the JS thread — widgets keep their last value — but report so
-    // a broken App Group entitlement is visible instead of a stuck widget.
     reportError(err, { op: "widgetSnapshot.write" });
   }
 }

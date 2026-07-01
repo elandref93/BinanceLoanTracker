@@ -35,9 +35,9 @@ struct LockWidgetView: View {
             Circle()
                 .stroke(Color.ledgerMuted.opacity(0.4), lineWidth: 3)
             Circle()
-                .trim(from: 0, to: min(snapshot.aggregateLtv / 78.0, 1.0))
+                .trim(from: 0, to: min(snapshot.aggregateLtv / kLiqLtv, 1.0))
                 .stroke(
-                    snapshot.status() == .danger ? Color.white : Color.white,
+                    snapshot.status().color,
                     style: StrokeStyle(lineWidth: 3, lineCap: .round)
                 )
                 .rotationEffect(.degrees(-90))

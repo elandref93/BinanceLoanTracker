@@ -7,6 +7,18 @@ import WidgetKit
 let kAppGroup = "group.com.ledger.shared"
 let kSnapshotKey = "ledger.snapshot.v1"
 
+/// Binance liquidation LTV — keep in sync with `utils/risk.ts`.
+let kLiqLtv = 91.0
+/// Margin-call tier — keep in sync with `utils/risk.ts`.
+let kWarningLtv = 85.0
+
+struct MarketQuotes: Codable {
+    let btcUsd: Double?
+    let btcZar: Double?
+    let lendAsset: String?
+    let lendAssetZar: Double?
+}
+
 /// Per-account (Personal / Trust container) rollup shown in the large widget.
 struct AccountSnapshot: Codable, Identifiable {
     let label: String
@@ -16,42 +28,37 @@ struct AccountSnapshot: Codable, Identifiable {
     let collateralUsd: Double
     let targetLtv: Double
     let loanCount: Int
-    let weightedAprPct: Double?   // debt-weighted APR; nil if no debt
+    let weightedAprPct: Double?
 
     var id: String { label }
 
     func status() -> RiskStatus {
-        if ltv >= 72 { return .danger }
-        if ltv >= targetLtv { return .warn }
-        return .ok
+        RiskStatus.from(ltv: ltv, target: targetLtv)
     }
 }
 
 /// Snapshot the JS app writes into shared UserDefaults whenever loans refresh.
 struct LoanSnapshot: Codable {
-    let aggregateLtv: Double         // 0..100
+    let aggregateLtv: Double
     let totalDebtUsd: Double
     let totalCollateralUsd: Double
-    let netEquityUsd: Double?        // collateral − debt; nil on pre-expansion snapshots
-    let loanCount: Int?              // number of open loans
-    let weightedAprPct: Double?      // debt-weighted APR across all loans; nil if no debt
-    let closestAsset: String?        // collateral symbol of the worst loan
-    let closestLtv: Double?          // its LTV
-    let priceDropPctToLiq: Double?   // % drop in collateral price until 91% (Binance liquidation)
-    let targetLtv: Double?           // user-configured headroom target; nil = use default
-    let accounts: [AccountSnapshot]? // per-container breakdown; nil on old snapshots
+    let netEquityUsd: Double?
+    let loanCount: Int?
+    let weightedAprPct: Double?
+    let closestAsset: String?
+    let closestLtv: Double?
+    let priceDropPctToLiq: Double?
+    let targetLtv: Double?
+    let accounts: [AccountSnapshot]?
+    let markets: MarketQuotes?
     let updatedAt: Date
 
-    /// User-configured target LTV with a sane fallback for snapshots written
-    /// before the field existed.
     var effectiveTargetLtv: Double {
-        return targetLtv ?? 65
+        targetLtv ?? 65
     }
 
-    /// Collateral minus debt, falling back to a computed value for snapshots
-    /// written before the field existed.
     var equityUsd: Double {
-        return netEquityUsd ?? (totalCollateralUsd - totalDebtUsd)
+        netEquityUsd ?? (totalCollateralUsd - totalDebtUsd)
     }
 
     static let placeholder = LoanSnapshot(
@@ -73,6 +80,12 @@ struct LoanSnapshot: Codable {
                             debtUsd: 9_000, collateralUsd: 13_300, targetLtv: 65,
                             loanCount: 1, weightedAprPct: 8.9),
         ],
+        markets: MarketQuotes(
+            btcUsd: 97_420,
+            btcZar: 1_802_000,
+            lendAsset: "USDC",
+            lendAssetZar: 18.42
+        ),
         updatedAt: Date()
     )
 
@@ -88,45 +101,31 @@ struct LoanSnapshot: Codable {
     }
 
     func status() -> RiskStatus {
-        if aggregateLtv >= 72 { return .danger }
-        if aggregateLtv >= effectiveTargetLtv { return .warn }
-        return .ok
+        RiskStatus.from(ltv: aggregateLtv, target: effectiveTargetLtv)
     }
 
-    /// Seconds since the iPhone app last wrote a snapshot.
     func ageSeconds() -> TimeInterval {
-        return max(0, Date().timeIntervalSince(updatedAt))
+        max(0, Date().timeIntervalSince(updatedAt))
     }
 
-    /// Background-fetch on iOS targets ~15 min but the OS can stretch it.
-    /// Anything over 60 min is worth surfacing as "stale" in the widget so a
-    /// user doesn't act on a price that's an hour old.
     func isStale() -> Bool {
-        return ageSeconds() > 60 * 60
+        ageSeconds() > 60 * 60
     }
 
-    /// Compact "Updated 12m ago" / "Updated 2h ago" string for the widget.
     func stalenessLabel() -> String {
         let s = ageSeconds()
         if s < 60 { return "Updated just now" }
-        if s < 60 * 60 {
-            return "Updated \(Int(s / 60))m ago"
-        }
-        if s < 60 * 60 * 24 {
-            return "Updated \(Int(s / 3600))h ago"
-        }
+        if s < 60 * 60 { return "Updated \(Int(s / 60))m ago" }
+        if s < 60 * 60 * 24 { return "Updated \(Int(s / 3600))h ago" }
         return "Updated \(Int(s / 86400))d ago"
     }
 }
 
-/// Formats a debt-weighted APR for the widget, e.g. "8.4%" or "—" when there's
-/// no debt to charge interest on.
 func aprLabel(_ apr: Double?) -> String {
     guard let apr = apr else { return "—" }
     return String(format: "%.1f%%", apr)
 }
 
-/// Compact USD formatting for the cramped widget canvas: $9.5K, $1.2M, $940.
 func compactUsd(_ value: Double) -> String {
     let v = abs(value)
     let sign = value < 0 ? "-" : ""
@@ -139,14 +138,42 @@ func compactUsd(_ value: Double) -> String {
     return String(format: "%@$%.0f", sign, v)
 }
 
+/// Full USD price for market rows (CMC-style hero numbers).
+func formatUsd(_ value: Double?) -> String {
+    guard let value = value, value > 0 else { return "—" }
+    let formatter = NumberFormatter()
+    formatter.numberStyle = .decimal
+    formatter.groupingSeparator = " "
+    formatter.maximumFractionDigits = value >= 1000 ? 0 : 2
+    formatter.minimumFractionDigits = value >= 1000 ? 0 : 2
+    return "$" + (formatter.string(from: NSNumber(value: value)) ?? String(format: "%.2f", value))
+}
+
+/// Full ZAR price for Luno lend-asset rows.
+func formatZar(_ value: Double?) -> String {
+    guard let value = value, value > 0 else { return "—" }
+    let formatter = NumberFormatter()
+    formatter.numberStyle = .decimal
+    formatter.groupingSeparator = " "
+    formatter.maximumFractionDigits = value >= 1000 ? 0 : 2
+    formatter.minimumFractionDigits = value >= 1000 ? 0 : 2
+    return "R" + (formatter.string(from: NSNumber(value: value)) ?? String(format: "%.2f", value))
+}
+
 enum RiskStatus {
     case ok, warn, danger
 
+    static func from(ltv: Double, target: Double) -> RiskStatus {
+        if ltv >= kWarningLtv { return .danger }
+        if ltv >= target { return .warn }
+        return .ok
+    }
+
     var color: Color {
         switch self {
-        case .ok: return Color(red: 0.12, green: 0.71, blue: 0.65)        // #1FB6A6
-        case .warn: return Color(red: 0.96, green: 0.65, blue: 0.14)      // #F5A524
-        case .danger: return Color(red: 1.00, green: 0.30, blue: 0.43)    // #FF4D6D
+        case .ok: return Color(red: 0.12, green: 0.71, blue: 0.65)
+        case .warn: return Color(red: 0.96, green: 0.65, blue: 0.14)
+        case .danger: return Color(red: 1.00, green: 0.30, blue: 0.43)
         }
     }
 
@@ -160,14 +187,14 @@ enum RiskStatus {
 }
 
 extension Color {
-    static let ledgerBg = Color(red: 0.024, green: 0.035, blue: 0.047)    // #06090C
-    static let ledgerCard = Color(red: 0.055, green: 0.078, blue: 0.102)  // #0E141A
-    static let ledgerFg = Color(red: 0.902, green: 0.945, blue: 0.969)    // #E6F1F7
-    static let ledgerMuted = Color(red: 0.431, green: 0.510, blue: 0.565) // #6E8290
-    static let ledgerTint = Color(red: 0.0, green: 0.941, blue: 1.0)      // #00F0FF
+    static let ledgerBg = Color(red: 0.024, green: 0.035, blue: 0.047)
+    static let ledgerCard = Color(red: 0.055, green: 0.078, blue: 0.102)
+    static let ledgerFg = Color(red: 0.902, green: 0.945, blue: 0.969)
+    static let ledgerMuted = Color(red: 0.431, green: 0.510, blue: 0.565)
+    static let ledgerTint = Color(red: 0.0, green: 0.941, blue: 1.0)
+    static let ledgerDivider = Color.white.opacity(0.08)
+    static let ledgerOk = Color(red: 0.12, green: 0.71, blue: 0.65)
 }
-
-// MARK: - Timeline plumbing
 
 struct SnapshotEntry: TimelineEntry {
     let date: Date
@@ -185,7 +212,6 @@ struct SnapshotProvider: TimelineProvider {
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<SnapshotEntry>) -> Void) {
         let entry = SnapshotEntry(date: Date(), snapshot: LoanSnapshot.load())
-        // Refresh every 15 minutes; the JS app also pokes WidgetCenter on refresh.
         let next = Calendar.current.date(byAdding: .minute, value: 15, to: Date()) ?? Date()
         completion(Timeline(entries: [entry], policy: .after(next)))
     }

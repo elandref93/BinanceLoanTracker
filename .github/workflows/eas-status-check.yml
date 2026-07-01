@@ -1,0 +1,50 @@
+name: EAS Build Status Check
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_id:
+        description: EAS build ID to inspect
+        required: false
+        default: 8637923f-d31a-4f92-89c9-ea7525389aad
+      submission_id:
+        description: EAS submission ID to inspect
+        required: false
+        default: 1bd3c208-86b4-4336-a4b6-8d8a072b52f7
+
+jobs:
+  status:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.18.3
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Set up EAS
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: 20.1.0
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Recent iOS builds
+        working-directory: artifacts/ledger-mobile
+        run: eas build:list --platform ios --limit 5 --non-interactive
+
+      - name: Build details
+        working-directory: artifacts/ledger-mobile
+        run: eas build:view ${{ inputs.build_id }} --non-interactive
+
+      - name: Submission details
+        working-directory: artifacts/ledger-mobile
+        run: eas submit:view ${{ inputs.submission_id }} --non-interactive || true

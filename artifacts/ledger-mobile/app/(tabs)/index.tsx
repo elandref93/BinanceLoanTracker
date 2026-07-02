@@ -48,7 +48,7 @@ import { Tile } from "@/components/Tile";
 import { useCurrency } from "@/context/CurrencyContext";
 import { useRiskSettings } from "@/context/RiskSettingsContext";
 import { useColors } from "@/hooks/useColors";
-import { fmtMoney, fmtPct } from "@/utils/format";
+import { fmtDisplayMoney, fmtMoney, fmtPct } from "@/utils/format";
 import {
   headroomToTarget,
   LIQ_LTV,
@@ -1076,7 +1076,7 @@ function LunoReadyToDeployTile({
         >
           {btc.toFixed(8)} BTC
           {fiat > 0
-            ? `  ·  ≈ ${fmtMoney(fiat, currency, { whole: true })}`
+            ? `  ·  ≈ ${fmtDisplayMoney(fiat, currency, { whole: true })}`
             : ""}
         </Text>
       </View>

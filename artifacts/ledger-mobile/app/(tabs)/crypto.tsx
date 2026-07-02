@@ -30,7 +30,7 @@ import {
   displayAsset,
 } from "@/lib/lunoPricing";
 import { recordLunoSample } from "@/lib/lunoHistory";
-import { fmtMoney } from "@/utils/format";
+import { fmtDisplayMoney, fmtMoney } from "@/utils/format";
 
 import {
   useGetLunoTickers,
@@ -545,7 +545,7 @@ export default function CryptoScreen() {
               </Text>
               {btcReadyFiat > 0 ? (
                 <Text style={[styles.tileSub, { color: colors.mutedForeground }]}>
-                  ≈ {fmtMoney(btcReadyFiat, currency)}
+                  ≈ {fmtDisplayMoney(btcReadyFiat, currency)}
                 </Text>
               ) : null}
             </View>
@@ -563,7 +563,7 @@ export default function CryptoScreen() {
                 TOTAL · LUNO
               </Text>
               <Text style={[styles.tileValue, { color: colors.foreground }]}>
-                {fmtMoney(totalFiat, currency)}
+                {fmtDisplayMoney(totalFiat, currency)}
               </Text>
               {/* "Cash" subtitle: pull the ZAR wallet (Luno's only native
                   cash asset) and quote it in the user's display currency
@@ -571,7 +571,7 @@ export default function CryptoScreen() {
                   always agree. */}
               {zarCashFiat > 0 ? (
                 <Text style={[styles.tileSub, { color: colors.mutedForeground }]}>
-                  incl. {fmtMoney(zarCashFiat, currency)} cash
+                  incl. {fmtDisplayMoney(zarCashFiat, currency)} cash
                 </Text>
               ) : null}
             </View>
@@ -895,7 +895,9 @@ function fmtDelta(
   const diff = last - first;
   const pct = (diff / first) * 100;
   const sign = diff >= 0 ? "+" : "";
-  return `${sign}${fmtMoney(diff, currency, { compact: true })}  ·  ${sign}${pct.toFixed(2)}%`;
+  // `first`/`last` are portfolio totals already stored in the display
+  // currency (see lunoHistory.ts), so format them without re-converting.
+  return `${sign}${fmtDisplayMoney(diff, currency)}  ·  ${sign}${pct.toFixed(2)}%`;
 }
 
 const styles = StyleSheet.create({

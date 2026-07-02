@@ -78,3 +78,24 @@ export function fmtMoney(
   const dp = opts.whole ? 0 : 2;
   return `R${groupWithSpaces(zar, dp)}`;
 }
+
+/**
+ * Format a value that is ALREADY expressed in the active display currency —
+ * e.g. the output of `quoteWalletInFiat`, which prices wallet balances
+ * directly in the user's currency using Luno's currency-specific pairs.
+ *
+ * Unlike `fmtMoney` (which takes a USD figure and applies the USD→ZAR rate),
+ * this only attaches the currency symbol and groups digits. Passing a
+ * display-currency value through `fmtMoney` double-converts it (≈18×) for ZAR
+ * users, so use this helper for anything already denominated in `currency`.
+ */
+export function fmtDisplayMoney(
+  value: number,
+  currency: "USD" | "ZAR",
+  opts: { whole?: boolean } = {},
+): string {
+  if (!isFiniteNum(value)) return "—";
+  const dp = opts.whole ? 0 : 2;
+  const symbol = currency === "USD" ? "$" : "R";
+  return `${symbol}${groupWithSpaces(value, dp)}`;
+}

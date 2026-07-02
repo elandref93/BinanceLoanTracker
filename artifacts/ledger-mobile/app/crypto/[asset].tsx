@@ -26,7 +26,7 @@ import {
   pairsForAssets,
   quoteWalletInFiat,
 } from "@/lib/lunoPricing";
-import { fmtMoney } from "@/utils/format";
+import { fmtDisplayMoney, fmtMoney } from "@/utils/format";
 
 import {
   useGetLunoTickers,
@@ -267,7 +267,7 @@ export default function AssetDetailScreen() {
                 <Text
                   style={[styles.heroFiat, { color: colors.mutedForeground }]}
                 >
-                  ≈ {fmtMoney(fiatValue, currency)}
+                  ≈ {fmtDisplayMoney(fiatValue, currency)}
                 </Text>
               ) : null}
             </View>
@@ -279,7 +279,7 @@ export default function AssetDetailScreen() {
               {unitPrice > 0 ? (
                 <Tile
                   label={`PRICE · 1 ${symbol}`}
-                  value={fmtMoney(unitPrice, currency)}
+                  value={fmtDisplayMoney(unitPrice, currency)}
                 />
               ) : null}
               {transactions.length > 0 ? (

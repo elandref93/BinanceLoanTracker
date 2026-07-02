@@ -5,7 +5,7 @@ import { ExchangeLogo } from "@/components/ExchangeLogo";
 import { useColors } from "@/hooks/useColors";
 import { useCurrency } from "@/context/CurrencyContext";
 import { useRiskSettings } from "@/context/RiskSettingsContext";
-import { fmtMoney, fmtPct, fmtQty } from "@/utils/format";
+import { fmtDisplayMoney, fmtMoney, fmtPct, fmtQty } from "@/utils/format";
 import { quoteWalletInFiat } from "@/lib/lunoPricing";
 import { headroomToTarget, statusFromLtv } from "@/utils/risk";
 import type { Loan } from "@workspace/api-client-react";
@@ -42,13 +42,20 @@ export function LoanRow({
         ? colors.warn
         : colors.danger;
   const headroom = headroomToTarget(loan, targetLtv);
-  // Current market value of the borrowed asset at Luno's live rate, falling
-  // back to the server's USD valuation when no ticker is available.
+  // Current market value of the borrowed asset at Luno's live rate. This is
+  // already denominated in the display currency (quoteWalletInFiat prices
+  // against Luno's currency-specific pairs), so it must be formatted with
+  // fmtDisplayMoney — NOT fmtMoney, which would re-apply the USD→ZAR rate.
   const borrowedValue =
     priceTickers != null
       ? quoteWalletInFiat(loan.asset, loan.debt, priceTickers, currency)
       : 0;
-  const borrowedValueFiat = borrowedValue > 0 ? borrowedValue : loan.debtUsd;
+  // Fall back to the server's USD valuation (converted via fmtMoney) when no
+  // live quote is available.
+  const borrowedValueLabel =
+    borrowedValue > 0
+      ? fmtDisplayMoney(borrowedValue, currency, { whole: true })
+      : fmtMoney(loan.debtUsd, currency, { whole: true });
   return (
     <Pressable
       onPress={onPress}
@@ -83,7 +90,7 @@ export function LoanRow({
               {fmtQty(loan.debt, loan.asset)}
             </Text>
             <Text style={[styles.borrowedValue, { color: colors.mutedForeground }]}>
-              ≈ {fmtMoney(borrowedValueFiat, currency, { whole: true })}
+              ≈ {borrowedValueLabel}
             </Text>
           </View>
         </View>

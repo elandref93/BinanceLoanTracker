@@ -90,6 +90,7 @@ export default function DashboardScreen() {
   // Selected loan for the iPad master–detail pane (null = fall back to the
   // closest-to-liquidation loan).
   const [selectedLoanId, setSelectedLoanId] = useState<string | null>(null);
+  const [gaugeScrubActive, setGaugeScrubActive] = useState(false);
   const { width: windowWidth } = useWindowDimensions();
   const masterDetail = windowWidth >= MASTER_DETAIL_MIN_WIDTH;
 
@@ -245,6 +246,12 @@ export default function DashboardScreen() {
       : closest?.id ?? loans[0]?.id ?? null
     : null;
 
+  // If the detail pane switches loans, release any scroll lock left over from
+  // a ring scrub on the previous loan.
+  useEffect(() => {
+    setGaugeScrubActive(false);
+  }, [effectiveSelectedId]);
+
   // Aggregate signed distance to target across all loans. With the
   // corrected `headroomToTarget` semantics, POSITIVE values are real
   // headroom and NEGATIVE values are shortfall. Surface the worse of
@@ -377,6 +384,8 @@ export default function DashboardScreen() {
           paddingHorizontal: 16,
           gap: 16,
         }}
+        scrollEnabled={!gaugeScrubActive}
+        bounces={!gaugeScrubActive}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -678,7 +687,11 @@ export default function DashboardScreen() {
 
             <View style={styles.detailPane}>
               {effectiveSelectedId ? (
-                <LoanDetailView loanId={effectiveSelectedId} embedded />
+                <LoanDetailView
+                  loanId={effectiveSelectedId}
+                  embedded
+                  onGaugeScrubActiveChange={setGaugeScrubActive}
+                />
               ) : (
                 <View
                   style={[

@@ -430,6 +430,7 @@ function fmtDate(d: Date): string {
 export function LoanDetailView({
   loanId,
   embedded = false,
+  onGaugeScrubActiveChange,
 }: {
   loanId: string;
   /**
@@ -438,6 +439,8 @@ export function LoanDetailView({
    * e.g. the iPad master–detail dashboard pane.
    */
   embedded?: boolean;
+  /** Notified when the LTV ring scrub starts/stops (for parent scroll lock). */
+  onGaugeScrubActiveChange?: (active: boolean) => void;
 }) {
   const colors = useColors();
   const { targetForAccountId, containerForAccountId } = useRiskSettings();
@@ -449,6 +452,11 @@ export function LoanDetailView({
   const interestQ = useListInterest();
 
   const [rateWindow, setRateWindow] = useState<30 | 90>(30);
+  const [gaugeScrubActive, setGaugeScrubActive] = useState(false);
+  const handleGaugeScrubActive = (active: boolean) => {
+    setGaugeScrubActive(active);
+    onGaugeScrubActiveChange?.(active);
+  };
   const rateHistQ = useGetRateHistory(
     { loanId: id ?? "", days: rateWindow },
     { query: { enabled: !!id } as never },
@@ -855,6 +863,7 @@ export function LoanDetailView({
           target={targetLtv}
           loan={loan}
           currency={currency}
+          onScrubActiveChange={handleGaugeScrubActive}
         />
       </View>
 
@@ -1767,6 +1776,8 @@ export function LoanDetailView({
     <ScrollView
       style={{ backgroundColor: colors.background }}
       contentContainerStyle={styles.wrap}
+      scrollEnabled={!gaugeScrubActive}
+      bounces={!gaugeScrubActive}
     >
       <Stack.Screen
         options={{ title: `${loan.collateral.asset} · ${account?.name ?? ""}` }}

@@ -36,6 +36,12 @@ interface Props {
   loan?: Loan;
   /** Display currency for the scrubbed price / collateral readouts. */
   currency?: "USD" | "ZAR";
+  /**
+   * Fired when the user starts or stops scrubbing the ring. Parent scroll
+   * containers should disable scrolling while this is true so vertical drags
+   * don't fight the dial.
+   */
+  onScrubActiveChange?: (active: boolean) => void;
 }
 
 /**
@@ -60,6 +66,14 @@ export function ltvFromTouch(
   const inner = r - stroke - 14;
   const outer = r + stroke + 14;
   if (dist < inner || dist > outer) return null;
+  return ltvFromTouchAngle(x, y, size);
+}
+
+/** Map a touch point to LTV by angle only — used while an active scrub is in progress. */
+export function ltvFromTouchAngle(x: number, y: number, size: number): number {
+  const center = size / 2;
+  const dx = x - center;
+  const dy = y - center;
   // atan2 gives 0 at east, +clockwise (screen y points down). Shift so 0 sits
   // at the 12-o'clock start of the ring, then normalise to [0, 1).
   const deg = (Math.atan2(dy, dx) * 180) / Math.PI;
@@ -74,6 +88,7 @@ export function RiskGauge({
   target,
   loan,
   currency = "USD",
+  onScrubActiveChange,
 }: Props) {
   const colors = useColors();
   const defaultTarget = useTargetLtv();
@@ -91,6 +106,9 @@ export function RiskGauge({
   const [scrub, setScrub] = useState<number | null>(null);
   const interactive = !!loan;
   const lastHapticLtv = useRef<number | null>(null);
+  const dragging = useRef(false);
+  const onScrubActiveChangeRef = useRef(onScrubActiveChange);
+  onScrubActiveChangeRef.current = onScrubActiveChange;
 
   const displayLtv = scrub ?? ltv;
   const status = statusFromLtv(displayLtv, targetLtv);
@@ -108,9 +126,10 @@ export function RiskGauge({
 
   const panResponder = useMemo(() => {
     if (!interactive) return null;
-    const update = (e: GestureResponderEvent) => {
-      const { locationX, locationY } = e.nativeEvent;
-      const next = ltvFromTouch(locationX, locationY, size, stroke);
+    const applyScrub = (x: number, y: number, angleOnly: boolean) => {
+      const next = angleOnly
+        ? ltvFromTouchAngle(x, y, size)
+        : ltvFromTouch(x, y, size, stroke);
       if (next == null) return;
       setScrub(next);
       // Tick haptic on each whole-percent step so the dial feels detented.
@@ -120,6 +139,10 @@ export function RiskGauge({
         haptic.tap();
       }
     };
+    const update = (e: GestureResponderEvent, angleOnly = false) => {
+      const { locationX, locationY } = e.nativeEvent;
+      applyScrub(locationX, locationY, angleOnly);
+    };
     const within = (e: GestureResponderEvent) =>
       ltvFromTouch(
         e.nativeEvent.locationX,
@@ -127,23 +150,32 @@ export function RiskGauge({
         size,
         stroke,
       ) != null;
+    const endScrub = () => {
+      if (!dragging.current) return;
+      dragging.current = false;
+      setScrub(null);
+      lastHapticLtv.current = null;
+      onScrubActiveChangeRef.current?.(false);
+    };
     return PanResponder.create({
       onStartShouldSetPanResponder: within,
-      onMoveShouldSetPanResponder: within,
-      onPanResponderGrant: update,
-      onPanResponderMove: update,
-      onPanResponderRelease: () => {
-        setScrub(null);
-        lastHapticLtv.current = null;
+      onMoveShouldSetPanResponder: (e) => dragging.current || within(e),
+      // Win the responder race against an enclosing ScrollView when the
+      // touch starts on the ring band.
+      onStartShouldSetPanResponderCapture: within,
+      onMoveShouldSetPanResponderCapture: () => dragging.current,
+      onPanResponderGrant: (e) => {
+        dragging.current = true;
+        onScrubActiveChangeRef.current?.(true);
+        update(e);
       },
-      onPanResponderTerminate: () => {
-        setScrub(null);
-        lastHapticLtv.current = null;
-      },
+      onPanResponderMove: (e) => update(e, dragging.current),
+      onPanResponderRelease: endScrub,
+      onPanResponderTerminate: endScrub,
       // Don't let an enclosing ScrollView steal the gesture mid-drag.
       onPanResponderTerminationRequest: () => false,
     });
-  }, [interactive, size]);
+  }, [interactive, size, stroke]);
 
   const Tick = ({
     frac,

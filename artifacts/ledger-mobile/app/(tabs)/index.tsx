@@ -15,6 +15,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LoanDetailView } from "@/app/loan/[id]";
 
 import { checkAndNotifyLoans } from "@/lib/alerts";
+import { readAllLoanAnnotations } from "@/lib/loanAnnotations";
+import { checkAndNotifyRepaymentRates } from "@/lib/repaymentRateAlerts";
 import { haptic } from "@/lib/haptics";
 import {
   cacheAgeLabel,
@@ -309,6 +311,15 @@ export default function DashboardScreen() {
       })),
     );
   }, [freshLoans, aggLtv]);
+
+  // USDC/ZAR conversion-rate alerts: needs fresh loans AND a live Luno quote.
+  useEffect(() => {
+    if (!freshLoans || freshLoans.length === 0) return;
+    if (loanTickerMap.size === 0) return;
+    void readAllLoanAnnotations().then((annotations) =>
+      checkAndNotifyRepaymentRates(freshLoans, loanTickerMap, annotations),
+    );
+  }, [freshLoans, loanTickerMap]);
 
   // Widget snapshot: write on EVERY fresh network response, including an empty
   // one (all loans closed) so the widget zeroes out instead of showing stale

@@ -70,6 +70,11 @@ import {
   type CollateralRow,
   type ScheduleRow,
 } from "@/lib/loanRepaymentPlan";
+import {
+  documentedConversionRate,
+  isStableBorrowAsset,
+  lunoZarRateForAsset,
+} from "@/lib/repaymentRateAlerts";
 import { pairsForAssets, quoteWalletInFiat } from "@/lib/lunoPricing";
 import {
   getLoanAnnotation,
@@ -549,15 +554,23 @@ export function LoanDetailView({
   // assumes the borrower keeps buying Bitcoin on Luno and adding it to the
   // collateral. Quoted the same currency-aware way as the dashboard tiles.
   const btcPair = pairsForAssets(["XBT"], currency)[0] ?? "XBTZAR";
-  const btcTickersQ = useGetLunoTickers(
-    { pairs: btcPair },
-    { query: { enabled: !!btcPair } as never },
+  const lunoQuotePairs = (() => {
+    const pairs = [btcPair];
+    const a = scopedLoan?.asset?.toUpperCase();
+    if (a === "USDC" || a === "USDT") pairs.push("USDCZAR");
+    return pairs.join(",");
+  })();
+  const lunoTickersQ = useGetLunoTickers(
+    { pairs: lunoQuotePairs },
+    { query: { enabled: lunoQuotePairs.length > 0 } as never },
   );
 
   // Per-loan user annotations (manual sell rate + repayment goal), synced
   // cross-device. Hydrate on mount and react to remote updates.
   const [annotation, setAnnotation] = useState<LoanAnnotation>({});
   const [borrowedValueDraft, setBorrowedValueDraft] = useState("");
+  const [sellRateDraft, setSellRateDraft] = useState("");
+  const [targetRepaymentDraft, setTargetRepaymentDraft] = useState("");
   const [contribDraft, setContribDraft] = useState("");
   const [targetDraft, setTargetDraft] = useState("");
   const [collateralContribDraft, setCollateralContribDraft] = useState("");
@@ -568,6 +581,8 @@ export function LoanDetailView({
     setAnnotation({});
     setShowSchedule(false);
     setBorrowedValueDraft("");
+    setSellRateDraft("");
+    setTargetRepaymentDraft("");
     setContribDraft("");
     setTargetDraft("");
     setCollateralContribDraft("");
@@ -580,6 +595,14 @@ export function LoanDetailView({
     setBorrowedValueDraft(
       annotation.borrowedValueZar != null
         ? String(annotation.borrowedValueZar)
+        : "",
+    );
+    setSellRateDraft(
+      annotation.sellRate != null ? String(annotation.sellRate) : "",
+    );
+    setTargetRepaymentDraft(
+      annotation.targetRepaymentUsdcZarRate != null
+        ? String(annotation.targetRepaymentUsdcZarRate)
         : "",
     );
     setContribDraft(
@@ -597,6 +620,8 @@ export function LoanDetailView({
   }, [
     id,
     annotation.borrowedValueZar,
+    annotation.sellRate,
+    annotation.targetRepaymentUsdcZarRate,
     annotation.monthlyContribution,
     annotation.targetSettleDate,
     annotation.monthlyCollateralContribution,
@@ -778,10 +803,23 @@ export function LoanDetailView({
     .filter((t) => t.type === "borrow")
     .reduce((sum, t) => sum + t.amount, 0);
   const borrowedValueZar = annotation.borrowedValueZar ?? null;
-  const fixedSellRate =
-    borrowedValueZar != null && borrowedValueZar > 0 && totalBorrowedQty > 0
-      ? borrowedValueZar / totalBorrowedQty
-      : null;
+  const documentedRate = documentedConversionRate(annotation, planPrincipal);
+  const fixedSellRate = documentedRate;
+  const lunoTickerMap = new Map<string, number>();
+  for (const t of lunoTickersQ.data?.tickers ?? []) {
+    lunoTickerMap.set(t.pair, t.lastTrade);
+  }
+  const liveLunoZar = isStableBorrowAsset(loan.asset)
+    ? lunoZarRateForAsset(loan.asset, lunoTickerMap)
+    : null;
+  const rateAlertActive =
+    liveLunoZar != null &&
+    documentedRate != null &&
+    liveLunoZar <= documentedRate &&
+    !(
+      annotation.targetRepaymentUsdcZarRate != null &&
+      annotation.targetRepaymentUsdcZarRate > 0
+    );
   // ── Repayment forecasting ──
   // The debt is asset-denominated (≈ USD for stablecoin loans). The monthly rate
   // compounds the declining balance against ongoing accrual. The user budgets in
@@ -850,10 +888,7 @@ export function LoanDetailView({
   // collateral lowers LTV until the target is reached. Math is done in USD
   // (fmtMoney converts to the display currency); BTC quantity uses the live
   // Luno price in the display currency.
-  const btcTickerMap = new Map<string, number>();
-  for (const t of btcTickersQ.data?.tickers ?? []) {
-    btcTickerMap.set(t.pair, t.lastTrade);
-  }
+  const btcTickerMap = lunoTickerMap;
   const btcPriceDisplay = quoteWalletInFiat("XBT", 1, btcTickerMap, currency);
   const btcPriceUsd =
     currency === "ZAR"
@@ -1418,11 +1453,23 @@ export function LoanDetailView({
             onChangeText={setBorrowedValueDraft}
             onEndEditing={() => {
               const n = Number(borrowedValueDraft);
+              const borrowedValueZar =
+                borrowedValueDraft.trim() === "" || !Number.isFinite(n)
+                  ? null
+                  : n;
+              const derivedSell =
+                borrowedValueZar != null &&
+                borrowedValueZar > 0 &&
+                totalBorrowedQty > 0
+                  ? borrowedValueZar / totalBorrowedQty
+                  : borrowedValueZar != null &&
+                      borrowedValueZar > 0 &&
+                      planPrincipal > 0
+                    ? borrowedValueZar / planPrincipal
+                    : null;
               void setLoanAnnotation(loan.id, {
-                borrowedValueZar:
-                  borrowedValueDraft.trim() === "" || !Number.isFinite(n)
-                    ? null
-                    : n,
+                borrowedValueZar,
+                ...(derivedSell != null ? { sellRate: derivedSell } : {}),
               });
             }}
             keyboardType="decimal-pad"
@@ -1438,11 +1485,85 @@ export function LoanDetailView({
             ]}
           />
         </View>
+        {currency === "ZAR" && isStableBorrowAsset(loan.asset) ? (
+          <>
+            <View style={styles.fieldRow}>
+              <Text
+                style={[styles.fieldLabel, { color: colors.mutedForeground }]}
+              >
+                {loan.asset}/ZAR conversion rate
+              </Text>
+              <TextInput
+                value={sellRateDraft}
+                onChangeText={setSellRateDraft}
+                onEndEditing={() => {
+                  const n = Number(sellRateDraft);
+                  void setLoanAnnotation(loan.id, {
+                    sellRate:
+                      sellRateDraft.trim() === "" || !Number.isFinite(n)
+                        ? null
+                        : n,
+                  });
+                }}
+                keyboardType="decimal-pad"
+                placeholder={
+                  fixedSellRate != null
+                    ? String(fixedSellRate)
+                    : "e.g. 16.50"
+                }
+                placeholderTextColor={colors.mutedForeground}
+                style={[
+                  styles.input,
+                  {
+                    color: colors.foreground,
+                    borderColor: colors.border,
+                    borderRadius: 8,
+                  },
+                ]}
+              />
+            </View>
+            <View style={styles.fieldRow}>
+              <Text
+                style={[styles.fieldLabel, { color: colors.mutedForeground }]}
+              >
+                Target repayment rate (optional)
+              </Text>
+              <TextInput
+                value={targetRepaymentDraft}
+                onChangeText={setTargetRepaymentDraft}
+                onEndEditing={() => {
+                  const n = Number(targetRepaymentDraft);
+                  void setLoanAnnotation(loan.id, {
+                    targetRepaymentUsdcZarRate:
+                      targetRepaymentDraft.trim() === "" || !Number.isFinite(n)
+                        ? null
+                        : n,
+                  });
+                }}
+                keyboardType="decimal-pad"
+                placeholder="—"
+                placeholderTextColor={colors.mutedForeground}
+                style={[
+                  styles.input,
+                  {
+                    color: colors.foreground,
+                    borderColor: colors.border,
+                    borderRadius: 8,
+                  },
+                ]}
+              />
+            </View>
+          </>
+        ) : null}
         {currency === "ZAR" ? (
           <>
             <Row
-              label="Market rate (now)"
-              value={`R${groupWithSpaces(marketRate, 2)} / ${loan.asset}`}
+              label="Luno rate (now)"
+              value={
+                liveLunoZar != null
+                  ? `R${groupWithSpaces(liveLunoZar, 2)} / ${loan.asset}`
+                  : `R${groupWithSpaces(marketRate, 2)} / ${loan.asset}`
+              }
             />
             {lunoBuyRate != null ? (
               <Row
@@ -1452,9 +1573,42 @@ export function LoanDetailView({
             ) : null}
             {fixedSellRate != null ? (
               <Row
-                label="Sell rate when borrowed"
+                label="Conversion rate (documented)"
                 value={`R${groupWithSpaces(fixedSellRate, 2)} / ${loan.asset}`}
               />
+            ) : null}
+            {rateAlertActive ? (
+              <Text
+                style={[
+                  styles.simHint,
+                  { color: colors.primary, marginTop: 4 },
+                ]}
+              >
+                Favorable repay window — Luno is at or below your documented
+                conversion rate.
+              </Text>
+            ) : null}
+            {annotation.targetRepaymentUsdcZarRate != null &&
+            annotation.targetRepaymentUsdcZarRate > 0 ? (
+              <Text
+                style={[
+                  styles.simHint,
+                  { color: colors.mutedForeground, marginTop: 4 },
+                ]}
+              >
+                Auto conversion-rate alerts are off while a custom target
+                repayment rate is set.
+              </Text>
+            ) : documentedRate != null ? (
+              <Text
+                style={[
+                  styles.simHint,
+                  { color: colors.mutedForeground, marginTop: 4 },
+                ]}
+              >
+                You'll be notified when Luno {loan.asset} falls to your
+                documented conversion rate or below.
+              </Text>
             ) : null}
             <Text
               style={[

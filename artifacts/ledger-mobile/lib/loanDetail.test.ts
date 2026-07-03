@@ -3,7 +3,11 @@ import { describe, it } from "node:test";
 
 import type { LunoTransaction } from "@workspace/api-client-react";
 
-import { effectiveLoanApr, HOURS_PER_YEAR } from "./loanApr";
+import {
+  documentedConversionRate,
+  evaluateRepaymentRateAlert,
+  isStableBorrowAsset,
+} from "./repaymentRateAlerts";
 import { filterLunoTxsForContainer } from "./lunoFunding";
 import {
   buildCollateralSchedule,
@@ -127,5 +131,56 @@ describe("effectiveLoanApr", () => {
       6.25,
     );
     assert.equal(effectiveLoanApr({ apr: 0, hourlyInterestRate: 0 }), 0);
+  });
+});
+
+describe("repaymentRateAlerts", () => {
+  it("identifies stable borrow assets", () => {
+    assert.equal(isStableBorrowAsset("USDC"), true);
+    assert.equal(isStableBorrowAsset("usdt"), true);
+    assert.equal(isStableBorrowAsset("BTC"), false);
+  });
+
+  it("prefers explicit sellRate over borrowedValueZar / debt", () => {
+    assert.equal(
+      documentedConversionRate({ sellRate: 16.5, borrowedValueZar: 100_000 }, 10_000),
+      16.5,
+    );
+    assert.equal(
+      documentedConversionRate({ borrowedValueZar: 165_000 }, 10_000),
+      16.5,
+    );
+  });
+
+  it("notifies when live Luno rate is at or below documented conversion rate", () => {
+    const tickers = new Map([["USDCZAR", 16.2]]);
+    const result = evaluateRepaymentRateAlert(
+      { asset: "USDC", debt: 10_000 },
+      { sellRate: 16.5 },
+      tickers,
+    );
+    assert.equal(result.shouldNotify, true);
+    assert.equal(result.suppressed, false);
+  });
+
+  it("suppresses auto alerts when a custom target repayment rate is set", () => {
+    const tickers = new Map([["USDCZAR", 16.2]]);
+    const result = evaluateRepaymentRateAlert(
+      { asset: "USDC", debt: 10_000 },
+      { sellRate: 16.5, targetRepaymentUsdcZarRate: 16.0 },
+      tickers,
+    );
+    assert.equal(result.shouldNotify, false);
+    assert.equal(result.suppressed, true);
+  });
+
+  it("does not notify when live rate is above documented conversion rate", () => {
+    const tickers = new Map([["USDCZAR", 16.8]]);
+    const result = evaluateRepaymentRateAlert(
+      { asset: "USDC", debt: 10_000 },
+      { sellRate: 16.5 },
+      tickers,
+    );
+    assert.equal(result.shouldNotify, false);
   });
 });

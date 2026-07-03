@@ -30,6 +30,12 @@ export type LoanAnnotation = {
    * used to drive the repayment plan.
    */
   borrowedValueZar?: number;
+  /**
+   * Optional custom ZAR/USDC target for repayment alerts. When set, automatic
+   * "favorable vs conversion rate" notifications are suppressed — the user
+   * manages their own threshold.
+   */
+  targetRepaymentUsdcZarRate?: number;
   /** Planned monthly repayment contribution (loan-asset units). */
   monthlyContribution?: number;
   /** Target settlement date (ISO yyyy-mm-dd). */
@@ -99,6 +105,11 @@ async function readLocal(): Promise<LoanAnnotationMap> {
 async function writeLocal(map: LoanAnnotationMap): Promise<void> {
   cache = map;
   await AsyncStorage.setItem(STORE_KEY, JSON.stringify(map));
+}
+
+/** All per-loan annotations (empty map when none). */
+export async function readAllLoanAnnotations(): Promise<LoanAnnotationMap> {
+  return readLocal();
 }
 
 /** Current annotations for one loan ({} when none). */

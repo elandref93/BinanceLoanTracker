@@ -4,6 +4,8 @@ import { Platform } from "react-native";
 
 import { loadStoredSession } from "@/lib/session";
 import { checkAndNotifyLoans } from "@/lib/alerts";
+import { readAllLoanAnnotations } from "@/lib/loanAnnotations";
+import { checkAndNotifyRepaymentRates } from "@/lib/repaymentRateAlerts";
 import {
   getBinanceLinks,
   getLunoLinks,
@@ -12,7 +14,7 @@ import {
 import { toBase64 } from "@/lib/encoding";
 import { recordLtvSample } from "@/lib/ltvHistory";
 import { recordLoanSnapshots } from "@/lib/loanSnapshots";
-import { publishWidgetSnapshot } from "@/lib/widgetRefresh";
+import { fetchLunoTickers, publishWidgetSnapshot } from "@/lib/widgetRefresh";
 import {
   buildSnapshot,
   weightedApr,
@@ -29,6 +31,8 @@ const MIN_INTERVAL_SECONDS = 15 * 60;
 type LoanLite = {
   id: string;
   accountId: string;
+  asset: string;
+  debt: number;
   apr: number;
   ltv: number;
   debtUsd: number;
@@ -144,6 +148,11 @@ async function runRefresh(): Promise<BackgroundFetch.BackgroundFetchResult> {
       },
     );
     await checkAndNotifyLoans(fullLoans);
+    const [annotations, rateTickers] = await Promise.all([
+      readAllLoanAnnotations(),
+      fetchLunoTickers(domain, ["USDCZAR"], session.sessionToken),
+    ]);
+    await checkAndNotifyRepaymentRates(loans, rateTickers, annotations);
     return BackgroundFetch.BackgroundFetchResult.NewData;
   } catch {
     return BackgroundFetch.BackgroundFetchResult.Failed;

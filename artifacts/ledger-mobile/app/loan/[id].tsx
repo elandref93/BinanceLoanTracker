@@ -15,6 +15,7 @@ import { Container } from "@/components/Container";
 import { ErrorView } from "@/components/ErrorView";
 import { Pill } from "@/components/Pill";
 import { RiskGauge } from "@/components/RiskGauge";
+import { LtvHistoryChart } from "@/components/LtvHistoryChart";
 import { ScreenSkeleton } from "@/components/Skeleton";
 import { Sparkline } from "@/components/Sparkline";
 import { useCurrency } from "@/context/CurrencyContext";
@@ -42,6 +43,7 @@ import {
   aprSeriesFor,
   aprStatsFor,
   getSnapshotsSince,
+  ltvSamplesFor,
   type LoanSnapshot,
 } from "@/lib/loanSnapshots";
 import {
@@ -428,6 +430,51 @@ function fmtDate(d: Date): string {
   });
 }
 
+/** Small footer block: months + date to clear the entire debt at a budget. */
+function FullPayoffSection({
+  months,
+  payoffDate,
+  monthlyInterestLabel,
+  contributionTooLow,
+  hint,
+}: {
+  months: number | null;
+  payoffDate: Date | null;
+  monthlyInterestLabel: string;
+  contributionTooLow: boolean;
+  hint?: string;
+}) {
+  const colors = useColors();
+  return (
+    <View
+      style={[
+        styles.fullPayoffBlock,
+        { borderTopColor: colors.border },
+      ]}
+    >
+      <Text style={[styles.fullPayoffTitle, { color: colors.foreground }]}>
+        Full loan payoff
+      </Text>
+      {hint ? (
+        <Text style={[styles.simHint, { color: colors.mutedForeground }]}>
+          {hint}
+        </Text>
+      ) : null}
+      {months != null && payoffDate ? (
+        <>
+          <Row label="Paid in full by" value={fmtDate(payoffDate)} />
+          <Row label="Duration" value={`${months} mo`} />
+        </>
+      ) : contributionTooLow ? (
+        <Text style={[styles.simHint, { color: colors.warn, marginTop: 4 }]}>
+          Contribution must exceed monthly interest ({monthlyInterestLabel}) to
+          ever clear the debt.
+        </Text>
+      ) : null}
+    </View>
+  );
+}
+
 export function LoanDetailView({
   loanId,
   embedded = false,
@@ -510,19 +557,25 @@ export function LoanDetailView({
   // Per-loan user annotations (manual sell rate + repayment goal), synced
   // cross-device. Hydrate on mount and react to remote updates.
   const [annotation, setAnnotation] = useState<LoanAnnotation>({});
-  useEffect(() => {
-    if (!id) return;
-    void getLoanAnnotation(id).then(setAnnotation);
-    return subscribeLoanAnnotations(() => {
-      void getLoanAnnotation(id).then(setAnnotation);
-    });
-  }, [id]);
-  // Local draft strings for the numeric/date inputs (committed on blur).
   const [borrowedValueDraft, setBorrowedValueDraft] = useState("");
   const [contribDraft, setContribDraft] = useState("");
   const [targetDraft, setTargetDraft] = useState("");
   const [collateralContribDraft, setCollateralContribDraft] = useState("");
   const [showSchedule, setShowSchedule] = useState(false);
+  useEffect(() => {
+    if (!id) return;
+    // Drop stale state immediately when switching loans (iPad pane / nav).
+    setAnnotation({});
+    setShowSchedule(false);
+    setBorrowedValueDraft("");
+    setContribDraft("");
+    setTargetDraft("");
+    setCollateralContribDraft("");
+    void getLoanAnnotation(id).then(setAnnotation);
+    return subscribeLoanAnnotations(() => {
+      void getLoanAnnotation(id).then(setAnnotation);
+    });
+  }, [id]);
   useEffect(() => {
     setBorrowedValueDraft(
       annotation.borrowedValueZar != null
@@ -540,11 +593,14 @@ export function LoanDetailView({
         ? String(annotation.monthlyCollateralContribution)
         : "",
     );
+    setShowSchedule(false);
   }, [
+    id,
     annotation.borrowedValueZar,
     annotation.monthlyContribution,
     annotation.targetSettleDate,
     annotation.monthlyCollateralContribution,
+    annotation.goalMode,
   ]);
 
   if (loansQ.isLoading || accountsQ.isLoading) {
@@ -831,6 +887,20 @@ export function LoanDetailView({
       : null;
   const collateralSchedule: CollateralRow[] =
     collateralContribUsd > 0 ? buildCollateralSchedule(collateralPlanInput) : [];
+  const collateralContributionAsset =
+    currency === "ZAR"
+      ? collateralContribInput / (marketRate * assetToUsd)
+      : collateralContribInput / assetToUsd;
+  const collateralFullPayoffMonths =
+    collateralContribInput > 0
+      ? monthsToSettle(planPrincipal, monthlyRate, collateralContributionAsset)
+      : null;
+  const collateralFullPayoffDate =
+    collateralFullPayoffMonths != null && collateralFullPayoffMonths > 0
+      ? addMonths(now, collateralFullPayoffMonths)
+      : null;
+  const loanLtvSamples = ltvSamplesFor(snapshots, loan.id, 24 * 7);
+  const monthlyInterestLabel = fmtPlanMoney(monthlyInterestAsset);
 
   const relevantRules = rules.filter((r) =>
     ruleAppliesTo(r, loan.id, loanContainer?.id),
@@ -878,6 +948,14 @@ export function LoanDetailView({
           }
         />
       </Card>
+
+      <LtvHistoryChart
+        currentLtv={loan.ltv}
+        targetLtv={targetLtv}
+        hours={24 * 7}
+        samples={loanLtvSamples}
+        title={`${loan.collateral.asset} LTV · 7D`}
+      />
 
       <Card title="Price triggers">
         <Row
@@ -1330,7 +1408,7 @@ export function LoanDetailView({
         )}
       </Card>
 
-      <Card title="Repayment plan">
+      <Card title={`Repayment plan · ${loan.collateral.asset}/${loan.asset}`}>
         <View style={styles.fieldRow}>
           <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>
             Borrowed asset value (ZAR)
@@ -1465,8 +1543,12 @@ export function LoanDetailView({
             {contributionInput > 0 ? (
               settleMonths != null && payoffDate ? (
                 <>
-                  <Row label="Settles in" value={`${settleMonths} mo`} />
-                  <Row label="Projected payoff" value={fmtDate(payoffDate)} />
+                  <FullPayoffSection
+                    months={settleMonths}
+                    payoffDate={payoffDate}
+                    monthlyInterestLabel={monthlyInterestLabel}
+                    contributionTooLow={false}
+                  />
                   <ScheduleBreakdown
                     rows={contributionSchedule}
                     expanded={showSchedule}
@@ -1476,12 +1558,12 @@ export function LoanDetailView({
                   />
                 </>
               ) : (
-                <Text
-                  style={[styles.simHint, { color: colors.warn, marginTop: 4 }]}
-                >
-                  Contribution must exceed monthly interest (
-                  {fmtPlanMoney(monthlyInterestAsset)}) to ever settle.
-                </Text>
+                <FullPayoffSection
+                  months={null}
+                  payoffDate={null}
+                  monthlyInterestLabel={monthlyInterestLabel}
+                  contributionTooLow
+                />
               )
             ) : (
               <Text
@@ -1531,6 +1613,16 @@ export function LoanDetailView({
                 <Row
                   label="Required / month"
                   value={fmtPlanMoney(requiredPerMonthAsset)}
+                />
+                <FullPayoffSection
+                  months={targetMonths}
+                  payoffDate={
+                    targetDate && !Number.isNaN(targetDate.getTime())
+                      ? targetDate
+                      : null
+                  }
+                  monthlyInterestLabel={monthlyInterestLabel}
+                  contributionTooLow={false}
                 />
                 <ScheduleBreakdown
                   rows={targetSchedule}
@@ -1615,6 +1707,14 @@ export function LoanDetailView({
                 </Text>
               ) : collateralMonths != null && collateralPayoffDate ? (
                 <>
+                  <Text
+                    style={[
+                      styles.fullPayoffTitle,
+                      { color: colors.foreground, marginTop: 4 },
+                    ]}
+                  >
+                    Reach target LTV
+                  </Text>
                   <Row
                     label="BTC added / month"
                     value={`${btcPerMonth.toFixed(6)} BTC`}
@@ -1637,6 +1737,16 @@ export function LoanDetailView({
                     collateralAsset={loan.collateral.asset}
                     startDate={now}
                   />
+                  <FullPayoffSection
+                    months={collateralFullPayoffMonths}
+                    payoffDate={collateralFullPayoffDate}
+                    monthlyInterestLabel={monthlyInterestLabel}
+                    contributionTooLow={
+                      collateralContribInput > 0 &&
+                      collateralFullPayoffMonths == null
+                    }
+                    hint="If you used the same monthly budget to repay the debt instead of buying collateral:"
+                  />
                 </>
               ) : (
                 <>
@@ -1654,6 +1764,16 @@ export function LoanDetailView({
                     enough to reach {targetLtv}% LTV within 50 years — interest
                     outpaces it.
                   </Text>
+                  <FullPayoffSection
+                    months={collateralFullPayoffMonths}
+                    payoffDate={collateralFullPayoffDate}
+                    monthlyInterestLabel={monthlyInterestLabel}
+                    contributionTooLow={
+                      collateralContribInput > 0 &&
+                      collateralFullPayoffMonths == null
+                    }
+                    hint="If you used the same monthly budget to repay the debt instead of buying collateral:"
+                  />
                 </>
               )
             ) : (
@@ -1904,6 +2024,16 @@ const styles = StyleSheet.create({
     textAlign: "right",
   },
   simHint: { fontSize: 12, fontFamily: "Inter_400Regular", marginBottom: 4 },
+  fullPayoffBlock: {
+    marginTop: 10,
+    paddingTop: 10,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    gap: 6,
+  },
+  fullPayoffTitle: {
+    fontSize: 13,
+    fontFamily: "Inter_600SemiBold",
+  },
   schedToggle: {
     flexDirection: "row",
     alignItems: "center",

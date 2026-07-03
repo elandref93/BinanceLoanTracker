@@ -48,11 +48,20 @@ export function LtvHistoryChart({
   currentLtv,
   targetLtv,
   hours = 24,
+  /** When set, render this series instead of the aggregate portfolio history. */
+  samples: externalSamples,
+  /** Minimum y-span (percentage points) so small LTV moves stay visible. */
+  minDomainSpan = 0.25,
+  /** Override the card header label (defaults to aggregate wording). */
+  title,
 }: {
   currentLtv: number;
   /** Omit to hide the target line (e.g. the combined "All accounts" view). */
   targetLtv?: number;
   hours?: number;
+  samples?: LtvSample[];
+  minDomainSpan?: number;
+  title?: string;
 }) {
   const colors = useColors();
   const [samples, setSamples] = useState<LtvSample[]>([]);
@@ -60,8 +69,11 @@ export function LtvHistoryChart({
   const [activeIdx, setActiveIdx] = useState<number | null>(null);
 
   useEffect(() => {
+    if (externalSamples != null) return;
     void getLtvHistory(hours).then(setSamples);
-  }, [hours, currentLtv]);
+  }, [hours, currentLtv, externalSamples]);
+
+  const chartSamples = externalSamples ?? samples;
 
   const onLayout = (e: LayoutChangeEvent) => {
     const w = e.nativeEvent.layout.width;
@@ -69,21 +81,30 @@ export function LtvHistoryChart({
   };
 
   // Need at least 2 points to draw a line; otherwise show a placeholder card.
-  const enough = samples.length >= 2;
-  // Fit the y-axis to the actual data so even small LTV movements fill the
-  // chart instead of collapsing to a flat line. A fixed ±1 pad swamped tiny
-  // real moves (e.g. 57.80 → 57.85); pad proportionally to the observed span
-  // instead, with a small floor so a truly-flat series still has a sane band.
-  const rawMin = enough ? Math.min(...samples.map((s) => s.ltv)) : 0;
-  const rawMax = enough ? Math.max(...samples.map((s) => s.ltv)) : 100;
-  const span = rawMax - rawMin;
-  const pad = enough ? Math.max(0.05, span * 0.2) : 0;
-  const minLtv = enough ? rawMin - pad : 0;
-  const maxLtv = enough ? rawMax + pad : 100;
+  const enough = chartSamples.length >= 2;
+  // Fit the y-axis to the observed data with a minimum span so incremental
+  // moves (e.g. 64.50 → 64.65) fill the chart instead of looking flat.
+  const rawMin = enough ? Math.min(...chartSamples.map((s) => s.ltv)) : 0;
+  const rawMax = enough ? Math.max(...chartSamples.map((s) => s.ltv)) : 100;
+  const observedSpan = rawMax - rawMin;
+  let minLtv: number;
+  let maxLtv: number;
+  if (!enough) {
+    minLtv = 0;
+    maxLtv = 100;
+  } else if (observedSpan < minDomainSpan) {
+    const extra = (minDomainSpan - observedSpan) / 2;
+    minLtv = rawMin - extra;
+    maxLtv = rawMax + extra;
+  } else {
+    const pad = Math.max(minDomainSpan * 0.15, observedSpan * 0.12);
+    minLtv = rawMin - pad;
+    maxLtv = rawMax + pad;
+  }
 
   const points = useMemo(
-    () => (enough ? buildPoints(samples, minLtv, maxLtv, width) : []),
-    [enough, samples, minLtv, maxLtv, width],
+    () => (enough ? buildPoints(chartSamples, minLtv, maxLtv, width) : []),
+    [enough, chartSamples, minLtv, maxLtv, width],
   );
   const path = points
     .map((p, i) => `${i === 0 ? "M" : "L"} ${p.x.toFixed(2)} ${p.y.toFixed(2)}`)
@@ -128,7 +149,7 @@ export function LtvHistoryChart({
     >
       <View style={styles.head}>
         <Text style={[styles.label, { color: colors.mutedForeground }]}>
-          LTV · LAST {hours}H
+          {title ?? `LTV · LAST ${hours}H`}
         </Text>
         {active ? (
           <Text style={[styles.range, { color: colors.foreground }]}>

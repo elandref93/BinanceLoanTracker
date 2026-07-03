@@ -167,6 +167,25 @@ export function aprSeriesFor(
     .map((s) => s.apr);
 }
 
+/** LTV samples for one loan (chart input), oldest → newest. */
+export function ltvSamplesFor(
+  snapshots: LoanSnapshot[],
+  loanId: string,
+  hours: number,
+): Array<{ t: number; ltv: number }> {
+  const cutoff = Date.now() - hours * 3600 * 1000;
+  return snapshots
+    .filter(
+      (s) =>
+        s.loanId === loanId &&
+        s.t >= cutoff &&
+        Number.isFinite(s.ltv) &&
+        s.ltv > 0,
+    )
+    .sort((a, b) => a.t - b.t)
+    .map((s) => ({ t: s.t, ltv: s.ltv }));
+}
+
 /**
  * Derive a per-day "interest charged" series for ALL loans across the window.
  * Trapezoid-integrate `debtUsd * apr / 365` between consecutive snapshots and

@@ -27,6 +27,18 @@ interface Props {
   overlayColor?: string;
   /** Format the scrubbed value shown while dragging. Defaults to 2dp. */
   formatValue?: (v: number) => string;
+  /**
+   * Minimum y-span so small movements stay visible (e.g. 0.25 for APR %).
+   * When the data range is tighter than this, the axis expands symmetrically.
+   */
+  minDomainSpan?: number;
+  /** Extra padding as a fraction of the (possibly expanded) span. Default 0.08. */
+  domainPaddingRatio?: number;
+  /**
+   * Include `reference` when computing the y-domain. Default false — a 0
+   * reference against ~5% APR values flattens the whole series.
+   */
+  includeReferenceInDomain?: boolean;
 }
 
 export function Sparkline({
@@ -38,6 +50,9 @@ export function Sparkline({
   overlay: rawOverlay,
   overlayColor,
   formatValue,
+  minDomainSpan,
+  domainPaddingRatio = 0.08,
+  includeReferenceInDomain = false,
 }: Props) {
   const colors = useColors();
   // react-native-svg crashes natively (bypassing the JS error boundary) when a
@@ -64,13 +79,23 @@ export function Sparkline({
     ) : null;
   }
   const hasOverlay = overlay != null && overlay.length >= 2;
-  const domainVals = [
+  const seriesVals = [
     ...values,
     ...(hasOverlay ? overlay : []),
-    ...(reference != null ? [reference] : []),
+    ...(includeReferenceInDomain && reference != null ? [reference] : []),
   ];
-  const min = Math.min(...domainVals);
-  const max = Math.max(...domainVals);
+  let min = Math.min(...seriesVals);
+  let max = Math.max(...seriesVals);
+  let span = max - min;
+  if (minDomainSpan != null && span < minDomainSpan) {
+    const extra = (minDomainSpan - span) / 2;
+    min -= extra;
+    max += extra;
+    span = minDomainSpan;
+  }
+  const pad = span * domainPaddingRatio;
+  min -= pad;
+  max += pad;
   const range = max - min || 1;
   const padY = 4;
   const innerH = height - padY * 2;
@@ -92,7 +117,7 @@ export function Sparkline({
         .join(" ")
     : null;
   const refY =
-    reference != null
+    reference != null && reference >= min && reference <= max
       ? padY + innerH - ((reference - min) / range) * innerH
       : null;
 

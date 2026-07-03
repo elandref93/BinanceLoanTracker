@@ -6,6 +6,7 @@ import { useColors } from "@/hooks/useColors";
 import { useCurrency } from "@/context/CurrencyContext";
 import { useRiskSettings } from "@/context/RiskSettingsContext";
 import { fmtDisplayMoney, fmtMoney, fmtPct, fmtQty } from "@/utils/format";
+import { effectiveLoanApr } from "@/lib/loanApr";
 import { quoteWalletInFiat } from "@/lib/lunoPricing";
 import { headroomToTarget, statusFromLtv } from "@/utils/risk";
 import type { Loan } from "@workspace/api-client-react";
@@ -19,6 +20,8 @@ interface Props {
    * current market rate. Optional so the row still renders without prices.
    */
   priceTickers?: Map<string, number>;
+  /** Fallback APR % when the loan row itself is 0 (e.g. from /interest). */
+  fallbackApr?: number;
   /** Highlights the row with the accent border (iPad master–detail selection). */
   selected?: boolean;
 }
@@ -28,6 +31,7 @@ export function LoanRow({
   accountName,
   onPress,
   priceTickers,
+  fallbackApr,
   selected = false,
 }: Props) {
   const colors = useColors();
@@ -56,6 +60,7 @@ export function LoanRow({
     borrowedValue > 0
       ? fmtDisplayMoney(borrowedValue, currency, { whole: true })
       : fmtMoney(loan.debtUsd, currency, { whole: true });
+  const displayApr = effectiveLoanApr(loan, fallbackApr);
   return (
     <Pressable
       onPress={onPress}
@@ -99,7 +104,7 @@ export function LoanRow({
             {fmtPct(loan.ltv, 1)}
           </Text>
           <Text style={[styles.apr, { color: colors.mutedForeground }]}>
-            APR {fmtPct(loan.apr, 2)}
+            APR {fmtPct(displayApr, 2)}
           </Text>
           <Feather name="chevron-right" size={16} color={colors.mutedForeground} />
         </View>

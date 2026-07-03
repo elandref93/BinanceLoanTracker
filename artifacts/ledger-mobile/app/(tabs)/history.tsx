@@ -282,7 +282,9 @@ export default function HistoryScreen() {
                     <Sparkline
                       values={aprs}
                       height={28}
-                      reference={b.avg30dApr}
+                      reference={b.avg30dApr > 0 ? b.avg30dApr : undefined}
+                      minDomainSpan={0.25}
+                      formatValue={(v) => fmtPct(v, 2)}
                     />
                   </View>
                 ) : null}

@@ -37,6 +37,7 @@ import {
   statusLabel,
   WARNING_LTV,
 } from "@/utils/risk";
+import { effectiveLoanApr, HOURS_PER_YEAR } from "@/lib/loanApr";
 import {
   aprSeriesFor,
   aprStatsFor,
@@ -626,11 +627,12 @@ export function LoanDetailView({
   const byLoan = interestQ.data?.byLoan.find((b) => b.loanId === loan.id);
   const rateData = rateHistQ.data;
   const serverSeries = rateData?.points.map((p) => p.apr) ?? [];
-  const serverIsMargin =
-    rateData?.source === "margin" && serverSeries.length >= 2;
+  const serverHasVariance =
+    serverSeries.length >= 2 &&
+    Math.min(...serverSeries) !== Math.max(...serverSeries);
   const localStats = aprStatsFor(snapshots, loan.id, 30);
   const localWindowSeries = aprSeriesFor(snapshots, loan.id, rateWindow);
-  const chartKind: "margin" | "local" | "flat" | null = serverIsMargin
+  const chartKind: "margin" | "local" | "flat" | null = serverHasVariance
     ? "margin"
     : localWindowSeries.length >= 2
       ? "local"
@@ -646,41 +648,28 @@ export function LoanDetailView({
           ? serverSeries
           : [];
   const overlayValues =
-    serverIsMargin && localWindowSeries.length >= 2
+    serverHasVariance && localWindowSeries.length >= 2
       ? localWindowSeries
       : undefined;
-  const avg30 = serverIsMargin
-    ? rateData.avg30dApr
+  const avg30 = serverHasVariance
+    ? rateData!.avg30dApr
     : (localStats?.avg ?? rateData?.avg30dApr ?? loan.apr);
-  const min30 = serverIsMargin
-    ? rateData.min30dApr
+  const min30 = serverHasVariance
+    ? rateData!.min30dApr
     : (localStats?.min ?? rateData?.min30dApr ?? loan.apr);
-  const max30 = serverIsMargin
-    ? rateData.max30dApr
+  const max30 = serverHasVariance
+    ? rateData!.max30dApr
     : (localStats?.max ?? rateData?.max30dApr ?? loan.apr);
-  // Server always returns a trailing-30d avg/min/max (real for margin, the
-  // current rate for flat-fallback products), so surface stats whenever we
-  // have *any* source — server flat data included, not just margin/local.
-  const hasStats = serverIsMargin || localStats !== null || rateData != null;
-  // A flat series collapses min===max; a "30d range: X – X" row is just noise.
+  const hasStats =
+    serverHasVariance || localStats !== null || rateData != null;
   const hasRange = min30 !== max30;
-  const hasRealHistory = chartValues.length >= 2;
+  const hasRealHistory =
+    chartValues.length >= 2 &&
+    Math.min(...chartValues) !== Math.max(...chartValues);
 
-  // Binance sometimes returns a 0/absent hourly rate AND a 0 APR for margin
-  // loans (the rate ships on a different endpoint that can come back empty).
-  // Fall back through every reliable source — quoted APR, quoted hourly rate,
-  // then the real 30d-average charged rate from interest history — so the APR
-  // headline, the "Hourly rate" / "Hourly interest" rows and the debt-growth
-  // projections never collapse to a misleading 0.
-  const HOURS_PER_YEAR = 365 * 24;
-  const effectiveApr =
-    loan.apr > 0
-      ? loan.apr
-      : loan.hourlyInterestRate > 0
-        ? loan.hourlyInterestRate * HOURS_PER_YEAR * 100
-        : avg30 > 0
-          ? avg30
-          : 0;
+  const interestFallback =
+    byLoan?.avg30dApr ?? byLoan?.currentApr ?? rateData?.avg30dApr;
+  const effectiveApr = effectiveLoanApr(loan, interestFallback);
   const effectiveHourlyRate =
     loan.hourlyInterestRate > 0
       ? loan.hourlyInterestRate
@@ -959,7 +948,8 @@ export function LoanDetailView({
               values={chartValues}
               overlay={overlayValues}
               height={56}
-              reference={avg30}
+              reference={avg30 > 0 ? avg30 : undefined}
+              minDomainSpan={0.25}
               formatValue={(v) => fmtPct(v, 2)}
             />
             <View style={styles.sparkAxis}>

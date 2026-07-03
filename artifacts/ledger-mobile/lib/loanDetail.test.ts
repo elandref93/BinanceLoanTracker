@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 
 import type { LunoTransaction } from "@workspace/api-client-react";
 
+import { effectiveLoanApr, HOURS_PER_YEAR } from "./loanApr";
 import { filterLunoTxsForContainer } from "./lunoFunding";
 import {
   buildCollateralSchedule,
@@ -111,5 +112,20 @@ describe("buildCollateralSchedule", () => {
       targetLtv: 30,
     });
     assert.equal(months, 0);
+  });
+});
+
+describe("effectiveLoanApr", () => {
+  it("prefers quoted apr, then hourly, then fallback", () => {
+    assert.equal(effectiveLoanApr({ apr: 7.5, hourlyInterestRate: 0 }), 7.5);
+    assert.equal(
+      effectiveLoanApr({ apr: 0, hourlyInterestRate: 0.0000057 }),
+      0.0000057 * HOURS_PER_YEAR * 100,
+    );
+    assert.equal(
+      effectiveLoanApr({ apr: 0, hourlyInterestRate: 0 }, 6.25),
+      6.25,
+    );
+    assert.equal(effectiveLoanApr({ apr: 0, hourlyInterestRate: 0 }), 0);
   });
 });

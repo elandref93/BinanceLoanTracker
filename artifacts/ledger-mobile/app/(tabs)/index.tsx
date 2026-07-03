@@ -61,6 +61,7 @@ import {
 import {
   useListAccounts,
   useListLoans,
+  useListInterest,
   useListLunoWallets,
   useGetLunoTickers,
   type Loan,
@@ -96,6 +97,7 @@ export default function DashboardScreen() {
 
   const accountsQ = useListAccounts();
   const loansQ = useListLoans();
+  const interestQ = useListInterest();
 
   // Offline cache: hydrate from AsyncStorage on first mount so the screen
   // can render last-known-good data while the network call is in flight or
@@ -186,6 +188,17 @@ export default function DashboardScreen() {
     }
     return m;
   }, [loanTickersQ.data]);
+
+  // APR fallbacks from the interest endpoint (trailing avg / rate history) for
+  // loan rows where Binance omits the live rate on the loan object itself.
+  const aprFallbackByLoanId = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const row of interestQ.data?.byLoan ?? []) {
+      const apr = row.avg30dApr > 0 ? row.avg30dApr : row.currentApr;
+      if (apr > 0) m.set(row.loanId, apr);
+    }
+    return m;
+  }, [interestQ.data]);
 
   // Per-account (container) LTV for the selector chips.
   const containerLtv = useMemo(() => {
@@ -672,6 +685,7 @@ export default function DashboardScreen() {
                           loan={l}
                           accountName={acc?.name ?? "—"}
                           priceTickers={loanTickerMap}
+                          fallbackApr={aprFallbackByLoanId.get(l.id)}
                           selected={l.id === effectiveSelectedId}
                           onPress={() => {
                             haptic.tap();
@@ -1003,6 +1017,7 @@ export default function DashboardScreen() {
                   loan={l}
                   accountName={acc?.name ?? "—"}
                   priceTickers={loanTickerMap}
+                  fallbackApr={aprFallbackByLoanId.get(l.id)}
                   onPress={() => router.push(`/loan/${l.id}`)}
                 />
               );

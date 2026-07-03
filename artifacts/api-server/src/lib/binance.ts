@@ -165,12 +165,17 @@ function pickHourlyRate(
     { label: "flexibleHourlyInterestRate", hourly: num(row["flexibleHourlyInterestRate"]) },
     { label: "currentHourlyInterestRate", hourly: num(row["currentHourlyInterestRate"]) },
     { label: "hourlyInterestRate", hourly: num(row["hourlyInterestRate"]) },
+    // Binance `loanable/data` documents this as an hourly decimal (e.g.
+    // 0.00000491). Treat as hourly first; ambiguous fallback below still
+    // handles legacy annual encodings if this field is absent/wrong.
+    { label: "flexibleInterestRate", hourly: num(row["flexibleInterestRate"]) },
     { label: "flexibleDailyInterestRate", hourly: num(row["flexibleDailyInterestRate"]) / 24 },
     { label: "dailyInterestRate", hourly: num(row["dailyInterestRate"]) / 24 },
     { label: "flexibleAnnualInterestRate", hourly: num(row["flexibleAnnualInterestRate"]) / HOURS_PER_YEAR },
     { label: "flexibleYearlyInterestRate", hourly: num(row["flexibleYearlyInterestRate"]) / HOURS_PER_YEAR },
     { label: "annualInterestRate", hourly: num(row["annualInterestRate"]) / HOURS_PER_YEAR },
     { label: "yearlyInterestRate", hourly: num(row["yearlyInterestRate"]) / HOURS_PER_YEAR },
+    { label: "annualizedInterestRate", hourly: num(row["annualizedInterestRate"]) / HOURS_PER_YEAR },
   ];
   for (const c of named) {
     if (c.hourly <= 0) continue;
@@ -209,21 +214,21 @@ function pickHourlyRate(
       (i) => i.apr >= PLAUSIBLE_APR_LO && i.apr <= PLAUSIBLE_APR_HI,
     );
     if (match) return match.hourly;
-    // Fallback: nothing landed inside the inference band. Rather than zeroing a
-    // legitimate but low rate (e.g. a 0.2% annual APR sits below PLAUSIBLE_APR_LO
-    // yet is real), accept the most conservative reading — the positive
-    // interpretation with the SMALLEST implied APR that still sits under the
-    // high-side cap. This rescues sub-0.5% APR values without reintroducing the
-    // 8760× unit blow-up, since any over-cap interpretation is excluded.
-    const conservative = interpretations
-      .filter((i) => i.apr > 0 && i.apr <= PLAUSIBLE_APR_HI)
-      .sort((a, b) => a.apr - b.apr)[0];
-    if (conservative) {
-      logger.warn(
-        { context, field, value: v, unit: conservative.unit, apr: conservative.apr },
-        "binance ambiguous rate fell below inference band — using conservative low-APR reading",
-      );
-      return conservative.hourly;
+    // Fallback: nothing landed inside the inference band. Prefer the hourly
+    // reading for small magnitudes (Binance loanable/data ships hourly
+    // decimals like 0.00000491) and the annual reading for values ≥ 0.01.
+    // Avoid picking the smallest APR — that was collapsing real ~0.5% rates
+    // to ~0.00% when every interpretation sat below PLAUSIBLE_APR_LO.
+    const hourlyRead = interpretations.find((i) => i.unit === "hourly");
+    const annualRead = interpretations.find((i) => i.unit === "annual");
+    if (v < 0.01 && hourlyRead && hourlyRead.apr > 0 && hourlyRead.apr <= PLAUSIBLE_APR_HI) {
+      return hourlyRead.hourly;
+    }
+    if (annualRead && annualRead.apr > 0 && annualRead.apr <= PLAUSIBLE_APR_HI) {
+      return annualRead.hourly;
+    }
+    if (hourlyRead && hourlyRead.apr > 0 && hourlyRead.apr <= PLAUSIBLE_APR_HI) {
+      return hourlyRead.hourly;
     }
     logger.warn(
       { context, field, value: v, interpretations: interpretations.map((i) => ({ unit: i.unit, apr: i.apr })) },
@@ -790,6 +795,8 @@ export function createRealBinanceClient(
       logger.warn({ err, accountId }, "flexible loanable rate fetch failed");
     }
 
+    const flexibleRateFallback = new Map<string, number>();
+
     const loans: BinanceLoan[] = [];
     const priceCache = new Map<string, number>();
     async function priceOf(asset: string): Promise<number> {
@@ -818,7 +825,16 @@ export function createRealBinanceClient(
         row,
         `flexible-order:${loanCoin}/${collateralCoin}`,
       );
-      const hourly = orderHourly || rateMap.get(loanCoin) || 0;
+      let hourly = orderHourly || rateMap.get(loanCoin) || 0;
+      if (hourly <= 0) {
+        const cached = flexibleRateFallback.get(loanCoin);
+        if (cached != null && cached > 0) {
+          hourly = cached;
+        } else {
+          hourly = await fetchFlexiblePublishedHourlyRate(loanCoin);
+          if (hourly > 0) flexibleRateFallback.set(loanCoin, hourly);
+        }
+      }
       const loanCoinUsd = await priceOf(loanCoin);
       const collateralUsd = await priceOf(collateralCoin);
       loans.push({
@@ -940,6 +956,40 @@ export function createRealBinanceClient(
       logger.warn(
         { err, accountId, asset },
         "margin interestRateHistory fallback failed",
+      );
+      return 0;
+    }
+  }
+
+  // Latest published flexible-loan rate for one coin. Ongoing orders don't
+  // include a rate field, and loanable/data can omit some coins — this is the
+  // authoritative backfill (annualizedInterestRate is an annual decimal).
+  async function fetchFlexiblePublishedHourlyRate(coin: string): Promise<number> {
+    try {
+      const raw = await binanceSignedGet<unknown>(
+        creds,
+        "/sapi/v2/loan/interestRateHistory",
+        { coin },
+      );
+      let bestTs = -1;
+      let hourly = 0;
+      for (const r of rowsArray(raw)) {
+        const row = r as Record<string, unknown>;
+        const ts = num(row["time"]);
+        const picked = pickHourlyRate(
+          row,
+          `flexible-rate-history:${coin}`,
+        );
+        if (picked > 0 && ts > bestTs) {
+          bestTs = ts;
+          hourly = picked;
+        }
+      }
+      return hourly;
+    } catch (err) {
+      logger.warn(
+        { err, accountId, coin },
+        "flexible interestRateHistory fallback failed",
       );
       return 0;
     }
@@ -1149,6 +1199,65 @@ export function createRealBinanceClient(
         apr: round(hourlyToApr(hourly), 3),
       };
     });
+  }
+
+  async function fetchFlexibleRatePoints(
+    coin: string,
+    days: number,
+  ): Promise<BinanceRatePoint[]> {
+    const DAY = 86_400_000;
+    const now = Date.now();
+    const rangeStart = now - days * DAY;
+    const byDay = new Map<number, { sum: number; count: number }>();
+
+    for (let page = 1; page <= 10; page++) {
+      let raw: unknown;
+      try {
+        raw = await binanceSignedGet(
+          creds,
+          "/sapi/v2/loan/interestRateHistory",
+          {
+            coin,
+            startTime: rangeStart,
+            endTime: now,
+            current: page,
+            limit: 100,
+          },
+        );
+      } catch (err) {
+        logger.warn(
+          { err, accountId, coin },
+          "flexible interestRateHistory series fetch failed",
+        );
+        break;
+      }
+      const rows = rowsArray(raw);
+      for (const r of rows) {
+        const row = r as Record<string, unknown>;
+        const ts = num(row["time"]);
+        const hourly = pickHourlyRate(
+          row,
+          `flexible-rate-series:${coin}`,
+        );
+        if (ts < rangeStart || ts <= 0 || hourly <= 0) continue;
+        const day = Math.floor(ts / DAY) * DAY;
+        const cur = byDay.get(day) ?? { sum: 0, count: 0 };
+        cur.sum += hourlyToApr(hourly);
+        cur.count += 1;
+        byDay.set(day, cur);
+      }
+      if (rows.length < 100) break;
+    }
+
+    return Array.from(byDay.keys())
+      .sort((a, b) => a - b)
+      .map((day) => {
+        const { sum, count } = byDay.get(day)!;
+        return {
+          ts: new Date(day).toISOString(),
+          apr: round(sum / count, 4),
+        };
+      });
   }
 
   // Real per-day APR series for a MARGIN loan, derived from the per-accrual
@@ -1628,12 +1737,15 @@ export function createRealBinanceClient(
         const points = await fetchMarginRatePoints(ref, days);
         if (points.length > 0) return points;
       }
-      // Fallback for crypto loans (flex/fixed, no rate-history endpoint) and
-      // for margin loans too new to have accruals yet: a flat line at the
-      // current rate so the UI sparkline still renders.
       const loans = await this.listLoans();
       const loan = loans.find((l) => l.id === loanId);
       if (!loan) return [];
+      // Flexible crypto loans publish daily rate changes via interestRateHistory.
+      if (loanId.includes("_flex_") || loanId.includes("_fixed_")) {
+        const flexPoints = await fetchFlexibleRatePoints(loan.asset, days);
+        if (flexPoints.length >= 2) return flexPoints;
+      }
+      // Last resort: flat line at the current rate so the UI still renders.
       const startOfToday = Math.floor(Date.now() / 86_400_000) * 86_400_000;
       return Array.from({ length: days }, (_, i) => ({
         ts: new Date(startOfToday - (days - 1 - i) * 86_400_000).toISOString(),

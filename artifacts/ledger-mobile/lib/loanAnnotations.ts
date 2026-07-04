@@ -31,9 +31,9 @@ export type LoanAnnotation = {
    */
   borrowedValueZar?: number;
   /**
-   * Optional custom ZAR/USDC target for repayment alerts. When set, automatic
-   * "favorable vs conversion rate" notifications are suppressed — the user
-   * manages their own threshold.
+   * Optional custom ZAR/USDC target for repayment alerts. When set, notifications
+   * fire when Luno trades at or below this rate instead of the documented
+   * conversion rate.
    */
   targetRepaymentUsdcZarRate?: number;
   /** Planned monthly repayment contribution (loan-asset units). */

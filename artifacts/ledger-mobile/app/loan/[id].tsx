@@ -812,14 +812,17 @@ export function LoanDetailView({
   const liveLunoZar = isStableBorrowAsset(loan.asset)
     ? lunoZarRateForAsset(loan.asset, lunoTickerMap)
     : null;
+  const targetRepaymentRate = annotation.targetRepaymentUsdcZarRate ?? null;
   const rateAlertActive =
     liveLunoZar != null &&
     documentedRate != null &&
     liveLunoZar <= documentedRate &&
-    !(
-      annotation.targetRepaymentUsdcZarRate != null &&
-      annotation.targetRepaymentUsdcZarRate > 0
-    );
+    !(targetRepaymentRate != null && targetRepaymentRate > 0);
+  const targetRateAlertActive =
+    liveLunoZar != null &&
+    targetRepaymentRate != null &&
+    targetRepaymentRate > 0 &&
+    liveLunoZar <= targetRepaymentRate;
   // ── Repayment forecasting ──
   // The debt is asset-denominated (≈ USD for stablecoin loans). The monthly rate
   // compounds the declining balance against ongoing accrual. The user budgets in
@@ -1577,6 +1580,12 @@ export function LoanDetailView({
                 value={`R${groupWithSpaces(fixedSellRate, 2)} / ${loan.asset}`}
               />
             ) : null}
+            {targetRepaymentRate != null && targetRepaymentRate > 0 ? (
+              <Row
+                label="Target repayment rate"
+                value={`R${groupWithSpaces(targetRepaymentRate, 2)} / ${loan.asset}`}
+              />
+            ) : null}
             {rateAlertActive ? (
               <Text
                 style={[
@@ -1588,16 +1597,27 @@ export function LoanDetailView({
                 conversion rate.
               </Text>
             ) : null}
-            {annotation.targetRepaymentUsdcZarRate != null &&
-            annotation.targetRepaymentUsdcZarRate > 0 ? (
+            {targetRateAlertActive ? (
+              <Text
+                style={[
+                  styles.simHint,
+                  { color: colors.primary, marginTop: 4 },
+                ]}
+              >
+                Target reached — Luno is at or below your custom repayment
+                rate.
+              </Text>
+            ) : null}
+            {targetRepaymentRate != null && targetRepaymentRate > 0 ? (
               <Text
                 style={[
                   styles.simHint,
                   { color: colors.mutedForeground, marginTop: 4 },
                 ]}
               >
-                Auto conversion-rate alerts are off while a custom target
-                repayment rate is set.
+                You'll be notified when Luno {loan.asset} falls to your target
+                repayment rate of R{groupWithSpaces(targetRepaymentRate, 2)} or
+                below.
               </Text>
             ) : documentedRate != null ? (
               <Text

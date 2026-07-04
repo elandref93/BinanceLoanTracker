@@ -6,6 +6,7 @@ import type { LunoTransaction } from "@workspace/api-client-react";
 import {
   documentedConversionRate,
   evaluateRepaymentRateAlert,
+  evaluateRepaymentRateAlerts,
   isStableBorrowAsset,
 } from "./repaymentRateAlerts";
 import { filterLunoTxsForContainer } from "./lunoFunding";
@@ -163,15 +164,40 @@ describe("repaymentRateAlerts", () => {
     assert.equal(result.suppressed, false);
   });
 
-  it("suppresses auto alerts when a custom target repayment rate is set", () => {
-    const tickers = new Map([["USDCZAR", 16.2]]);
+  it("uses target rate instead of conversion rate when a custom target is set", () => {
+    const tickers = new Map([["USDCZAR", 15.9]]);
     const result = evaluateRepaymentRateAlert(
       { asset: "USDC", debt: 10_000 },
       { sellRate: 16.5, targetRepaymentUsdcZarRate: 16.0 },
       tickers,
     );
-    assert.equal(result.shouldNotify, false);
+    assert.equal(result.shouldNotify, true);
     assert.equal(result.suppressed, true);
+    assert.equal(result.kind, "target");
+    assert.equal(result.threshold, 16.0);
+  });
+
+  it("notifies when live Luno rate hits a custom target repayment rate", () => {
+    const tickers = new Map([["USDCZAR", 16.0]]);
+    const evals = evaluateRepaymentRateAlerts(
+      { asset: "USDC", debt: 10_000 },
+      { targetRepaymentUsdcZarRate: 16.2 },
+      tickers,
+    );
+    assert.equal(evals.length, 1);
+    assert.equal(evals[0]?.kind, "target");
+    assert.equal(evals[0]?.shouldNotify, true);
+    assert.equal(evals[0]?.threshold, 16.2);
+  });
+
+  it("does not notify when live rate is above custom target repayment rate", () => {
+    const tickers = new Map([["USDCZAR", 16.5]]);
+    const evals = evaluateRepaymentRateAlerts(
+      { asset: "USDC", debt: 10_000 },
+      { targetRepaymentUsdcZarRate: 16.2 },
+      tickers,
+    );
+    assert.equal(evals[0]?.shouldNotify, false);
   });
 
   it("does not notify when live rate is above documented conversion rate", () => {

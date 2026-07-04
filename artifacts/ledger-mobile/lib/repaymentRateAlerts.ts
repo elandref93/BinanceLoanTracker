@@ -11,9 +11,11 @@ import type {
 
 const FIRED_KEY = "ledger.alerts.rateFired.v1";
 
-// Map of loanId → true once we've fired for a down-crossing. Resets when the
-// live rate rises back above the documented conversion rate.
+// Map of "<kind>:<loanId>" → true once fired for a down-crossing. Resets when
+// the live rate rises back above the threshold.
 type FiredMap = Record<string, true>;
+
+export type RepaymentRateAlertKind = "conversion" | "target";
 
 export function isStableBorrowAsset(asset: string): boolean {
   const a = asset.toUpperCase();
@@ -57,52 +59,74 @@ export function lunoZarRateForAsset(
 }
 
 export type RepaymentRateEval = {
+  kind: RepaymentRateAlertKind;
   shouldNotify: boolean;
-  documented: number | null;
+  threshold: number | null;
   live: number | null;
-  /** True when a custom target rate suppresses auto alerts. */
-  suppressed: boolean;
 };
 
+function firedKey(kind: RepaymentRateAlertKind, loanId: string): string {
+  return `${kind}:${loanId}`;
+}
+
+/**
+ * Evaluate repayment-rate alerts for one loan. When a custom target rate is
+ * set, only that threshold is monitored; otherwise the documented conversion
+ * rate drives notifications.
+ */
+export function evaluateRepaymentRateAlerts(
+  loan: { asset: string; debt: number },
+  annotation: LoanAnnotation,
+  tickers: Map<string, number>,
+): RepaymentRateEval[] {
+  if (!isStableBorrowAsset(loan.asset)) return [];
+
+  const live = lunoZarRateForAsset(loan.asset, tickers);
+  if (live == null || live <= 0) return [];
+
+  const target = annotation.targetRepaymentUsdcZarRate;
+  if (target != null && target > 0) {
+    return [
+      {
+        kind: "target",
+        shouldNotify: live <= target,
+        threshold: target,
+        live,
+      },
+    ];
+  }
+
+  const documented = documentedConversionRate(annotation, loan.debt);
+  if (documented == null || documented <= 0) return [];
+
+  return [
+    {
+      kind: "conversion",
+      shouldNotify: live <= documented,
+      threshold: documented,
+      live,
+    },
+  ];
+}
+
+/** @deprecated Use evaluateRepaymentRateAlerts — kept for existing tests. */
 export function evaluateRepaymentRateAlert(
   loan: { asset: string; debt: number },
   annotation: LoanAnnotation,
   tickers: Map<string, number>,
-): RepaymentRateEval {
-  if (
-    annotation.targetRepaymentUsdcZarRate != null &&
-    annotation.targetRepaymentUsdcZarRate > 0
-  ) {
-    return {
-      shouldNotify: false,
-      documented: documentedConversionRate(annotation, loan.debt),
-      live: lunoZarRateForAsset(loan.asset, tickers),
-      suppressed: true,
-    };
-  }
-  if (!isStableBorrowAsset(loan.asset)) {
-    return {
-      shouldNotify: false,
-      documented: null,
-      live: null,
-      suppressed: false,
-    };
-  }
-  const documented = documentedConversionRate(annotation, loan.debt);
-  const live = lunoZarRateForAsset(loan.asset, tickers);
-  if (
-    documented == null ||
-    live == null ||
-    documented <= 0 ||
-    live <= 0
-  ) {
-    return { shouldNotify: false, documented, live, suppressed: false };
-  }
+): RepaymentRateEval & { documented: number | null; suppressed: boolean } {
+  const evals = evaluateRepaymentRateAlerts(loan, annotation, tickers);
+  const conversion = evals.find((e) => e.kind === "conversion");
+  const target = evals.find((e) => e.kind === "target");
+  const active = conversion ?? target;
+  const suppressed = target != null;
   return {
-    shouldNotify: live <= documented,
-    documented,
-    live,
-    suppressed: false,
+    kind: active?.kind ?? "conversion",
+    shouldNotify: active?.shouldNotify ?? false,
+    threshold: active?.threshold ?? null,
+    live: active?.live ?? lunoZarRateForAsset(loan.asset, tickers),
+    documented: documentedConversionRate(annotation, loan.debt),
+    suppressed,
   };
 }
 
@@ -126,10 +150,17 @@ type LoanForRateAlert = {
   collateral: { asset: string };
 };
 
+type PendingNotification = {
+  loan: LoanForRateAlert;
+  eval: RepaymentRateEval;
+};
+
 /**
- * Notify when Luno USDC/ZAR falls on or below the documented conversion rate
- * for a stablecoin loan. Skips loans with a custom target repayment rate.
- * Each loan fires once per down-crossing and resets when price recovers.
+ * Notify when Luno USDC/ZAR falls on or below either:
+ * - the documented conversion rate (default), or
+ * - a custom target repayment rate when one is set.
+ * Each (kind, loan) pair fires once per down-crossing and resets when price
+ * recovers.
  */
 export async function checkAndNotifyRepaymentRates(
   loans: LoanForRateAlert[],
@@ -141,31 +172,19 @@ export async function checkAndNotifyRepaymentRates(
 
   const fired = await readFired();
   const next: FiredMap = {};
-  const toNotify: {
-    loan: LoanForRateAlert;
-    documented: number;
-    live: number;
-  }[] = [];
+  const toNotify: PendingNotification[] = [];
 
   for (const loan of loans) {
     const annotation = annotations[loan.id] ?? {};
-    const evalResult = evaluateRepaymentRateAlert(loan, annotation, tickers);
-    if (
-      evalResult.documented == null ||
-      evalResult.live == null ||
-      evalResult.suppressed
-    ) {
-      continue;
-    }
-    const k = loan.id;
-    if (evalResult.shouldNotify) {
-      next[k] = true;
-      if (!fired[k]) {
-        toNotify.push({
-          loan,
-          documented: evalResult.documented,
-          live: evalResult.live,
-        });
+    const evals = evaluateRepaymentRateAlerts(loan, annotation, tickers);
+    for (const evalResult of evals) {
+      if (evalResult.threshold == null || evalResult.live == null) continue;
+      const k = firedKey(evalResult.kind, loan.id);
+      if (evalResult.shouldNotify) {
+        next[k] = true;
+        if (!fired[k]) {
+          toNotify.push({ loan, eval: evalResult });
+        }
       }
     }
   }
@@ -173,13 +192,23 @@ export async function checkAndNotifyRepaymentRates(
   await writeFired(next);
 
   if (toNotify.length > 0) haptic.success();
-  for (const { loan, documented, live } of toNotify) {
+  for (const { loan, eval: evalResult } of toNotify) {
     const pair = `${loan.collateral.asset}/${loan.asset}`;
+    const live = evalResult.live!;
+    const threshold = evalResult.threshold!;
+    const isTarget = evalResult.kind === "target";
     await Notifications.scheduleNotificationAsync({
       content: {
-        title: `Favorable ${loan.asset}/ZAR · ${pair}`,
-        body: `Luno ${loan.asset} is R${live.toFixed(2)} — at or below your conversion rate of R${documented.toFixed(2)}. You can repay with fewer rands per ${loan.asset}.`,
-        data: { loanId: loan.id, kind: "repayment-rate" },
+        title: isTarget
+          ? `Target ${loan.asset}/ZAR reached · ${pair}`
+          : `Favorable ${loan.asset}/ZAR · ${pair}`,
+        body: isTarget
+          ? `Luno ${loan.asset} is R${live.toFixed(2)} — at or below your target repayment rate of R${threshold.toFixed(2)}.`
+          : `Luno ${loan.asset} is R${live.toFixed(2)} — at or below your conversion rate of R${threshold.toFixed(2)}. You can repay with fewer rands per ${loan.asset}.`,
+        data: {
+          loanId: loan.id,
+          kind: isTarget ? "repayment-target-rate" : "repayment-rate",
+        },
       },
       trigger: null,
     });

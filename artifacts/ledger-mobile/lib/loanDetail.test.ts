@@ -4,6 +4,10 @@ import { describe, it } from "node:test";
 import type { LunoTransaction } from "@workspace/api-client-react";
 
 import {
+  buildRepaymentAnnotationPatch,
+  parseOptionalDecimal,
+} from "./loanRepaymentDrafts";
+import {
   documentedConversionRate,
   evaluateRepaymentRateAlert,
   evaluateRepaymentRateAlerts,
@@ -208,5 +212,23 @@ describe("repaymentRateAlerts", () => {
       tickers,
     );
     assert.equal(result.shouldNotify, false);
+  });
+});
+
+describe("loanRepaymentDrafts", () => {
+  it("builds a per-loan patch including target repayment rate", () => {
+    const patch = buildRepaymentAnnotationPatch(
+      {
+        borrowedValueZar: "165000",
+        sellRate: "",
+        targetRepaymentUsdcZarRate: "16.2",
+      },
+      10_000,
+      10_000,
+    );
+    assert.equal(patch.borrowedValueZar, 165_000);
+    assert.equal(patch.sellRate, 16.5);
+    assert.equal(patch.targetRepaymentUsdcZarRate, 16.2);
+    assert.equal(parseOptionalDecimal(""), null);
   });
 });

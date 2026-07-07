@@ -105,6 +105,10 @@ async function readLocal(): Promise<LoanAnnotationMap> {
 async function writeLocal(map: LoanAnnotationMap): Promise<void> {
   cache = map;
   await AsyncStorage.setItem(STORE_KEY, JSON.stringify(map));
+  // Bump the local sync timestamp on every persist so a later hydrate cannot
+  // clobber unsynced per-loan edits when the network push is still in flight
+  // (or skipped while signed out).
+  await AsyncStorage.setItem(UPDATED_AT_KEY, nextMonotonicTimestamp());
 }
 
 /** All per-loan annotations (empty map when none). */
@@ -157,8 +161,12 @@ export async function setLoanAnnotation(
 async function pushAnnotations(map: LoanAnnotationMap): Promise<void> {
   const headers = await authHeader();
   if (!headers) return;
-  const updatedAt = nextMonotonicTimestamp();
-  await AsyncStorage.setItem(UPDATED_AT_KEY, updatedAt);
+  const updatedAt =
+    (await AsyncStorage.getItem(UPDATED_AT_KEY)) ?? nextMonotonicTimestamp();
+  if (Number.isFinite(Date.parse(updatedAt))) {
+    const remoteMs = Date.parse(updatedAt);
+    if (remoteMs > lastIssuedMs) lastIssuedMs = remoteMs;
+  }
   try {
     const res = await fetch(`${baseUrl}/api/loans/annotations/sync`, {
       method: "PUT",

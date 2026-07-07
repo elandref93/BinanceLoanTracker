@@ -1,7 +1,7 @@
 import { Feather } from "@expo/vector-icons";
 import * as Linking from "expo-linking";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Pressable,
   ScrollView,
@@ -70,6 +70,11 @@ import {
   type CollateralRow,
   type ScheduleRow,
 } from "@/lib/loanRepaymentPlan";
+import {
+  buildRepaymentAnnotationPatch,
+  draftsFromAnnotation,
+  type RepaymentFieldDrafts,
+} from "@/lib/loanRepaymentDrafts";
 import {
   documentedConversionRate,
   isStableBorrowAsset,
@@ -575,58 +580,80 @@ export function LoanDetailView({
   const [targetDraft, setTargetDraft] = useState("");
   const [collateralContribDraft, setCollateralContribDraft] = useState("");
   const [showSchedule, setShowSchedule] = useState(false);
+  const repaymentFieldsRef = useRef<{ loanId: string; drafts: RepaymentFieldDrafts }>(
+    { loanId: "", drafts: draftsFromAnnotation({}) },
+  );
+  const loanMetricsRef = useRef({ totalBorrowedQty: 0, planPrincipal: 0 });
+
+  const syncRepaymentDraftRef = (
+    loanId: string,
+    patch: Partial<RepaymentFieldDrafts>,
+  ) => {
+    repaymentFieldsRef.current = {
+      loanId,
+      drafts: { ...repaymentFieldsRef.current.drafts, ...patch },
+    };
+  };
+
+  const applyRepaymentDraftsFromAnnotation = (
+    loanId: string,
+    ann: LoanAnnotation,
+  ) => {
+    const drafts = draftsFromAnnotation(ann);
+    setBorrowedValueDraft(drafts.borrowedValueZar);
+    setSellRateDraft(drafts.sellRate);
+    setTargetRepaymentDraft(drafts.targetRepaymentUsdcZarRate);
+    repaymentFieldsRef.current = { loanId, drafts };
+  };
+
+  const commitRepaymentDrafts = (loanId: string) => {
+    if (!loanId) return;
+    const { drafts } = repaymentFieldsRef.current;
+    const patch = buildRepaymentAnnotationPatch(
+      drafts,
+      loanMetricsRef.current.totalBorrowedQty,
+      loanMetricsRef.current.planPrincipal,
+    );
+    void setLoanAnnotation(loanId, patch);
+  };
+
   useEffect(() => {
     if (!id) return;
-    // Drop stale state immediately when switching loans (iPad pane / nav).
+    let active = true;
     setAnnotation({});
     setShowSchedule(false);
-    setBorrowedValueDraft("");
-    setSellRateDraft("");
-    setTargetRepaymentDraft("");
+    applyRepaymentDraftsFromAnnotation(id, {});
     setContribDraft("");
     setTargetDraft("");
     setCollateralContribDraft("");
-    void getLoanAnnotation(id).then(setAnnotation);
-    return subscribeLoanAnnotations(() => {
-      void getLoanAnnotation(id).then(setAnnotation);
+    void getLoanAnnotation(id).then((ann) => {
+      if (!active) return;
+      setAnnotation(ann);
+      applyRepaymentDraftsFromAnnotation(id, ann);
+      setContribDraft(
+        ann.monthlyContribution != null ? String(ann.monthlyContribution) : "",
+      );
+      setTargetDraft(ann.targetSettleDate ?? "");
+      setCollateralContribDraft(
+        ann.monthlyCollateralContribution != null
+          ? String(ann.monthlyCollateralContribution)
+          : "",
+      );
     });
+    const unsub = subscribeLoanAnnotations(() => {
+      void getLoanAnnotation(id).then((ann) => {
+        if (!active) return;
+        setAnnotation(ann);
+      });
+    });
+    return () => {
+      active = false;
+      unsub();
+      if (repaymentFieldsRef.current.loanId === id) {
+        commitRepaymentDrafts(id);
+      }
+    };
   }, [id]);
-  useEffect(() => {
-    setBorrowedValueDraft(
-      annotation.borrowedValueZar != null
-        ? String(annotation.borrowedValueZar)
-        : "",
-    );
-    setSellRateDraft(
-      annotation.sellRate != null ? String(annotation.sellRate) : "",
-    );
-    setTargetRepaymentDraft(
-      annotation.targetRepaymentUsdcZarRate != null
-        ? String(annotation.targetRepaymentUsdcZarRate)
-        : "",
-    );
-    setContribDraft(
-      annotation.monthlyContribution != null
-        ? String(annotation.monthlyContribution)
-        : "",
-    );
-    setTargetDraft(annotation.targetSettleDate ?? "");
-    setCollateralContribDraft(
-      annotation.monthlyCollateralContribution != null
-        ? String(annotation.monthlyCollateralContribution)
-        : "",
-    );
-    setShowSchedule(false);
-  }, [
-    id,
-    annotation.borrowedValueZar,
-    annotation.sellRate,
-    annotation.targetRepaymentUsdcZarRate,
-    annotation.monthlyContribution,
-    annotation.targetSettleDate,
-    annotation.monthlyCollateralContribution,
-    annotation.goalMode,
-  ]);
 
   if (loansQ.isLoading || accountsQ.isLoading) {
     if (embedded) {
@@ -802,6 +829,8 @@ export function LoanDetailView({
   const totalBorrowedQty = loanTxs
     .filter((t) => t.type === "borrow")
     .reduce((sum, t) => sum + t.amount, 0);
+  loanMetricsRef.current = { totalBorrowedQty, planPrincipal };
+  const persistRepaymentDrafts = () => commitRepaymentDrafts(loan.id);
   const borrowedValueZar = annotation.borrowedValueZar ?? null;
   const documentedRate = documentedConversionRate(annotation, planPrincipal);
   const fixedSellRate = documentedRate;
@@ -1453,28 +1482,12 @@ export function LoanDetailView({
           </Text>
           <TextInput
             value={borrowedValueDraft}
-            onChangeText={setBorrowedValueDraft}
-            onEndEditing={() => {
-              const n = Number(borrowedValueDraft);
-              const borrowedValueZar =
-                borrowedValueDraft.trim() === "" || !Number.isFinite(n)
-                  ? null
-                  : n;
-              const derivedSell =
-                borrowedValueZar != null &&
-                borrowedValueZar > 0 &&
-                totalBorrowedQty > 0
-                  ? borrowedValueZar / totalBorrowedQty
-                  : borrowedValueZar != null &&
-                      borrowedValueZar > 0 &&
-                      planPrincipal > 0
-                    ? borrowedValueZar / planPrincipal
-                    : null;
-              void setLoanAnnotation(loan.id, {
-                borrowedValueZar,
-                ...(derivedSell != null ? { sellRate: derivedSell } : {}),
-              });
+            onChangeText={(text) => {
+              setBorrowedValueDraft(text);
+              syncRepaymentDraftRef(loan.id, { borrowedValueZar: text });
             }}
+            onBlur={persistRepaymentDrafts}
+            onEndEditing={persistRepaymentDrafts}
             keyboardType="decimal-pad"
             placeholder="—"
             placeholderTextColor={colors.mutedForeground}
@@ -1498,16 +1511,12 @@ export function LoanDetailView({
               </Text>
               <TextInput
                 value={sellRateDraft}
-                onChangeText={setSellRateDraft}
-                onEndEditing={() => {
-                  const n = Number(sellRateDraft);
-                  void setLoanAnnotation(loan.id, {
-                    sellRate:
-                      sellRateDraft.trim() === "" || !Number.isFinite(n)
-                        ? null
-                        : n,
-                  });
+                onChangeText={(text) => {
+                  setSellRateDraft(text);
+                  syncRepaymentDraftRef(loan.id, { sellRate: text });
                 }}
+                onBlur={persistRepaymentDrafts}
+                onEndEditing={persistRepaymentDrafts}
                 keyboardType="decimal-pad"
                 placeholder={
                   fixedSellRate != null
@@ -1533,16 +1542,14 @@ export function LoanDetailView({
               </Text>
               <TextInput
                 value={targetRepaymentDraft}
-                onChangeText={setTargetRepaymentDraft}
-                onEndEditing={() => {
-                  const n = Number(targetRepaymentDraft);
-                  void setLoanAnnotation(loan.id, {
-                    targetRepaymentUsdcZarRate:
-                      targetRepaymentDraft.trim() === "" || !Number.isFinite(n)
-                        ? null
-                        : n,
+                onChangeText={(text) => {
+                  setTargetRepaymentDraft(text);
+                  syncRepaymentDraftRef(loan.id, {
+                    targetRepaymentUsdcZarRate: text,
                   });
                 }}
+                onBlur={persistRepaymentDrafts}
+                onEndEditing={persistRepaymentDrafts}
                 keyboardType="decimal-pad"
                 placeholder="—"
                 placeholderTextColor={colors.mutedForeground}

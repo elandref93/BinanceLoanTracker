@@ -1,6 +1,6 @@
 {
   "cli": {
-    "version": ">= 20.1.0 < 21.0.0",
+    "version": ">= 16.0.0",
     "appVersionSource": "remote"
   },
   "build": {
@@ -38,6 +38,7 @@
       "node": "20.18.3",
       "pnpm": "9.15.9",
       "ios": {
+        "image": "sdk-54",
         "resourceClass": "m-medium"
       },
       "env": {

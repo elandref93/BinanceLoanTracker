@@ -61,7 +61,7 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20.18.3
+          node-version: 22
           cache: pnpm
 
       - name: Install dependencies
@@ -70,10 +70,7 @@ jobs:
       - name: Set up EAS
         uses: expo/expo-github-action@v8
         with:
-          # Pinned (not `latest`) so OTA publishing is reproducible and can't
-          # break from an unattended EAS CLI release. Keep in sync with
-          # eas.json `cli.version` and the eas-cli devDependency.
-          eas-version: 20.1.0
+          eas-version: latest
           token: ${{ secrets.EXPO_TOKEN }}
 
       # Publish to the production channel. The commit message is passed via an

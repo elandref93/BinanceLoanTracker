@@ -7,9 +7,15 @@ name: TestFlight Build
 # REQUIRED: EXPO_TOKEN secret (same as publish-update.yml).
 #
 # Trigger manually from GitHub Actions, or push to main when native paths change.
+# To submit an already-finished EAS build, use workflow_dispatch with submit_build_id.
 
 on:
   workflow_dispatch:
+    inputs:
+      submit_build_id:
+        description: Existing EAS build ID to submit to TestFlight (skips the native build)
+        required: false
+        type: string
   push:
     branches: [main]
     paths:
@@ -33,7 +39,7 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20.18.3
+          node-version: 22
           cache: pnpm
 
       - name: Install dependencies
@@ -42,12 +48,20 @@ jobs:
       - name: Set up EAS
         uses: expo/expo-github-action@v8
         with:
-          eas-version: 20.1.0
+          eas-version: latest
           token: ${{ secrets.EXPO_TOKEN }}
 
       - name: Build and submit to TestFlight
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.submit_build_id == '' }}
         working-directory: artifacts/ledger-mobile
         env:
           EXPO_USE_METRO_WORKSPACE_ROOT: '1'
           EXPO_PUBLIC_DOMAIN: binance-loan-tracker-backend.azurewebsites.net
         run: eas build -p ios --profile production --non-interactive --auto-submit --no-wait
+
+      - name: Submit existing build to TestFlight
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.submit_build_id != '' }}
+        working-directory: artifacts/ledger-mobile
+        env:
+          EAS_BUILD_ID: ${{ inputs.submit_build_id }}
+        run: eas submit -p ios --id "$EAS_BUILD_ID" --non-interactive --profile production --no-wait

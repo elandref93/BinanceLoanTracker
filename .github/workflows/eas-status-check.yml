@@ -25,7 +25,7 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20.18.3
+          node-version: 22
           cache: pnpm
 
       - name: Install dependencies
@@ -34,7 +34,7 @@ jobs:
       - name: Set up EAS
         uses: expo/expo-github-action@v8
         with:
-          eas-version: 20.1.0
+          eas-version: latest
           token: ${{ secrets.EXPO_TOKEN }}
 
       - name: Recent iOS builds

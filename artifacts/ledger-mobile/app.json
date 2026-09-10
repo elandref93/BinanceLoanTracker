@@ -8,7 +8,7 @@
         "projectId": "507ca16a-ae95-4f54-84f2-fef5180a4f93"
       }
     },
-    "version": "1.0.0",
+    "version": "1.0.1",
     "orientation": "default",
     "icon": "./assets/images/icon.png",
     "scheme": "binance-loan-tracker",
@@ -20,7 +20,7 @@
     "updates": {
       "url": "https://u.expo.dev/507ca16a-ae95-4f54-84f2-fef5180a4f93",
       "enabled": true,
-      "checkAutomatically": "ON_LOAD",
+      "checkAutomatically": "NEVER",
       "fallbackToCacheTimeout": 0
     },
     "splash": {

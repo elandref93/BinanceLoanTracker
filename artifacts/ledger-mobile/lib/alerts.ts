@@ -14,14 +14,18 @@ const FIRED_KEY = "ledger.alerts.fired.v2";
 // Resets when the loan drops back under the rule's threshold.
 type FiredMap = Record<string, true>;
 
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowBanner: true,
-    shouldShowList: true,
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-  }),
-});
+try {
+  Notifications.setNotificationHandler({
+    handleNotification: async () => ({
+      shouldShowBanner: true,
+      shouldShowList: true,
+      shouldPlaySound: true,
+      shouldSetBadge: false,
+    }),
+  });
+} catch {
+  // Native module missing in an older binary — do not crash launch.
+}
 
 export async function getAlertsEnabled(): Promise<boolean> {
   const v = await SecureStore.getItemAsync(ENABLED_KEY);

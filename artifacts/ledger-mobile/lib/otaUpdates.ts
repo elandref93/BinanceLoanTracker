@@ -6,20 +6,10 @@ let inFlight = false;
 
 /**
  * Check for a newer over-the-air (EAS Update) JS bundle. If one is available it
- * is downloaded, and when `reload` is requested the app restarts straight into
- * it — so updates land with zero user interaction (no banner, no prompt, no
- * "close & reopen"). Without `reload` the bundle is merely staged and applies
- * on the next cold launch via `checkAutomatically: ON_LOAD`.
- *
- * Why `reloadAsync()` is safe here (it used to crash on this stack):
- *   - The New-Architecture iOS reload crash was fixed upstream
- *     (expo/expo#31789) and that fix ships in our expo-updates ~29 / SDK 54
- *     binary.
- *   - The *other* documented crash (expo/expo#21347) only happens when the
- *     Updates API is exercised during the cold-start window, racing the native
- *     ON_LOAD check. Launch reload is deferred a few seconds and runs while
- *     the splash is still visible (see `components/AutoUpdater`). Foreground
- *     reload runs once the app is fully running.
+ * is downloaded. Reload is opt-in and currently unused: activating an OTA
+ * in-process via `reloadAsync()` (or `checkAutomatically: ON_LOAD`) aborts
+ * natively on iOS 26 through expo-updates ErrorRecovery, which is the
+ * TestFlight instant-crash we hit on build 70.
  *
  * Safe to call anywhere: it's a no-op in development / Expo Go (where
  * `Updates.isEnabled` is false), guards against overlapping runs, and swallows

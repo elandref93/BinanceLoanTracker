@@ -1,5 +1,4 @@
 import { Platform } from "react-native";
-import { ExtensionStorage } from "@bacons/apple-targets";
 
 import type { Loan } from "@workspace/api-client-react";
 import { reportError } from "@/lib/crashReporting";
@@ -161,6 +160,12 @@ export async function writeWidgetSnapshot(
 ): Promise<void> {
   if (Platform.OS !== "ios") return;
   try {
+    const { ExtensionStorage } = require("@bacons/apple-targets") as {
+      ExtensionStorage: {
+        new (group: string): { set: (key: string, value: string) => void };
+        reloadWidget: () => void;
+      };
+    };
     const storage = new ExtensionStorage(APP_GROUP);
     storage.set(KEY, JSON.stringify(snapshot));
     ExtensionStorage.reloadWidget();

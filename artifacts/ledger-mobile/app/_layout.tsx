@@ -11,7 +11,6 @@ import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import React, { useCallback, useEffect, useState } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
-import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { AppLockGate } from "@/components/AppLockGate";
@@ -30,6 +29,21 @@ initSentry();
 initCrashReporting();
 
 SplashScreen.preventAutoHideAsync();
+
+type KeyboardProviderComponent = React.ComponentType<{
+  children: React.ReactNode;
+}>;
+
+function loadKeyboardProvider(): KeyboardProviderComponent {
+  try {
+    return require("react-native-keyboard-controller")
+      .KeyboardProvider as KeyboardProviderComponent;
+  } catch {
+    return ({ children }: { children: React.ReactNode }) => children;
+  }
+}
+
+const KeyboardProvider = loadKeyboardProvider();
 
 const domain = process.env.EXPO_PUBLIC_DOMAIN;
 if (domain) {

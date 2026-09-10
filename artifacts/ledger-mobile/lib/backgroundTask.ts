@@ -161,8 +161,12 @@ async function runRefresh(): Promise<BackgroundFetch.BackgroundFetchResult> {
 
 // Defining the task at module scope is required — TaskManager looks it up by
 // name when the OS wakes the app in the background.
-if (!TaskManager.isTaskDefined(BACKGROUND_REFRESH_TASK)) {
-  TaskManager.defineTask(BACKGROUND_REFRESH_TASK, runRefresh);
+try {
+  if (!TaskManager.isTaskDefined(BACKGROUND_REFRESH_TASK)) {
+    TaskManager.defineTask(BACKGROUND_REFRESH_TASK, runRefresh);
+  }
+} catch {
+  // Native module missing — skip registration rather than abort launch.
 }
 
 /** Idempotent: safe to call on every cold start. */

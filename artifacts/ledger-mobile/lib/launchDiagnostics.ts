@@ -121,6 +121,11 @@ export function logLaunchDiagnostics(): void {
     // ignore
   }
   reportMessage("[launch] js alive", snapshot);
+  try {
+    Sentry.captureMessage("[launch] js alive", "info");
+  } catch {
+    // never block launch on telemetry
+  }
   void (async () => {
     await ingestNativeAbort();
     await dumpUpdatesLogs();

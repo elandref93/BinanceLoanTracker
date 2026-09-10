@@ -73,22 +73,31 @@ function RootLayout() {
   }, []);
 
   useEffect(() => {
-    if ((fontsLoaded || fontError) && launchReady) {
-      SplashScreen.hideAsync();
-    }
-  }, [fontsLoaded, fontError, launchReady]);
+    if (!launchReady) return;
+    void SplashScreen.hideAsync();
+  }, [launchReady]);
+
+  // Never leave the BTC splash up if fonts or AutoUpdater stall.
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setLaunchReady(true);
+      void SplashScreen.hideAsync();
+    }, 2000);
+    return () => clearTimeout(timer);
+  }, []);
 
   useEffect(() => {
     void registerBackgroundRefresh();
   }, []);
 
-  const fontsReady = fontsLoaded || !!fontError;
+  // Keep loading Inter in the background; do not block the tree on it.
+  void fontsLoaded;
+  void fontError;
 
   return (
     <>
       <AutoUpdater onLaunchReady={onLaunchReady} />
-      {fontsReady ? (
-        <SessionProvider>
+      <SessionProvider>
       <SafeAreaProvider>
         <ErrorBoundary
           onError={(error, componentStack) =>
@@ -165,7 +174,6 @@ function RootLayout() {
         </ErrorBoundary>
       </SafeAreaProvider>
     </SessionProvider>
-      ) : null}
     </>
   );
 }

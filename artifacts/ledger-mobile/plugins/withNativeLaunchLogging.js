@@ -43,9 +43,13 @@ enum LedgerLaunchLog {
     let version = info?["CFBundleShortVersionString"] as? String ?? "?"
     let build = info?["CFBundleVersion"] as? String ?? "?"
     NSLog("[LedgerLaunch] native start version=%@ build=%@", version, build)
-    startSentry(version: version, build: build)
     installExceptionHook()
-    NSLog("[LedgerLaunch] sentry+exception hook ready")
+    // Do not block didFinishLaunching — Sentry Cocoa start on the current
+    // runloop was a suspect for the 1.0.2 "stuck on splash" hang.
+    DispatchQueue.main.async {
+      LedgerLaunchLog.startSentry(version: version, build: build)
+      NSLog("[LedgerLaunch] sentry ready")
+    }
   }
 
   static func startSentry(version: String, build: String) {

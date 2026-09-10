@@ -34,6 +34,12 @@ export function initSentry(): void {
       // avoid collecting anything we don't need.
       tracesSampleRate: 0,
       sendDefaultPii: false,
+      enableNative: true,
+      enableNativeCrashHandling: true,
+      enableAutoSessionTracking: true,
+      enableWatchdogTerminationTracking: true,
+      enableAppHangTracking: false,
+      attachStacktrace: true,
       // Don't ship events from Metro / Expo Go during local development — only
       // real TestFlight/production builds report. Avoids dev noise and keeps
       // the web preview bundle from emitting events.

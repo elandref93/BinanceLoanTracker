@@ -8,7 +8,7 @@
         "projectId": "507ca16a-ae95-4f54-84f2-fef5180a4f93"
       }
     },
-    "version": "1.0.1",
+    "version": "1.0.2",
     "orientation": "default",
     "icon": "./assets/images/icon.png",
     "scheme": "binance-loan-tracker",
@@ -93,7 +93,8 @@
           "project": "react-native",
           "url": "https://sentry.io/"
         }
-      ]
+      ],
+      "./plugins/withNativeLaunchLogging"
     ],
     "experiments": {
       "typedRoutes": true,

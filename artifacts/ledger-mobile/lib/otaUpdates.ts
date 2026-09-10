@@ -23,17 +23,36 @@ export async function checkAndApplyUpdate(
   // any chance of a reload loop.
   if (inFlight) return;
   inFlight = true;
+  const startedAt = Date.now();
+  reportMessage("[ota] check start", {
+    op: "ota.check.start",
+    reload: options.reload === true,
+    runtimeVersion: Updates.runtimeVersion ?? null,
+    updateId: Updates.updateId ?? null,
+    isEmbeddedLaunch: Updates.isEmbeddedLaunch,
+    isEmergencyLaunch: Updates.isEmergencyLaunch,
+    emergencyLaunchReason: Updates.emergencyLaunchReason ?? null,
+  });
   try {
     const result = await Updates.checkForUpdateAsync();
     if (!result.isAvailable) {
-      reportMessage("[ota] no update", { op: "ota.check", isAvailable: false });
+      reportMessage("[ota] no update", {
+        op: "ota.check",
+        isAvailable: false,
+        ms: Date.now() - startedAt,
+      });
       return;
     }
+    reportMessage("[ota] update available, fetching", {
+      op: "ota.fetch.start",
+      isAvailable: true,
+    });
     // Download the new bundle to disk.
     await Updates.fetchUpdateAsync();
     reportMessage("[ota] update fetched", {
       op: "ota.fetch",
       isAvailable: true,
+      ms: Date.now() - startedAt,
     });
     if (options.reload) {
       reportMessage("[ota] reloading into update", { op: "ota.reload" });

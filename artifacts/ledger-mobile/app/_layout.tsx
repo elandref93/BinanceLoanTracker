@@ -21,12 +21,15 @@ import { RiskSettingsProvider } from "@/context/RiskSettingsContext";
 import { SessionProvider } from "@/context/SessionContext";
 import { registerBackgroundRefresh } from "@/lib/backgroundTask";
 import { initCrashReporting, reportFatal } from "@/lib/crashReporting";
+import { logLaunchDiagnostics } from "@/lib/launchDiagnostics";
 import { initSentry, Sentry } from "@/lib/sentry";
 
 // Initialise Sentry first so its global handlers are in place; the on-device
-// reporter then chains on top of them.
+// reporter then chains on top of them. Launch diagnostics ingest a native
+// abort saved from a previous launch (if any) and dump expo-updates logs.
 initSentry();
 initCrashReporting();
+logLaunchDiagnostics();
 
 SplashScreen.preventAutoHideAsync();
 

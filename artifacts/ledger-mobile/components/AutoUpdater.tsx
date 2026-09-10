@@ -2,6 +2,7 @@ import * as Updates from "expo-updates";
 import { useEffect, useRef } from "react";
 import { AppState, type AppStateStatus } from "react-native";
 
+import { reportMessage } from "@/lib/crashReporting";
 import { checkAndApplyUpdate } from "@/lib/otaUpdates";
 
 interface Props {
@@ -36,6 +37,17 @@ export function AutoUpdater({ onLaunchReady }: Props): null {
 
   useEffect(() => {
     signalLaunchReady();
+    reportMessage("[launch] AutoUpdater mount", {
+      op: "autoUpdater.mount",
+      dev: __DEV__,
+      isEnabled: Updates.isEnabled,
+      isEmbeddedLaunch: Updates.isEmbeddedLaunch,
+      isEmergencyLaunch: Updates.isEmergencyLaunch,
+      emergencyLaunchReason: Updates.emergencyLaunchReason ?? null,
+      runtimeVersion: Updates.runtimeVersion ?? null,
+      updateId: Updates.updateId ?? null,
+      channel: Updates.channel ?? null,
+    });
     if (__DEV__ || !Updates.isEnabled) {
       return;
     }

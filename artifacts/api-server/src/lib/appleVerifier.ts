@@ -19,11 +19,12 @@
  * What we extract:
  *   - `sub`: Apple's stable user identifier for (this user, this app). Used
  *     as the canonical user id throughout the system.
- *   - `email` (optional): Apple may include a real or relay email; only
- *     present on first sign-in unless the user re-grants the scope.
- *   - `email_verified` (optional): Apple's flag; we surface it but don't gate
- *     on it (relay emails are always verified, and we don't currently use
- *     email for anything security-critical).
+ *   - `email` (optional): Apple may include a real or relay email. The native
+ *     credential often omits it after the first sign-in, but the identity
+ *     token commonly still carries the claim — always read it from here.
+ *   - `email_verified` (optional): Apple's flag. Identity linking across
+ *     client ids (TestFlight vs Expo Go) only uses this email when the claim
+ *     is true or absent; `false` is refused.
  *
  * Apple's docs:
  *   https://developer.apple.com/documentation/sign_in_with_apple/sign_in_with_apple_rest_api/verifying_a_user

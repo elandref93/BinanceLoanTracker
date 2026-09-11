@@ -86,6 +86,34 @@ export async function readRecordByHash(
   }
 }
 
+/**
+ * True when this Apple `sub` already has anything on disk (sync blobs,
+ * encrypted credentials, or an LTV snapshot). Used by Apple identity linking
+ * so a new Expo Go `sub` is aliased onto the established TestFlight user
+ * rather than the other way around.
+ */
+export async function hasPersistedUserData(sub: string): Promise<boolean> {
+  await ensureDir();
+  const hash = crypto.createHash("sha256").update(sub).digest("hex");
+  const dir = getDataDir();
+  const candidates = [
+    fileForHash(hash, "accounts"),
+    fileForHash(hash, "settings"),
+    fileForHash(hash, "annotations"),
+    path.join(dir, `${hash}.creds.json`),
+    path.join(dir, `${hash}.ltv.json`),
+  ];
+  for (const target of candidates) {
+    try {
+      await fs.access(target);
+      return true;
+    } catch {
+      // ENOENT / not readable — try the next candidate
+    }
+  }
+  return false;
+}
+
 export async function writeRecord(
   sub: string,
   kind: SyncKind,

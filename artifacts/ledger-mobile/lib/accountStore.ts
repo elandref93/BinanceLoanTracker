@@ -762,10 +762,14 @@ export function useStoredAccountsCount(): number | null {
   useEffect(() => {
     let cancelled = false;
     const refresh = () => {
-      readAll().then((all) => {
-        if (cancelled) return;
-        setCount(all.filter((c) => c.links.length > 0).length);
-      });
+      readAll()
+        .then((all) => {
+          if (cancelled) return;
+          setCount(all.filter((c) => c.links.length > 0).length);
+        })
+        .catch(() => {
+          if (!cancelled) setCount(0);
+        });
     };
     refresh();
     return subscribe(refresh);

@@ -19,6 +19,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { loadStoredSession } from "@/lib/session";
+import { backendHost } from "@/lib/runtime";
 import { Sentry } from "@/lib/sentry";
 
 type SentryLevel = "fatal" | "error" | "info";
@@ -136,11 +137,9 @@ function toMessageAndStack(err: unknown): { message: string; stack?: string } {
 
 async function postToBackend(entry: CrashEntry): Promise<void> {
   try {
-    const domain = process.env.EXPO_PUBLIC_DOMAIN;
-    if (!domain) return;
     const session = await loadStoredSession();
     if (!session) return;
-    await fetch(`https://${domain}/api/diag/crash`, {
+    await fetch(`https://${backendHost()}/api/diag/crash`, {
       method: "POST",
       headers: {
         "content-type": "application/json",

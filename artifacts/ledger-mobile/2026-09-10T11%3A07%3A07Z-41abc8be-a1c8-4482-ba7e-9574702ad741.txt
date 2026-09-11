@@ -1,0 +1,23 @@
+HTTP/1.1 200 OK
+Content-Type: text/plain;charset=utf-8
+X-GUploader-UploadID: AJjja9aohStrAEGwLc2J-x1XBjpDoAvuekxR9uZmOIjBPxrbL9WCOnZ9bSqmMfY26btFpfxIPkyJ-nM
+Expires: Thu, 10 Sep 2026 11:11:42 GMT
+Date: Thu, 10 Sep 2026 11:11:42 GMT
+Cache-Control: private, max-age=0
+Last-Modified: Thu, 10 Sep 2026 11:08:38 GMT
+ETag: "693c53d962796b0f064d0df9b2e50a1f"
+x-goog-generation: 1789038518874957
+x-goog-metageneration: 1
+x-goog-stored-content-encoding: br
+x-goog-stored-content-length: 14196
+x-goog-custom-time: 2026-09-10T13:07:07Z
+Content-Encoding: br
+x-goog-hash: crc32c=niiWnA==
+x-goog-hash: md5=aTxT2WJ5aw8GTQ35suUKHw==
+x-goog-storage-class: STANDARD
+Accept-Ranges: bytes
+Content-Length: 14196
+Vary: Origin
+Server: UploadServer
+Alt-Svc: h3=":443"; ma=2592000,h3-29=":443"; ma=2592000
+

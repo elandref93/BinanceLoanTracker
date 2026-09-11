@@ -30,11 +30,16 @@ export function AppLockGate({ children }: { children: React.ReactNode }) {
   const [authInFlight, setAuthInFlight] = useState(false);
   const backgroundedAt = useRef<number | null>(null);
 
-  // Initial check on mount.
+  // Initial check on mount. Never leave locked=null if SecureStore throws —
+  // that rendered a blank screen that looked like a stuck BTC splash.
   useEffect(() => {
-    isAppLockEnabled().then((enabled) => {
-      setLocked(enabled);
-    });
+    isAppLockEnabled()
+      .then((enabled) => {
+        setLocked(enabled);
+      })
+      .catch(() => {
+        setLocked(false);
+      });
   }, []);
 
   // Re-lock when returning to the foreground after a meaningful absence.

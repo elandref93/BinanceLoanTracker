@@ -11,10 +11,9 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { reportError, reportMessage } from "@/lib/crashReporting";
 import { notifyAuthFailure } from "@/lib/authEvents";
+import { backendBaseUrl } from "@/lib/runtime";
 
-const baseUrl = process.env.EXPO_PUBLIC_DOMAIN
-  ? `https://${process.env.EXPO_PUBLIC_DOMAIN}`
-  : "";
+const baseUrl = backendBaseUrl();
 
 const STORE_KEY = "ledger.loanAnnotations.v1";
 const UPDATED_AT_KEY = "ledger.loanAnnotations.updatedAt";

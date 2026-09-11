@@ -14,6 +14,7 @@ import {
   signInWithApple as performAppleSignIn,
   type Session,
   type SessionUser,
+  type AppleLinkWarning,
 } from "@/lib/session";
 import {
   hydrateFromServer,
@@ -54,6 +55,11 @@ interface SessionContextValue {
   accountsHydrateStatus: AccountsHydrateStatus;
   /** Human-readable error when accountsHydrateStatus is "error". */
   accountsHydrateError: string | null;
+  /**
+   * Set after Apple Sign In when the server could not link this Expo Go
+   * identity to an existing TestFlight user (no email / Hide My Email).
+   */
+  linkWarning: AppleLinkWarning | null;
   /** Returns the bearer token to attach to /api/* requests, or null. */
   getToken: () => Promise<string | null>;
   /** Run the Apple Sign In flow and persist the resulting session. */
@@ -109,6 +115,8 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     setAccountsHydrateError(null);
     try {
       const result = await hydrateFromServer();
+      // eslint-disable-next-line no-console
+      console.log("[sync] accounts hydrate", result);
       setAccountsHydrateStatus(result.status);
       setAccountsHydrateError(result.errorMessage ?? null);
       if (result.status === "ok" || result.status === "empty") {
@@ -128,25 +136,21 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     setSettingsTokenGetter(getToken);
     setCredentialsTokenGetter(getToken);
     setLoanAnnotationsTokenGetter(getToken);
-    if (session) {
-      reportMessage("[session] hydrate start", { op: "session.hydrate" });
-      void runAccountHydrate();
-      void hydrateSettings().catch((e) => {
-        reportError(e, { op: "settings.hydrate" });
-      });
-      void hydrateLoanAnnotations().catch((e) => {
-        reportError(e, { op: "annotations.hydrate" });
-      });
-    } else {
+    if (!session) {
       setAccountsHydrateStatus("pending");
       setAccountsHydrateError(null);
+      // Leave getters registered. Nulling them on cleanup races in-flight
+      // hydrates (React Strict Mode remount) and looks like a 401/sign-out.
+      return;
     }
-    return () => {
-      setSyncTokenGetter(null);
-      setSettingsTokenGetter(null);
-      setCredentialsTokenGetter(null);
-      setLoanAnnotationsTokenGetter(null);
-    };
+    reportMessage("[session] hydrate start", { op: "session.hydrate" });
+    void runAccountHydrate();
+    void hydrateSettings().catch((e) => {
+      reportError(e, { op: "settings.hydrate" });
+    });
+    void hydrateLoanAnnotations().catch((e) => {
+      reportError(e, { op: "annotations.hydrate" });
+    });
   }, [session, getToken, runAccountHydrate]);
 
   const retryAccountSync = useCallback(async () => {
@@ -173,15 +177,20 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     return next;
   }, []);
 
+  const signOutInFlight = useRef(false);
   const signOut = useCallback(async () => {
+    if (signOutInFlight.current || sessionRef.current === null) return;
+    signOutInFlight.current = true;
     reportMessage("[session] sign-out", { op: "session.signOut" });
     try {
       await clearStoredSession();
+      setSession(null);
     } catch (e) {
       reportError(e, { op: "session.signOut" });
       throw e;
+    } finally {
+      signOutInFlight.current = false;
     }
-    setSession(null);
   }, []);
 
   useEffect(() => {
@@ -199,6 +208,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       accountsHydrated,
       accountsHydrateStatus,
       accountsHydrateError,
+      linkWarning: session?.linkWarning ?? null,
       getToken,
       signInWithApple,
       signOut,

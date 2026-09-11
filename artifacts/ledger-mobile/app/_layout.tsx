@@ -13,6 +13,8 @@ import React, { useCallback, useEffect, useState } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
+import { isExpoGo } from "@/lib/runtime";
+
 import { AppLockGate } from "@/components/AppLockGate";
 import { AutoUpdater } from "@/components/AutoUpdater";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
@@ -31,7 +33,22 @@ initSentry();
 initCrashReporting();
 logLaunchDiagnostics();
 
-SplashScreen.preventAutoHideAsync();
+// Expo Go / Metro: never pin the native BTC splash. preventAutoHideAsync plus
+// a missing native module (Sentry) previously left the logo up forever because
+// hideAsync never ran. Production still waits for the first paint, with a
+// failsafe below.
+if (isExpoGo() || __DEV__) {
+  void SplashScreen.hideAsync().catch(() => undefined);
+} else {
+  void SplashScreen.preventAutoHideAsync();
+}
+
+// eslint-disable-next-line no-console
+console.log("[launch] root module loaded", {
+  dev: __DEV__,
+  expoGo: isExpoGo(),
+  domain: process.env.EXPO_PUBLIC_DOMAIN ?? null,
+});
 
 type KeyboardProviderComponent = React.ComponentType<{
   children: React.ReactNode;
@@ -48,10 +65,10 @@ function loadKeyboardProvider(): KeyboardProviderComponent {
 
 const KeyboardProvider = loadKeyboardProvider();
 
-const domain = process.env.EXPO_PUBLIC_DOMAIN;
-if (domain) {
-  setBaseUrl(`https://${domain}`);
-}
+const domain =
+  process.env.EXPO_PUBLIC_DOMAIN ||
+  "binance-loan-tracker-backend.azurewebsites.net";
+setBaseUrl(`https://${domain}`);
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -73,16 +90,20 @@ function RootLayout() {
   }, []);
 
   useEffect(() => {
+    void SplashScreen.hideAsync().catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
     if (!launchReady) return;
-    void SplashScreen.hideAsync();
+    void SplashScreen.hideAsync().catch(() => undefined);
   }, [launchReady]);
 
   // Never leave the BTC splash up if fonts or AutoUpdater stall.
   useEffect(() => {
     const timer = setTimeout(() => {
       setLaunchReady(true);
-      void SplashScreen.hideAsync();
-    }, 2000);
+      void SplashScreen.hideAsync().catch(() => undefined);
+    }, 1500);
     return () => clearTimeout(timer);
   }, []);
 

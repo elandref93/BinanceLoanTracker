@@ -10,8 +10,16 @@
  *
  * `reportError` / `reportFatal` / `reportMessage` in crashReporting.ts forward
  * into Sentry, so every call site we already instrumented lands in both places.
+ *
+ * Expo Go does not ship the Sentry native module. Requiring `@sentry/react-native`
+ * there deadlocks JS before React mounts, which leaves the BTC splash up forever.
+ * Load the real SDK only in standalone / dev-client builds.
  */
-import * as Sentry from "@sentry/react-native";
+import Constants, { ExecutionEnvironment } from "expo-constants";
+
+import { isExpoGo } from "@/lib/runtime";
+
+type SentryModule = typeof import("@sentry/react-native");
 
 // Public client ingest key (DSN). Safe to embed: it is write-only and ships
 // inside every client build by design. Overridable per-environment via
@@ -20,11 +28,44 @@ const SENTRY_DSN =
   process.env.EXPO_PUBLIC_SENTRY_DSN ||
   "https://3fae81419d7ff0214ca6b500ebf22e01@o4511503179907072.ingest.us.sentry.io/4511503195832320";
 
+const noopSentry = {
+  init: () => undefined,
+  wrap: <T>(component: T): T => component,
+  setContext: () => undefined,
+  setTag: () => undefined,
+  captureMessage: () => undefined,
+  captureException: () => undefined,
+  addBreadcrumb: () => undefined,
+} as unknown as SentryModule;
+
+function runningInExpoGo(): boolean {
+  return (
+    isExpoGo() ||
+    Constants.executionEnvironment === ExecutionEnvironment.StoreClient
+  );
+}
+
+function loadSentry(): SentryModule {
+  if (runningInExpoGo()) {
+    return noopSentry;
+  }
+  try {
+    // Evaluated only when this branch runs. Metro still bundles the package,
+    // but Expo Go never executes the native-module import.
+    return require("@sentry/react-native") as SentryModule;
+  } catch {
+    return noopSentry;
+  }
+}
+
+export const Sentry = loadSentry();
+
 let started = false;
 
 export function initSentry(): void {
   if (started) return;
   started = true;
+  if (runningInExpoGo()) return;
   try {
     Sentry.init({
       dsn: SENTRY_DSN,
@@ -40,14 +81,11 @@ export function initSentry(): void {
       enableWatchdogTerminationTracking: true,
       enableAppHangTracking: false,
       attachStacktrace: true,
-      // Don't ship events from Metro / Expo Go during local development — only
-      // real TestFlight/production builds report. Avoids dev noise and keeps
-      // the web preview bundle from emitting events.
+      // Don't ship events from Metro during local development — only
+      // real TestFlight/production builds report.
       enabled: !__DEV__,
     });
   } catch {
     // Observability must never break app startup.
   }
 }
-
-export { Sentry };

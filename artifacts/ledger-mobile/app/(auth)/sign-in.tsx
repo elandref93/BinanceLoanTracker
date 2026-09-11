@@ -2,10 +2,12 @@ import * as AppleAuthentication from "expo-apple-authentication";
 import { Image } from "expo-image";
 
 import { haptic } from "@/lib/haptics";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Platform,
+  Pressable,
   StyleSheet,
   Text,
   View,
@@ -16,6 +18,7 @@ import { useColors } from "@/hooks/useColors";
 import { useSession } from "@/context/SessionContext";
 import { AuthRequestError } from "@/lib/session";
 import { ExpoGoBanner } from "@/components/ExpoGoBanner";
+import { isExpoGo } from "@/lib/runtime";
 
 // User-cancellation reaches us either as Apple's native error code or — on
 // older iOS builds and the simulator — as a generic Error with "cancel" in
@@ -36,43 +39,55 @@ function isUserCancel(err: unknown): boolean {
   return false;
 }
 
+function signInErrorMessage(err: unknown): string {
+  if (err instanceof AuthRequestError) {
+    return err.status === 401
+      ? "Sign-in failed: backend rejected the Apple identity. Try again."
+      : `Sign-in failed (${err.status}). Please try again.`;
+  }
+  if (err instanceof Error && err.message.trim()) return err.message;
+  return "Sign-in failed. Please try again.";
+}
+
 export default function SignInScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { signInWithApple } = useSession();
 
   const [busy, setBusy] = useState(false);
-  const [appleAvailable, setAppleAvailable] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Apple Sign In is iOS 13+ only; the module returns false on simulators
-  // without an Apple ID and on Android entirely.
-  useEffect(() => {
-    if (Platform.OS !== "ios") return;
-    AppleAuthentication.isAvailableAsync()
-      .then(setAppleAvailable)
-      .catch(() => setAppleAvailable(false));
-  }, []);
+  // Never gate the button on AppleAuthentication.isAvailableAsync() — that
+  // returns false in Expo Go (SDK 57) even on a real iPhone, which hid the
+  // only way to sign in. Always show on iOS. Web/Android stay without it.
+  const showAppleButton = Platform.OS === "ios";
 
   const onPress = useCallback(async () => {
     setBusy(true);
     setError(null);
     haptic.impact();
     try {
-      await signInWithApple();
+      const session = await signInWithApple();
+      if (session.linkWarning === "email_not_shared") {
+        Alert.alert(
+          "Email wasn't shared",
+          "Apple did not share an email this time. You can still use Expo Go — share your email on the next prompt if you want TestFlight accounts to sync.",
+        );
+      } else if (session.linkWarning === "private_relay_unlinked") {
+        Alert.alert(
+          "Hide My Email",
+          "Hide My Email can keep Expo Go and TestFlight from matching. You can still use Expo Go — share your real email next time if you want them linked.",
+        );
+      }
       // The (auth) layout watches isSignedIn and redirects to /(tabs) once
       // SessionContext updates — no manual navigation needed here.
     } catch (err) {
       if (isUserCancel(err)) {
         // User backed out; not an error.
-      } else if (err instanceof AuthRequestError) {
-        setError(
-          err.status === 401
-            ? "Sign-in failed: backend rejected the Apple identity. Try again."
-            : `Sign-in failed (${err.status}). Please try again.`,
-        );
       } else {
-        setError("Sign-in failed. Please try again.");
+        // eslint-disable-next-line no-console
+        console.log("[auth] sign-in screen error", err);
+        setError(signInErrorMessage(err));
       }
     } finally {
       setBusy(false);
@@ -108,7 +123,7 @@ export default function SignInScreen() {
           <Text style={[styles.error, { color: colors.danger }]}>{error}</Text>
         ) : null}
 
-        {appleAvailable ? (
+        {showAppleButton ? (
           busy ? (
             <View
               style={[
@@ -117,8 +132,23 @@ export default function SignInScreen() {
                 { borderRadius: colors.radius },
               ]}
             >
-              <ActivityIndicator color="#FFFFFF" />
+              <ActivityIndicator color="#000000" />
             </View>
+          ) : isExpoGo() ? (
+            // Custom Pressable so Expo Go always has a tappable control even
+            // when the native AppleAuthenticationButton view does not mount.
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Sign in with Apple"
+              onPress={onPress}
+              style={({ pressed }) => [
+                styles.button,
+                styles.appleButtonFallback,
+                { borderRadius: colors.radius, opacity: pressed ? 0.85 : 1 },
+              ]}
+            >
+              <Text style={styles.appleButtonLabel}>Sign in with Apple</Text>
+            </Pressable>
           ) : (
             <AppleAuthentication.AppleAuthenticationButton
               buttonType={
@@ -133,16 +163,15 @@ export default function SignInScreen() {
             />
           )
         ) : (
-          // Surfaces only on simulator / unsupported devices. iOS TestFlight
-          // builds with usesAppleSignIn: true always have Apple available.
           <Text style={[styles.fine, { color: colors.mutedForeground }]}>
-            Apple Sign In isn't available on this device. Run Ledger on a
-            real iOS device signed into an Apple ID.
+            Apple Sign In needs a Ledger development build on a real iPhone.
           </Text>
         )}
 
         <Text style={[styles.fine, { color: colors.mutedForeground }]}>
-          Private TestFlight build. API keys are read-only and stay on device.
+          {isExpoGo()
+            ? "Expo Go cannot complete Apple Sign In. Use the Ledger development client, then connect to Metro."
+            : "Private development build. API keys are read-only and stay on device."}
         </Text>
       </View>
     </View>
@@ -180,9 +209,14 @@ const styles = StyleSheet.create({
     height: 52,
   },
   appleButtonFallback: {
-    backgroundColor: "#000000",
+    backgroundColor: "#FFFFFF",
     height: 52,
     paddingVertical: 0,
+  },
+  appleButtonLabel: {
+    color: "#000000",
+    fontSize: 17,
+    fontFamily: "Inter_600SemiBold",
   },
   fine: {
     textAlign: "center",

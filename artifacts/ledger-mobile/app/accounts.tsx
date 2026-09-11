@@ -11,11 +11,10 @@ import { useSession } from "@/context/SessionContext";
 import { listContainers, type StoredContainer } from "@/lib/accountStore";
 import { listAccountsWithSecrets } from "@/lib/binanceKeys";
 import { probeAccount, type ProbeResult } from "@/lib/keyHealth";
+import { backendBaseUrl } from "@/lib/runtime";
 import { fmtAge } from "@/utils/format";
 
-const baseUrl = process.env.EXPO_PUBLIC_DOMAIN
-  ? `https://${process.env.EXPO_PUBLIC_DOMAIN}`
-  : "";
+const baseUrl = backendBaseUrl();
 
 type LinkHealth = ProbeResult | { status: "checking" };
 

@@ -17,12 +17,13 @@ import { useSession } from "@/context/SessionContext";
 import { useStoredAccountsCount } from "@/lib/binanceKeys";
 import { ExpoGoBanner } from "@/components/ExpoGoBanner";
 import { AccountSyncError } from "@/components/AccountSyncError";
+import { ScreenLoader } from "@/components/ScreenLoader";
 
 export default function OnboardingIntro() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { isLoaded, isSignedIn, accountsHydrated, accountsHydrateStatus, accountsHydrateError, retryAccountSync, signOut } = useSession();
+  const { isLoaded, isSignedIn, accountsHydrated, accountsHydrateStatus, accountsHydrateError, retryAccountSync, signOut, linkWarning } = useSession();
   const count = useStoredAccountsCount();
   const [retrying, setRetrying] = useState(false);
 
@@ -35,10 +36,10 @@ export default function OnboardingIntro() {
     }
   };
 
-  if (!isLoaded || count === null) return null;
+  if (!isLoaded || count === null) return <ScreenLoader />;
   if (!isSignedIn) return <Redirect href="/(auth)/sign-in" />;
   if (count > 0) return <Redirect href="/(tabs)" />;
-  if (!accountsHydrated) return null;
+  if (!accountsHydrated) return <ScreenLoader />;
   if (accountsHydrateStatus === "error") {
     return (
       <AccountSyncError
@@ -74,7 +75,7 @@ export default function OnboardingIntro() {
       ]}
     >
       <View style={styles.top}>
-        <ExpoGoBanner />
+        <ExpoGoBanner signedIn linkWarning={linkWarning} />
         <Text style={[styles.step, { color: colors.mutedForeground }]}>
           STEP 1 OF 1 · GET STARTED
         </Text>

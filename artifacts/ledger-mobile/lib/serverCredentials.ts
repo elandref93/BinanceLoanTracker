@@ -24,10 +24,9 @@
 import { getBinanceLinks, getLunoLinks } from "./accountStore";
 import { reportError, reportMessage } from "@/lib/crashReporting";
 import { notifyAuthFailure } from "@/lib/authEvents";
+import { backendBaseUrl } from "@/lib/runtime";
 
-const baseUrl = process.env.EXPO_PUBLIC_DOMAIN
-  ? `https://${process.env.EXPO_PUBLIC_DOMAIN}`
-  : "";
+const baseUrl = backendBaseUrl();
 
 /**
  * Server-side tracking is always enabled now. Retained as a function (rather

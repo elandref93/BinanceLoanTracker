@@ -8,6 +8,7 @@ import {
   MicrosoftTokenVerificationError,
   verifyMicrosoftIdentityToken,
 } from "../lib/microsoftVerifier";
+import { resolveAppleUser } from "../lib/appleIdentities";
 import { signSession } from "../lib/sessionJwt";
 import { logger } from "../lib/logger";
 
@@ -42,6 +43,17 @@ const AppleSignInResponse = z.object({
     email: z.string().nullable(),
     name: z.string().nullable(),
   }),
+  link: z.object({
+    resolution: z.enum([
+      "known_sub",
+      "linked_by_email",
+      "new",
+      "new_without_email",
+    ]),
+    warning: z
+      .enum(["email_not_shared", "private_relay_unlinked"])
+      .nullable(),
+  }),
 });
 
 router.post("/apple", async (req, res) => {
@@ -67,15 +79,13 @@ router.post("/apple", async (req, res) => {
     return;
   }
 
-  // In development we ALSO accept Apple tokens minted inside Expo Go. Expo Go
-  // signs the user into Apple under its own bundle id (host.exp.Exponent), so
-  // the token's `aud` is never our real bundle id while testing in Expo Go.
-  // Production (NODE_ENV=production on Azure) only ever accepts our bundle id.
+  // Apple `aud` is the client that requested the token. TestFlight / App Store
+  // use our bundle id; Expo Go always uses `host.exp.Exponent`. We accept both
+  // so Expo Go can authenticate against this API; `resolveAppleUser` then
+  // maps the Expo Go `sub` onto the TestFlight user when the verified email
+  // matches. Tokens are still signature-checked against Apple's JWKS.
   const EXPO_GO_BUNDLE_ID = "host.exp.Exponent";
-  const audience =
-    process.env.NODE_ENV === "production"
-      ? bundleId
-      : [bundleId, EXPO_GO_BUNDLE_ID];
+  const audience = [bundleId, EXPO_GO_BUNDLE_ID];
 
   let appleClaims;
   try {
@@ -115,18 +125,31 @@ router.post("/apple", async (req, res) => {
           .trim()
       : null;
 
-  const sessionToken = await signSession({
+  // Map Expo Go / TestFlight Apple `sub`s onto one canonical user when the
+  // verified token email already belongs to someone. Session JWT `sub` MUST
+  // be that canonical id so /api/accounts/sync finds the existing blob.
+  const linked = await resolveAppleUser({
     sub: appleClaims.sub,
     email: appleClaims.email,
+    emailVerified: appleClaims.emailVerified,
+    isPrivateEmail: appleClaims.isPrivateEmail,
+  });
+
+  const sessionEmail = linked.email ?? appleClaims.email;
+
+  const sessionToken = await signSession({
+    sub: linked.canonicalSub,
+    email: sessionEmail,
     name: fullName ?? undefined,
   });
 
   logger.info(
     {
       op: "auth.apple",
-      userId: appleClaims.sub,
-      sub: appleClaims.sub,
-      hasEmail: Boolean(appleClaims.email),
+      userId: linked.canonicalSub,
+      appleSub: appleClaims.sub,
+      resolution: linked.resolution,
+      hasEmail: Boolean(sessionEmail),
       hasName: Boolean(fullName),
       isPrivateEmail: appleClaims.isPrivateEmail,
     },
@@ -136,9 +159,13 @@ router.post("/apple", async (req, res) => {
   const body = AppleSignInResponse.parse({
     sessionToken,
     user: {
-      sub: appleClaims.sub,
-      email: appleClaims.email ?? null,
+      sub: linked.canonicalSub,
+      email: sessionEmail ?? null,
       name: fullName,
+    },
+    link: {
+      resolution: linked.resolution,
+      warning: linked.warning,
     },
   });
   res.status(200).json(body);

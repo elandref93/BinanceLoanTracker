@@ -150,7 +150,15 @@ export default function TabLayout() {
     };
   }, [isSignedIn, accountsHydrated, accountsCount, currency, queryClient]);
 
-  if (!isLoaded || accountsCount === null) return null;
+  if (!isLoaded || accountsCount === null) {
+    return (
+      <View
+        style={[styles.loading, { backgroundColor: colors.background }]}
+      >
+        <ActivityIndicator color={colors.primary} />
+      </View>
+    );
+  }
   if (!isSignedIn) return <Redirect href="/(auth)/sign-in" />;
   // A fresh device starts with empty local storage even when the user already
   // has accounts synced under their Apple ID. Wait for the first server pull to

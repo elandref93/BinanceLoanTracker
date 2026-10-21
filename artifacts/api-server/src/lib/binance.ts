@@ -439,18 +439,45 @@ export function createMockBinanceClient(): BinanceClient {
 // One instance per stored Binance account on the user's device.
 // Built per-request from credentials passed in via `X-Binance-Accounts`;
 // secrets are NEVER persisted on the server.
+//
+// Calls leave from this API process. Binance and Luno IP allow-lists must use
+// the App Service outbound addresses documented in
+// .github/workflows/deploy-backend.yml. Do not hard-code those IPs here.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const BINANCE_BASE = "https://api.binance.com";
+/** Binance rejects timestamps outside this window. Kept tight; clock skew is corrected instead. */
+const BINANCE_RECV_WINDOW_MS = "5000";
+const BINANCE_CLOCK_SKEW_CODE = -1021;
+const MAX_CLOCK_OFFSET_MS = 24 * 60 * 60 * 1000;
+
+let clockOffsetMs = 0;
+let pendingClockSync: Promise<boolean> | null = null;
+
+/** Test hook. Production offset is learned from Binance `/api/v3/time` after a -1021. */
+export function resetBinanceClockOffset(): void {
+  clockOffsetMs = 0;
+  pendingClockSync = null;
+}
 
 export function signQuery(secret: string, query: string): string {
   return createHmac("sha256", secret).update(query).digest("hex");
 }
 
+function scrubSecrets(text: string, secrets: readonly string[]): string {
+  let out = text.replace(/[?#][^\s]*/g, "");
+  out = out.replace(/signature=[0-9a-f]+/gi, "[Redacted]");
+  for (const secret of secrets) {
+    if (secret.length < 8) continue;
+    if (out.includes(secret)) out = out.split(secret).join("[Redacted]");
+  }
+  return out;
+}
+
 // Reduce an arbitrary thrown value to a short, secret-free message for logs.
-function sanitizeErr(err: unknown): string {
-  if (err instanceof Error) return err.message.slice(0, 200);
-  return String(err).slice(0, 200);
+function sanitizeErr(err: unknown, secrets: readonly string[] = []): string {
+  const raw = err instanceof Error ? err.message : String(err);
+  return scrubSecrets(raw, secrets).slice(0, 200);
 }
 
 /**
@@ -471,12 +498,12 @@ export class BinanceApiError extends Error {
   }
 }
 
-async function binanceSignedGet<T = unknown>(
+export async function binanceSignedGet<T = unknown>(
   creds: BinanceCredentials,
   path: string,
   params: Record<string, string | number> = {},
 ): Promise<T> {
-  return binanceSignedGetOn<T>(BINANCE_BASE, creds, path, params);
+  return binanceSigned<T>(BINANCE_BASE, creds, path, params, "GET");
 }
 
 // Same signed-GET, but against an arbitrary Binance host. Spot/margin/earn/
@@ -488,102 +515,91 @@ async function binanceSignedGetOn<T = unknown>(
   path: string,
   params: Record<string, string | number> = {},
 ): Promise<T> {
-  const qs = new URLSearchParams({
-    ...Object.fromEntries(
-      Object.entries(params).map(([k, v]) => [k, String(v)]),
-    ),
-    timestamp: String(Date.now()),
-    recvWindow: "5000",
-  });
-  const signature = signQuery(creds.apiSecret, qs.toString());
-  qs.append("signature", signature);
-  logger.debug({ op: "binance.signedGet", path }, "binance upstream call start");
-  const startedAt = Date.now();
-  let res: Awaited<ReturnType<typeof fetch>>;
-  try {
-    res = await fetch(`${base}${path}?${qs.toString()}`, {
-      headers: { "X-MBX-APIKEY": creds.apiKey },
-    });
-  } catch (err) {
-    logger.error(
-      { op: "binance.signedGet", path, ms: Date.now() - startedAt, msg: sanitizeErr(err) },
-      "binance upstream call network error",
-    );
-    throw err;
-  }
-  logger.debug(
-    { op: "binance.signedGet", path, status: res.status, ms: Date.now() - startedAt },
-    "binance upstream call done",
-  );
-  const body = await res.text();
-  if (!res.ok) {
-    // Parse Binance's documented error envelope `{code, msg}` only — do NOT
-    // surface the raw body, which has been observed to echo back request
-    // parameters (and thus credential-derived signature material) on
-    // certain validation failures.
-    let code: number | null = null;
-    let msg = res.statusText || "request failed";
-    try {
-      const parsed = JSON.parse(body) as { code?: unknown; msg?: unknown };
-      if (typeof parsed.code === "number") code = parsed.code;
-      if (typeof parsed.msg === "string") msg = parsed.msg;
-    } catch {
-      // non-JSON; keep the statusText fallback
-    }
-    throw new BinanceApiError(path, res.status, code, msg);
-  }
-  try {
-    return JSON.parse(body) as T;
-  } catch {
-    throw new BinanceApiError(path, res.status, null, "non-JSON response");
-  }
+  return binanceSigned<T>(base, creds, path, params, "GET");
 }
 
-async function binanceSignedPost<T = unknown>(
+export async function binanceSignedPost<T = unknown>(
   creds: BinanceCredentials,
   path: string,
   params: Record<string, string | number> = {},
+): Promise<T> {
+  return binanceSigned<T>(BINANCE_BASE, creds, path, params, "POST");
+}
+
+/**
+ * One signed call, then at most one retry after Binance -1021. The retry uses
+ * the offset from `GET /api/v3/time`. recvWindow stays 5000ms — a wider window
+ * is not the fix. The learned offset is reused by later signed calls.
+ */
+async function binanceSigned<T>(
+  base: string,
+  creds: BinanceCredentials,
+  path: string,
+  params: Record<string, string | number>,
+  method: "GET" | "POST",
+): Promise<T> {
+  try {
+    return await binanceSignedOnce<T>(base, creds, path, params, method);
+  } catch (err) {
+    if (!(err instanceof BinanceApiError) || err.code !== BINANCE_CLOCK_SKEW_CODE) {
+      throw err;
+    }
+    const adjusted = await syncBinanceClockOffset();
+    if (!adjusted) {
+      logger.warn(
+        { op: "binance.clock", path, code: BINANCE_CLOCK_SKEW_CODE },
+        "binance timestamp outside recvWindow; server time unavailable",
+      );
+      throw err;
+    }
+    logger.warn(
+      { op: "binance.clock", path, code: BINANCE_CLOCK_SKEW_CODE },
+      "binance timestamp outside recvWindow; retrying once with server clock offset",
+    );
+    return binanceSignedOnce<T>(base, creds, path, params, method);
+  }
+}
+
+async function binanceSignedOnce<T>(
+  base: string,
+  creds: BinanceCredentials,
+  path: string,
+  params: Record<string, string | number>,
+  method: "GET" | "POST",
 ): Promise<T> {
   const qs = new URLSearchParams({
     ...Object.fromEntries(
       Object.entries(params).map(([k, v]) => [k, String(v)]),
     ),
-    timestamp: String(Date.now()),
-    recvWindow: "5000",
+    timestamp: String(Date.now() + clockOffsetMs),
+    recvWindow: BINANCE_RECV_WINDOW_MS,
   });
   const signature = signQuery(creds.apiSecret, qs.toString());
   qs.append("signature", signature);
-  logger.debug({ op: "binance.signedPost", path }, "binance upstream call start");
+  const op = method === "POST" ? "binance.signedPost" : "binance.signedGet";
+  const secrets = [creds.apiKey, creds.apiSecret];
+  logger.debug({ op, path }, "binance upstream call start");
   const startedAt = Date.now();
   let res: Awaited<ReturnType<typeof fetch>>;
   try {
-    res = await fetch(`${BINANCE_BASE}${path}?${qs.toString()}`, {
-      method: "POST",
+    res = await fetch(`${base}${path}?${qs.toString()}`, {
+      method,
       headers: { "X-MBX-APIKEY": creds.apiKey },
     });
   } catch (err) {
     logger.error(
-      { op: "binance.signedPost", path, ms: Date.now() - startedAt, msg: sanitizeErr(err) },
+      { op, path, ms: Date.now() - startedAt, msg: sanitizeErr(err, secrets) },
       "binance upstream call network error",
     );
     throw err;
   }
   logger.debug(
-    { op: "binance.signedPost", path, status: res.status, ms: Date.now() - startedAt },
+    { op, path, status: res.status, ms: Date.now() - startedAt },
     "binance upstream call done",
   );
   const body = await res.text();
   if (!res.ok) {
-    let code: number | null = null;
-    let msg = res.statusText || "request failed";
-    try {
-      const parsed = JSON.parse(body) as { code?: unknown; msg?: unknown };
-      if (typeof parsed.code === "number") code = parsed.code;
-      if (typeof parsed.msg === "string") msg = parsed.msg;
-    } catch {
-      // non-JSON; keep the statusText fallback
-    }
-    throw new BinanceApiError(path, res.status, code, msg);
+    throw parseBinanceFailure(path, res.status, res.statusText, body, secrets);
   }
   try {
     return JSON.parse(body) as T;
@@ -592,7 +608,82 @@ async function binanceSignedPost<T = unknown>(
   }
 }
 
-async function binancePublicGet<T = unknown>(
+// Parse Binance's documented error envelope `{code, msg}` only — do NOT
+// surface the raw body, which has been observed to echo back request
+// parameters (and thus credential-derived signature material) on certain
+// validation failures.
+function parseBinanceFailure(
+  path: string,
+  status: number,
+  statusText: string,
+  body: string,
+  secrets: readonly string[],
+): BinanceApiError {
+  let code: number | null = null;
+  let msg = statusText || "request failed";
+  try {
+    const parsed = JSON.parse(body) as { code?: unknown; msg?: unknown };
+    if (typeof parsed.code === "number") code = parsed.code;
+    if (typeof parsed.msg === "string") msg = parsed.msg;
+  } catch {
+    // non-JSON; keep the statusText fallback
+  }
+  return new BinanceApiError(path, status, code, scrubSecrets(msg, secrets).slice(0, 300));
+}
+
+function syncBinanceClockOffset(): Promise<boolean> {
+  if (pendingClockSync) return pendingClockSync;
+  pendingClockSync = readBinanceClockOffset().finally(() => {
+    pendingClockSync = null;
+  });
+  return pendingClockSync;
+}
+
+async function readBinanceClockOffset(): Promise<boolean> {
+  let res: Response;
+  try {
+    res = await fetch(`${BINANCE_BASE}/api/v3/time`);
+  } catch (err) {
+    logger.warn(
+      { op: "binance.clock", msg: sanitizeErr(err) },
+      "binance server time unavailable",
+    );
+    return false;
+  }
+  if (!res.ok) {
+    logger.warn(
+      { op: "binance.clock", status: res.status },
+      "binance server time unavailable",
+    );
+    return false;
+  }
+  let serverTime: number | null = null;
+  try {
+    const parsed = (await res.json()) as { serverTime?: unknown };
+    if (typeof parsed.serverTime === "number" && Number.isFinite(parsed.serverTime)) {
+      serverTime = parsed.serverTime;
+    }
+  } catch {
+    serverTime = null;
+  }
+  if (serverTime === null) {
+    logger.warn({ op: "binance.clock" }, "binance server time missing");
+    return false;
+  }
+  const offset = serverTime - Date.now();
+  if (Math.abs(offset) > MAX_CLOCK_OFFSET_MS) {
+    logger.warn({ op: "binance.clock" }, "binance server time offset rejected");
+    return false;
+  }
+  clockOffsetMs = offset;
+  logger.info(
+    { op: "binance.clock", offsetMs: offset },
+    "binance clock offset updated",
+  );
+  return true;
+}
+
+export async function binancePublicGet<T = unknown>(
   path: string,
   params: Record<string, string | number> = {},
 ): Promise<T> {
@@ -689,7 +780,7 @@ interface StableSymbolRate {
   price: number;
 }
 
-async function fetchUsdPrices(
+export async function fetchUsdPrices(
   assets: string[],
 ): Promise<{ asOf: string; prices: BinancePrice[] }> {
   const unique = Array.from(new Set(assets.map((a) => a.toUpperCase())));

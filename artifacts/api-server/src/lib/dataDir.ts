@@ -15,11 +15,22 @@ import { logger } from "./logger";
 // ACCOUNT_SYNC_DIR always wins (used in tests/dev). See AZURE.md.
 const AZURE_HOME_DIR = "/home/data/account_sync";
 
-function isAzureHost(): boolean {
+export function isAzureHost(): boolean {
   return Boolean(
     process.env.WEBSITE_INSTANCE_ID ||
       process.env.WEBSITE_SITE_NAME ||
       process.env.CONTAINER_APP_NAME,
+  );
+}
+
+/**
+ * Azure persists `/home` only when this app setting is the string `true`.
+ * A writable data directory is not enough: without the flag it is wiped on restart.
+ */
+export function isAppServiceStorageEnabled(): boolean {
+  return (
+    process.env.WEBSITES_ENABLE_APP_SERVICE_STORAGE?.trim().toLowerCase() ===
+    "true"
   );
 }
 
@@ -36,6 +47,12 @@ export function resolveDataDir(): string {
 let activeDir = resolveDataDir();
 let ensured = false;
 let warned = false;
+let usingEphemeral = false;
+
+/** True when ensureDataDir() had to leave the preferred directory for a temp dir. */
+export function isUsingEphemeralDataDir(): boolean {
+  return usingEphemeral;
+}
 
 /** Directory currently in use for reads/writes (may be the ephemeral fallback). */
 export function getDataDir(): string {
@@ -76,10 +93,11 @@ export async function ensureDataDir(): Promise<string> {
   let lastErr: unknown;
   for (const dir of candidates) {
     try {
-      await fs.mkdir(dir, { recursive: true });
+      await fs.mkdir(dir, { recursive: true, mode: 0o700 });
       activeDir = dir;
       ensured = true;
-      if (dir === ephemeral && dir !== preferred && !warned) {
+      usingEphemeral = dir === ephemeral && dir !== preferred;
+      if (usingEphemeral && !warned) {
         warned = true;
         logger.warn(
           { lastErr, preferred, fallback: ephemeral, op: "datadir.fallback" },

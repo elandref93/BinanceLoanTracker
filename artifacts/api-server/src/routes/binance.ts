@@ -14,13 +14,9 @@ import {
   ListLoansResponse,
 } from "@workspace/api-zod";
 import { BinanceApiError, type BinanceClient } from "../lib/binance";
+import { loadDecryptedExchange } from "../lib/credentialStore";
 import { logger } from "../lib/logger";
 import { buildBinanceClient, computeLoanSummary } from "../lib/loanCompute";
-
-// Hard cap on the credentials header to prevent CPU/OOM DoS via a giant
-// base64 blob — the legitimate payload for 5 accounts is ~1.5 KB.
-const MAX_ACCOUNTS_HEADER_BYTES = 16 * 1024;
-const MAX_ACCOUNTS = 10;
 
 const router: IRouter = Router();
 
@@ -60,19 +56,8 @@ const emptyClient: BinanceClient = {
   },
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Per-request client selection
-//
-// The device sends `X-Binance-Accounts` containing a base64-encoded JSON array
-// of `{ id, name, apiKey, apiSecret }`. The server builds one real client per
-// entry and a multiplex wrapper so the route handlers stay account-agnostic.
-// Secrets live only for the lifetime of the request — never logged, never
-// persisted.
-//
-// If the header is missing or unparseable, we return empty data — the device
-// is expected to gate onboarding locally and only call these endpoints once
-// it has at least one linked account.
-// ─────────────────────────────────────────────────────────────────────────────
+// Exchange keys come only from the encrypted store for this signed-in user.
+// Request headers are not a credential source.
 
 interface DeviceAccount {
   id: string;
@@ -81,49 +66,20 @@ interface DeviceAccount {
   apiSecret: string;
 }
 
-function parseAccountsHeader(req: Request): DeviceAccount[] | null {
-  const header = req.header("x-binance-accounts");
-  if (!header) return null;
-  if (header.length > MAX_ACCOUNTS_HEADER_BYTES) {
-    logger.warn(
-      { len: header.length },
-      "X-Binance-Accounts header exceeds size cap",
-    );
-    return null;
-  }
-  try {
-    const json = Buffer.from(header, "base64").toString("utf8");
-    if (json.length > MAX_ACCOUNTS_HEADER_BYTES) return null;
-    const parsed = JSON.parse(json);
-    if (!Array.isArray(parsed) || parsed.length === 0) return null;
-    if (parsed.length > MAX_ACCOUNTS) return null;
-    const out: DeviceAccount[] = [];
-    for (const r of parsed) {
-      if (!r || typeof r !== "object") continue;
-      const id = typeof r.id === "string" ? r.id : null;
-      const name = typeof r.name === "string" ? r.name : null;
-      const apiKey = typeof r.apiKey === "string" ? r.apiKey : null;
-      const apiSecret = typeof r.apiSecret === "string" ? r.apiSecret : null;
-      if (id && name && apiKey && apiSecret) {
-        out.push({ id, name, apiKey, apiSecret });
-      }
-    }
-    return out.length > 0 ? out : null;
-  } catch (err) {
-    logger.warn({ err }, "X-Binance-Accounts header parse failed");
-    return null;
-  }
+async function accountsForRequest(req: Request): Promise<DeviceAccount[] | null> {
+  if (!req.userId) return null;
+  return loadDecryptedExchange(req.userId, "binance");
 }
 
-function clientFor(req: Request): BinanceClient {
-  const accounts = parseAccountsHeader(req);
+async function clientFor(req: Request): Promise<BinanceClient> {
+  const accounts = await accountsForRequest(req);
   if (!accounts) return emptyClient;
   return buildBinanceClient(accounts);
 }
 
 router.get("/accounts", async (req, res, next) => {
   try {
-    const accounts = await clientFor(req).listAccounts();
+    const accounts = await (await clientFor(req)).listAccounts();
     res.json(ListAccountsResponse.parse({ accounts }));
   } catch (err) {
     next(err);
@@ -133,7 +89,7 @@ router.get("/accounts", async (req, res, next) => {
 router.get("/loans", async (req, res, next) => {
   try {
     const { accountId } = ListLoansQueryParams.parse(req.query);
-    const summary = await computeLoanSummary(clientFor(req), accountId);
+    const summary = await computeLoanSummary(await clientFor(req), accountId);
     res.json(ListLoansResponse.parse(summary));
   } catch (err) {
     next(err);
@@ -143,7 +99,7 @@ router.get("/loans", async (req, res, next) => {
 router.get("/loans/transactions", async (req, res, next) => {
   try {
     const { loanId } = ListLoanTransactionsQueryParams.parse(req.query);
-    const transactions = await clientFor(req).getLoanTransactions(loanId);
+    const transactions = await (await clientFor(req)).getLoanTransactions(loanId);
     res.json(ListLoanTransactionsResponse.parse({ loanId, transactions }));
   } catch (err) {
     next(err);
@@ -157,7 +113,7 @@ router.get("/prices", async (req, res, next) => {
       .split(",")
       .map((s) => s.trim().toUpperCase())
       .filter(Boolean);
-    const result = await clientFor(req).getPrices(symbols);
+    const result = await (await clientFor(req)).getPrices(symbols);
     res.json(GetPricesResponse.parse(result));
   } catch (err) {
     next(err);
@@ -167,7 +123,7 @@ router.get("/prices", async (req, res, next) => {
 router.get("/interest", async (req, res, next) => {
   try {
     const { accountId, from, to } = ListInterestQueryParams.parse(req.query);
-    const client = clientFor(req);
+    const client = await clientFor(req);
     const [rows, loans] = await Promise.all([
       client.listInterest({ accountId, from, to }),
       client.listLoans(accountId),
@@ -305,7 +261,7 @@ router.get("/rate-history", async (req, res, next) => {
           : rawDays,
     });
     const window = days ?? 30;
-    const points = await clientFor(req).getRateHistory(loanId, window);
+    const points = await (await clientFor(req)).getRateHistory(loanId, window);
     // `source` is authoritative, not just loanId-derived: the client falls
     // back to a FLAT line (at the current rate) for crypto loans AND for
     // margin loans too new to have accrual rows yet. We only advertise
@@ -341,7 +297,7 @@ router.get("/rate-history", async (req, res, next) => {
 
 router.get("/holdings", async (req, res, next) => {
   try {
-    const holdings = await clientFor(req).getHoldings();
+    const holdings = await (await clientFor(req)).getHoldings();
     res.json(
       ListHoldingsResponse.parse({
         asOf: new Date().toISOString(),
@@ -375,8 +331,18 @@ router.use(
       });
       return;
     }
-    const message = err instanceof Error ? err.message : "Internal error";
-    res.status(400).json({ error: message });
+    const declared = (err as { status?: unknown }).status;
+    const status =
+      typeof declared === "number" && declared >= 400 && declared <= 599
+        ? declared
+        : 400;
+    const message =
+      status === 503
+        ? "Stored credentials could not be loaded"
+        : err instanceof Error
+          ? err.message
+          : "Internal error";
+    res.status(status).json({ error: message });
   },
 );
 

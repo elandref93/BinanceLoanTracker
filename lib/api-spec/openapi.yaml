@@ -14,13 +14,27 @@ tags:
     description: Binance loan tracker (read-only)
   - name: luno
     description: Luno wallet + transaction reads (read-only)
+  - name: auth
+    description: Sign-in
+  - name: sync
+    description: Account, settings, annotation, and strategy-scenario sync
+  - name: credentials
+    description: Encrypted server-side exchange credentials
+  - name: ltv
+    description: Server-computed portfolio snapshots
+  - name: portfolio
+    description: Net worth, P&L, performance, assets and analytics from server snapshots and the imported ledger
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
+      description: >
+        Cheap liveness probe used by Azure App Service. It checks only the
+        session signing key and Apple audience. It does not touch the data
+        directory, the credential encryption key, or Microsoft configuration.
+        A failure here can recycle the app, so those checks live on /readyz.
       responses:
         "200":
           description: Healthy
@@ -28,6 +42,847 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /readyz:
+    get:
+      operationId: readinessCheck
+      tags: [health]
+      summary: Readiness check
+      description: >
+        Reports whether the credential encryption key, the data directory, and
+        Microsoft sign-in configuration are usable. This is not the Azure
+        liveness probe. A 503 from this route must not be configured as the
+        App Service health check path, or Azure will recycle the API.
+      responses:
+        "200":
+          description: Ready to serve web sign-in and encrypted credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReadinessStatus"
+        "503":
+          description: One or more readiness checks failed. Not an Azure recycle signal.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReadinessStatus"
+
+  /auth/microsoft:
+    post:
+      operationId: signInWithMicrosoft
+      tags: [auth]
+      summary: Sign in with a Microsoft id_token
+      description: >
+        Verifies an Entra ID v2 id_token and links it to exactly one existing
+        Ledger profile. This is the mobile bearer route: the JSON body
+        includes sessionToken. The browser does not call it. A verified
+        normalized email may select that profile. The Entra object id is
+        stored as an alias and is not used as a new canonical user id. When
+        the email is missing, unverified, or matches zero or several profiles,
+        the route returns 403 pairing_required and does not issue a session.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MicrosoftSignInRequest"
+      responses:
+        "200":
+          description: Session issued for the canonical Ledger user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MicrosoftSignInResponse"
+        "400":
+          description: Invalid request body
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "401":
+          description: Identity token could not be verified
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "403":
+          description: Token was verified but no single canonical profile could be chosen
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MicrosoftPairingRequired"
+        "500":
+          description: Microsoft sign-in is not configured, or verification failed unexpectedly
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+
+  /auth/microsoft/start:
+    get:
+      operationId: startMicrosoftBrowserSignIn
+      tags: [auth]
+      summary: Start the browser Microsoft authorization-code flow
+      description: >
+        Redirects the browser to Entra with a server-generated state and S256
+        PKCE challenge. The code verifier stays on the server. The redirect URI
+        is the server's MICROSOFT_REDIRECT_URI, not a query parameter. An
+        unsafe returnTo is ignored. Does not mint a session.
+      parameters:
+        - name: returnTo
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        "302":
+          description: Redirect to the tenant authorize endpoint, or to /sign-in when Microsoft is not configured
+
+  /auth/microsoft/callback:
+    get:
+      operationId: finishMicrosoftBrowserSignIn
+      tags: [auth]
+      summary: Finish the browser Microsoft authorization-code flow
+      description: >
+        Validates state and PKCE, exchanges the code, and links the verified
+        email to one canonical profile. On success, sets an HttpOnly __Host-
+        session cookie and a double-submit CSRF cookie, then redirects. The
+        response body does not contain a session token. Failure redirects to
+        /sign-in and does not set a session cookie.
+      parameters:
+        - name: code
+          in: query
+          required: false
+          schema: { type: string }
+        - name: state
+          in: query
+          required: false
+          schema: { type: string }
+        - name: error
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        "302":
+          description: Redirect to the app, or to /sign-in when the link or the state check fails
+
+  /auth/session:
+    get:
+      operationId: getBrowserSession
+      tags: [auth]
+      summary: Read the browser cookie session
+      description: >
+        Returns the canonical user when the HttpOnly session cookie is valid.
+        Does not return a token. A mobile bearer is not accepted here.
+      responses:
+        "200":
+          description: Cookie session is active
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BrowserSession"
+        "401":
+          description: No active browser session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+
+  /auth/logout:
+    post:
+      operationId: logoutBrowser
+      tags: [auth]
+      summary: Clear the browser session cookie
+      description: >
+        Clears the __Host- session cookie. Cookie-authenticated calls must
+        send the double-submit CSRF token. Mobile bearer sessions are not
+        cleared by this route.
+      responses:
+        "204":
+          description: Session cookie cleared
+        "403":
+          description: Cookie session present but the CSRF token did not match
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+
+  /accounts/sync:
+    get:
+      operationId: getAccountSync
+      tags: [sync]
+      summary: Read the signed-in user's account sync blob
+      description: >
+        Bearer session required. Returns account metadata. Exchange apiKey and
+        apiSecret values are not stored in this blob.
+      responses:
+        "200":
+          description: Stored account sync record
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccountSyncRecord"
+        "401":
+          description: Missing or rejected bearer token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "404":
+          description: This user has no account sync blob yet
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+    put:
+      operationId: putAccountSync
+      tags: [sync]
+      summary: Write the signed-in user's account sync blob
+      description: >
+        Bearer session required. Last-write-wins by `updatedAt`. Mobile clients
+        send their own ISO-8601 `updatedAt`; an incoming value that is older
+        than or equal to the stored value returns 409 with the stored record.
+        Web clients omit `updatedAt` and the server assigns the current time.
+        apiKey and apiSecret fields anywhere in `containers` are removed before
+        the blob is stored.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AccountSyncWrite"
+      responses:
+        "200":
+          description: Write accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SyncAccepted"
+        "400":
+          description: Invalid body or containers shape
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "401":
+          description: Missing or rejected bearer token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "409":
+          description: Incoming updatedAt is not newer than the stored record
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccountSyncRecord"
+
+  /settings/sync:
+    get:
+      operationId: getSettingsSync
+      tags: [sync]
+      summary: Read the signed-in user's settings sync blob
+      description: Bearer session required. Settings are an opaque object owned by the client.
+      responses:
+        "200":
+          description: Stored settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SettingsSyncRecord"
+        "401":
+          description: Missing or rejected bearer token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "404":
+          description: This user has no settings blob yet
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+    put:
+      operationId: putSettingsSync
+      tags: [sync]
+      summary: Write the signed-in user's settings sync blob
+      description: >
+        Bearer session required. Same last-write-wins rules as account sync.
+        Mobile sends `updatedAt`. Web omits it and the server assigns the time.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SettingsSyncWrite"
+      responses:
+        "200":
+          description: Write accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SyncAccepted"
+        "400":
+          description: Invalid body or settings shape
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "401":
+          description: Missing or rejected bearer token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "409":
+          description: Incoming updatedAt is not newer than the stored record
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SettingsSyncRecord"
+
+  /loans/annotations/sync:
+    get:
+      operationId: getLoanAnnotationsSync
+      tags: [sync]
+      summary: Read the signed-in user's loan annotation blob
+      description: >
+        Bearer session required. Annotations are an opaque map keyed by loan id
+        (manual sell rate, contribution, settlement date, goal mode).
+      responses:
+        "200":
+          description: Stored annotations
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnnotationSyncRecord"
+        "401":
+          description: Missing or rejected bearer token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "404":
+          description: This user has no annotation blob yet
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+    put:
+      operationId: putLoanAnnotationsSync
+      tags: [sync]
+      summary: Write the signed-in user's loan annotation blob
+      description: >
+        Bearer session required. Same last-write-wins rules as account sync.
+        Mobile sends `updatedAt`. Web omits it and the server assigns the time.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AnnotationSyncWrite"
+      responses:
+        "200":
+          description: Write accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SyncAccepted"
+        "400":
+          description: Invalid body or annotations shape
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "401":
+          description: Missing or rejected bearer token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "409":
+          description: Incoming updatedAt is not newer than the stored record
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnnotationSyncRecord"
+
+  /scenarios/sync:
+    get:
+      operationId: getScenarioSync
+      tags: [sync]
+      summary: Read the signed-in user's strategy scenario list
+      description: >
+        Bearer session required. Scenarios are an opaque list owned by the
+        client (name, inputs, and any extra fields). This blob is separate
+        from settings and loan annotations.
+      responses:
+        "200":
+          description: Stored scenarios
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScenarioSyncRecord"
+        "401":
+          description: Missing or rejected bearer token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "404":
+          description: This user has no scenario blob yet
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+    put:
+      operationId: putScenarioSync
+      tags: [sync]
+      summary: Write the signed-in user's strategy scenario list
+      description: >
+        Bearer session required. Same last-write-wins rules as account sync.
+        Mobile sends `updatedAt`. Web omits it and the server assigns the time.
+        apiKey and apiSecret fields anywhere in `scenarios` are removed before
+        the blob is stored. Other fields are kept.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ScenarioSyncWrite"
+      responses:
+        "200":
+          description: Write accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SyncAccepted"
+        "400":
+          description: Invalid body or scenarios shape
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "401":
+          description: Missing or rejected bearer token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "409":
+          description: Incoming updatedAt is not newer than the stored record
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScenarioSyncRecord"
+
+  /credentials:
+    get:
+      operationId: getCredentials
+      tags: [credentials]
+      summary: List credential metadata
+      description: >
+        Bearer session required. Returns link id, display name, and exchange.
+        apiKey and apiSecret are never included.
+      responses:
+        "200":
+          description: Metadata only
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CredentialSetMeta"
+        "401":
+          description: Missing or rejected bearer token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "503":
+          description: Credential encryption key is not configured
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+    put:
+      operationId: putCredentials
+      tags: [credentials]
+      summary: Replace the full credential set
+      description: >
+        Bearer session required. Mobile full-set upload. Omitted exchanges are
+        stored as empty, so this replaces every stored secret. Web clients
+        change one link with PUT /credentials/{exchange}/{id} instead, which
+        leaves every other sealed secret in place. The response is metadata
+        only.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CredentialSetWrite"
+      responses:
+        "200":
+          description: Stored. Secrets are not echoed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CredentialWriteResult"
+        "400":
+          description: Invalid credential payload
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "401":
+          description: Missing or rejected bearer token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "503":
+          description: Credential encryption key is not configured
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+    delete:
+      operationId: deleteCredentials
+      tags: [credentials]
+      summary: Delete every stored credential for the signed-in user
+      description: Bearer session required. Removes the encrypted credential file.
+      responses:
+        "200":
+          description: Deleted, or there was nothing to delete
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkResult"
+        "401":
+          description: Missing or rejected bearer token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "503":
+          description: Credential encryption key is not configured
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+
+  /credentials/{exchange}/{id}:
+    put:
+      operationId: putCredentialLink
+      tags: [credentials]
+      summary: Create or replace one exchange link
+      description: >
+        Bearer session required. Seals this link's apiKey and apiSecret and
+        leaves every other link unchanged. The response contains metadata
+        only. At most 10 links per exchange.
+      parameters:
+        - $ref: "#/components/parameters/Exchange"
+        - $ref: "#/components/parameters/CredentialLinkId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CredentialLinkWrite"
+      responses:
+        "200":
+          description: Link stored. Secrets are not echoed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CredentialLinkResult"
+        "400":
+          description: Invalid link, or this exchange already has 10 links
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "401":
+          description: Missing or rejected bearer token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "503":
+          description: Credential encryption key is not configured
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+    delete:
+      operationId: deleteCredentialLink
+      tags: [credentials]
+      summary: Delete one exchange link
+      description: >
+        Bearer session required. Removes one sealed link. Other links stay
+        encrypted and are not returned. Deleting a link that is already gone
+        still returns ok.
+      parameters:
+        - $ref: "#/components/parameters/Exchange"
+        - $ref: "#/components/parameters/CredentialLinkId"
+      responses:
+        "200":
+          description: Link removed, or it was already absent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkResult"
+        "400":
+          description: Invalid exchange or link id
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "401":
+          description: Missing or rejected bearer token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "503":
+          description: Credential encryption key is not configured
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+
+  /ltv/snapshot:
+    get:
+      operationId: getLtvSnapshot
+      tags: [ltv]
+      summary: Read the latest server-computed LTV snapshot
+      description: >
+        Bearer session required. Returns the scheduler's last consolidated
+        snapshot (loans, holdings, interest, per-container LTV, daily charges,
+        and USD/ZAR) when one exists. `available: false` means this user has
+        no snapshot yet. This route does not call Binance or Luno.
+      responses:
+        "200":
+          description: Snapshot, or an explicit empty marker
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LtvSnapshotEnvelope"
+        "401":
+          description: Missing or rejected bearer token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+
+  /portfolio/overview:
+    get:
+      operationId: getPortfolioOverview
+      tags: [portfolio]
+      summary: Net worth, period P&L, allocation, movers and per-profile totals
+      description: >
+        Reads the server's latest portfolio state and ledger. Never calls an
+        exchange. `available: false` with a `reason` means there is nothing to
+        show yet (no linked accounts, encryption not configured, or the first
+        snapshot has not run).
+      parameters:
+        - $ref: "#/components/parameters/PortfolioScope"
+      responses:
+        "200":
+          description: Overview
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PortfolioOverview"
+        "401":
+          description: Not signed in
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+
+  /portfolio/performance:
+    get:
+      operationId: getPortfolioPerformance
+      tags: [portfolio]
+      summary: Net worth series and returns for a range
+      parameters:
+        - in: query
+          name: range
+          required: false
+          schema:
+            $ref: "#/components/schemas/PerformanceRange"
+        - $ref: "#/components/parameters/PortfolioScope"
+      responses:
+        "200":
+          description: Performance series
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PortfolioPerformance"
+        "401":
+          description: Not signed in
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+
+  /portfolio/assets:
+    get:
+      operationId: getPortfolioAssets
+      tags: [portfolio]
+      summary: Every asset held, with positions by profile, exchange and wallet
+      parameters:
+        - $ref: "#/components/parameters/PortfolioScope"
+      responses:
+        "200":
+          description: Asset list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PortfolioAssets"
+        "401":
+          description: Not signed in
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+
+  /portfolio/loans:
+    get:
+      operationId: getPortfolioLoans
+      tags: [portfolio]
+      summary: Open loans ranked by risk against each profile's own target, with LTV history
+      parameters:
+        - $ref: "#/components/parameters/PortfolioScope"
+        - in: query
+          name: range
+          required: false
+          schema:
+            $ref: "#/components/schemas/PerformanceRange"
+      responses:
+        "200":
+          description: Loans and LTV history
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PortfolioLoans"
+        "400":
+          description: Invalid scope or range
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "401":
+          description: Not signed in
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+
+  /portfolio/assets/{asset}:
+    get:
+      operationId: getPortfolioAsset
+      tags: [portfolio]
+      summary: One asset with price history, holding history, events and cost basis
+      description: >
+        Narrowed to one profile when `scope` is set: positions, holding
+        history, events and cost basis then cover that profile only. Price
+        history is the same for every scope.
+      parameters:
+        - in: path
+          name: asset
+          required: true
+          schema: { type: string, pattern: "^[^\\u0000-\\u001F?#]{1,200}$" }
+        - $ref: "#/components/parameters/PortfolioScope"
+      responses:
+        "200":
+          description: Asset detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PortfolioAssetDetail"
+        "400":
+          description: Invalid asset symbol
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "401":
+          description: Not signed in
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+
+  /portfolio/import-status:
+    get:
+      operationId: getPortfolioImportStatus
+      tags: [portfolio]
+      summary: Progress and reconciliation of the transaction-history import
+      responses:
+        "200":
+          description: Import status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ImportStatus"
+        "401":
+          description: Not signed in
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+
+  /portfolio/analytics:
+    get:
+      operationId: getPortfolioAnalytics
+      tags: [portfolio]
+      summary: Risk, concentration, interest drag, contributions, CGT estimate and forecast inputs
+      parameters:
+        - $ref: "#/components/parameters/PortfolioScope"
+        - in: query
+          name: cgtMethod
+          required: false
+          description: Cost-basis method; defaults to fifo
+          schema:
+            $ref: "#/components/schemas/CgtMethod"
+      responses:
+        "200":
+          description: Analytics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PortfolioAnalytics"
+        "401":
+          description: Not signed in
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+
+  /portfolio/refresh:
+    post:
+      operationId: refreshPortfolio
+      tags: [portfolio]
+      summary: Take a fresh snapshot now and continue the history import
+      description: At most once every 60 seconds per user.
+      responses:
+        "202":
+          description: Refresh accepted or already running
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RefreshAccepted"
+        "401":
+          description: Not signed in
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "429":
+          description: Refreshed too recently
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RefreshAccepted"
 
   /accounts:
     get:
@@ -331,6 +1186,29 @@ paths:
                       $ref: "#/components/schemas/LunoTicker"
 
 components:
+  parameters:
+    PortfolioScope:
+      name: scope
+      in: query
+      required: false
+      description: "`all` (default) or a profile (container) id"
+      schema: { type: string, maxLength: 128 }
+    Exchange:
+      name: exchange
+      in: path
+      required: true
+      schema:
+        type: string
+        enum: [binance, luno]
+    CredentialLinkId:
+      name: id
+      in: path
+      required: true
+      description: Exchange-link id. Not an API key.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
   schemas:
     HealthStatus:
       type: object
@@ -666,3 +1544,1012 @@ components:
         accrued30dUsd: { type: number }
         projected30dUsd: { type: number }
       required: [asset, debtUsd, weightedApr, accrued30dUsd, projected30dUsd]
+
+    ErrorMessage:
+      type: object
+      properties:
+        error: { type: string }
+      required: [error]
+
+    OkResult:
+      type: object
+      properties:
+        ok: { type: boolean }
+      required: [ok]
+
+    ReadinessCheckState:
+      type: string
+      enum: [ok, missing, unavailable]
+
+    ReadinessStatus:
+      type: object
+      description: >
+        Check names and coarse states only. Encryption keys, tenant ids, and
+        client ids are never returned.
+      properties:
+        status:
+          type: string
+          enum: [ready, not_ready]
+        checks:
+          type: object
+          properties:
+            encryptionKey:
+              $ref: "#/components/schemas/ReadinessCheckState"
+            dataDir:
+              $ref: "#/components/schemas/ReadinessCheckState"
+            microsoft:
+              $ref: "#/components/schemas/ReadinessCheckState"
+          required: [encryptionKey, dataDir, microsoft]
+      required: [status, checks]
+
+    MicrosoftSignInRequest:
+      type: object
+      properties:
+        idToken:
+          type: string
+          minLength: 1
+          maxLength: 16384
+          description: Entra ID v2 id_token. Write-only; it is not logged or stored.
+      required: [idToken]
+
+    MicrosoftSessionUser:
+      type: object
+      properties:
+        sub: { type: string, description: Canonical Ledger user id }
+        email:
+          type: ["string", "null"]
+        name:
+          type: ["string", "null"]
+      required: [sub, email, name]
+
+    BrowserSession:
+      type: object
+      description: Cookie session profile. Never includes a session token.
+      properties:
+        user:
+          $ref: "#/components/schemas/MicrosoftSessionUser"
+      required: [user]
+
+    MicrosoftSignInResponse:
+      type: object
+      properties:
+        sessionToken: { type: string }
+        user:
+          $ref: "#/components/schemas/MicrosoftSessionUser"
+      required: [sessionToken, user]
+
+    MicrosoftLinkReason:
+      type: string
+      enum: [email_missing, email_unverified, no_match, multiple_matches, alias_conflict]
+
+    MicrosoftPairingRequired:
+      type: object
+      properties:
+        error: { type: string }
+        code:
+          type: string
+          enum: [pairing_required]
+        reason:
+          $ref: "#/components/schemas/MicrosoftLinkReason"
+      required: [error, code, reason]
+
+    OpaqueObject:
+      type: object
+      additionalProperties: true
+
+    AccountSyncRecord:
+      type: object
+      properties:
+        updatedAt: { type: string, format: date-time }
+        containers:
+          type: array
+          items:
+            $ref: "#/components/schemas/OpaqueObject"
+      required: [updatedAt, containers]
+
+    AccountSyncWrite:
+      type: object
+      properties:
+        updatedAt:
+          type: string
+          minLength: 1
+          maxLength: 64
+          description: >
+            Mobile clock. Compared as a string with the stored ISO-8601
+            timestamp. Omit this field on web writes so the server assigns it.
+        containers:
+          type: array
+          items:
+            $ref: "#/components/schemas/OpaqueObject"
+      required: [containers]
+
+    SettingsSyncRecord:
+      type: object
+      properties:
+        updatedAt: { type: string, format: date-time }
+        settings:
+          $ref: "#/components/schemas/OpaqueObject"
+      required: [updatedAt, settings]
+
+    SettingsSyncWrite:
+      type: object
+      properties:
+        updatedAt:
+          type: string
+          minLength: 1
+          maxLength: 64
+          description: Mobile clock. Omit on web writes so the server assigns it.
+        settings:
+          $ref: "#/components/schemas/OpaqueObject"
+      required: [settings]
+
+    AnnotationSyncRecord:
+      type: object
+      properties:
+        updatedAt: { type: string, format: date-time }
+        annotations:
+          $ref: "#/components/schemas/OpaqueObject"
+      required: [updatedAt, annotations]
+
+    AnnotationSyncWrite:
+      type: object
+      properties:
+        updatedAt:
+          type: string
+          minLength: 1
+          maxLength: 64
+          description: Mobile clock. Omit on web writes so the server assigns it.
+        annotations:
+          $ref: "#/components/schemas/OpaqueObject"
+      required: [annotations]
+
+    ScenarioSyncRecord:
+      type: object
+      properties:
+        updatedAt: { type: string, format: date-time }
+        scenarios:
+          type: array
+          items:
+            $ref: "#/components/schemas/OpaqueObject"
+      required: [updatedAt, scenarios]
+
+    ScenarioSyncWrite:
+      type: object
+      properties:
+        updatedAt:
+          type: string
+          minLength: 1
+          maxLength: 64
+          description: Mobile clock. Omit on web writes so the server assigns it.
+        scenarios:
+          type: array
+          items:
+            $ref: "#/components/schemas/OpaqueObject"
+      required: [scenarios]
+
+    SyncAccepted:
+      type: object
+      properties:
+        ok: { type: boolean }
+        updatedAt:
+          type: string
+          format: date-time
+          description: The timestamp that was stored. Server-assigned when the client omitted it.
+      required: [ok, updatedAt]
+
+    CredentialExchange:
+      type: string
+      enum: [binance, luno]
+
+    CredentialAccountMeta:
+      type: object
+      description: Public link metadata. Secrets are not part of this object.
+      properties:
+        id: { type: string }
+        name: { type: string }
+        exchange:
+          $ref: "#/components/schemas/CredentialExchange"
+      required: [id, name, exchange]
+
+    CredentialSetMeta:
+      type: object
+      properties:
+        updatedAt:
+          type: ["string", "null"]
+          format: date-time
+        accounts:
+          type: array
+          items:
+            $ref: "#/components/schemas/CredentialAccountMeta"
+      required: [updatedAt, accounts]
+
+    CredentialWriteResult:
+      type: object
+      properties:
+        updatedAt: { type: string, format: date-time }
+        accounts:
+          type: array
+          items:
+            $ref: "#/components/schemas/CredentialAccountMeta"
+      required: [updatedAt, accounts]
+
+    CredentialSecretInput:
+      type: object
+      properties:
+        id: { type: string, minLength: 1, maxLength: 128 }
+        name: { type: string, minLength: 1, maxLength: 128 }
+        apiKey:
+          type: string
+          minLength: 1
+          maxLength: 512
+          writeOnly: true
+        apiSecret:
+          type: string
+          minLength: 1
+          maxLength: 512
+          writeOnly: true
+      required: [id, name, apiKey, apiSecret]
+
+    CredentialSetWrite:
+      type: object
+      description: >
+        Full replacement of the stored set. An omitted exchange is cleared.
+        Use the per-link route to change one secret without resending the rest.
+      properties:
+        binance:
+          type: array
+          maxItems: 10
+          items:
+            $ref: "#/components/schemas/CredentialSecretInput"
+        luno:
+          type: array
+          maxItems: 10
+          items:
+            $ref: "#/components/schemas/CredentialSecretInput"
+
+    CredentialLinkWrite:
+      type: object
+      properties:
+        name: { type: string, minLength: 1, maxLength: 128 }
+        apiKey:
+          type: string
+          minLength: 1
+          maxLength: 512
+          writeOnly: true
+        apiSecret:
+          type: string
+          minLength: 1
+          maxLength: 512
+          writeOnly: true
+      required: [name, apiKey, apiSecret]
+
+    CredentialLinkResult:
+      type: object
+      properties:
+        updatedAt: { type: string, format: date-time }
+        account:
+          $ref: "#/components/schemas/CredentialAccountMeta"
+      required: [updatedAt, account]
+
+    LtvHistoryPoint:
+      type: object
+      properties:
+        t: { type: string }
+        ltv: { type: number }
+      required: [t, ltv]
+
+    DailyChargePoint:
+      type: object
+      properties:
+        t: { type: string, description: UTC day, yyyy-mm-dd }
+        usd: { type: number }
+      required: [t, usd]
+
+    SnapshotLoan:
+      type: object
+      properties:
+        id: { type: string }
+        accountId: { type: string }
+        asset: { type: string }
+        debtUsd: { type: number }
+        collateralAsset: { type: string }
+        collateralValueUsd: { type: number }
+        ltv: { type: number }
+        apr: { type: number }
+      required: [id, accountId, asset, debtUsd, collateralAsset, collateralValueUsd, ltv, apr]
+
+    ContainerLtv:
+      type: object
+      properties:
+        containerId: { type: string }
+        name: { type: string }
+        type: { type: string }
+        debtUsd: { type: number }
+        collateralUsd: { type: number }
+        ltv: { type: number }
+        loanCount: { type: integer }
+      required: [containerId, debtUsd, collateralUsd, ltv, loanCount]
+
+    LtvSnapshot:
+      type: object
+      properties:
+        updatedAt: { type: string, format: date-time }
+        asOf: { type: string, format: date-time }
+        aggregateLtv: { type: number }
+        totalDebtUsd: { type: number }
+        totalCollateralUsd: { type: number }
+        history:
+          type: array
+          items:
+            $ref: "#/components/schemas/LtvHistoryPoint"
+        loans:
+          type: array
+          items:
+            $ref: "#/components/schemas/SnapshotLoan"
+        holdingsUsd: { type: number }
+        interestLifetimeUsd: { type: number }
+        interestProjected30dUsd: { type: number }
+        perContainer:
+          type: array
+          items:
+            $ref: "#/components/schemas/ContainerLtv"
+        dailyCharge:
+          type: array
+          items:
+            $ref: "#/components/schemas/DailyChargePoint"
+        fxUsdToZar: { type: number }
+      required:
+        - updatedAt
+        - asOf
+        - aggregateLtv
+        - totalDebtUsd
+        - totalCollateralUsd
+        - history
+
+    LtvSnapshotEnvelope:
+      type: object
+      properties:
+        available: { type: boolean }
+        snapshot:
+          $ref: "#/components/schemas/LtvSnapshot"
+      required: [available]
+
+    PerformanceRange:
+      type: string
+      enum: ["1D", "1W", "1M", "3M", "1Y", "ALL"]
+
+    CgtMethod:
+      type: string
+      enum: [weighted, fifo]
+
+    PnlBasis:
+      type: string
+      description: >
+        `ledger` uses imported deposits and withdrawals, so P&L excludes money
+        moved in or out. `snapshots` uses value changes only and is flagged as
+        an estimate. `none` means not enough history.
+      enum: [ledger, snapshots, none]
+
+    PnlAttribution:
+      type: object
+      properties:
+        marketUsd: { type: number, description: Price moves on assets held, net of price moves on debt }
+        incomeUsd: { type: number, description: Earn rewards, interest received, staking and distributions }
+        costsUsd: { type: number, description: Trading fees, withdrawal fees and loan interest (negative) }
+        otherUsd: { type: number, description: Rounding, spreads and unexplained differences }
+        byAsset:
+          type: array
+          description: Market move per asset, largest first. Debt assets count negatively.
+          items:
+            type: object
+            properties:
+              asset: { type: string }
+              marketUsd: { type: number }
+            required: [asset, marketUsd]
+      required: [marketUsd, incomeUsd, costsUsd, otherUsd, byAsset]
+
+    PnlPeriod:
+      type: object
+      properties:
+        from: { type: string, description: Period start, ISO timestamp }
+        startUsd: { type: ["number", "null"] }
+        endUsd: { type: ["number", "null"] }
+        pnlUsd: { type: ["number", "null"] }
+        pct: { type: ["number", "null"], description: Time-weighted return in percent }
+        flowsUsd: { type: number, description: Net external deposits minus withdrawals in the period }
+        basis: { $ref: "#/components/schemas/PnlBasis" }
+        attribution:
+          oneOf:
+            - $ref: "#/components/schemas/PnlAttribution"
+            - type: "null"
+        byProfile:
+          type: array
+          description: P&L per profile in scope; key "none" for accounts not in a profile
+          items:
+            type: object
+            properties:
+              containerId: { type: string }
+              pnlUsd: { type: ["number", "null"] }
+            required: [containerId, pnlUsd]
+        spark:
+          type: array
+          description: Net worth in USD across the period, oldest first, at most 48 points
+          items: { type: number }
+      required: [from, startUsd, endUsd, pnlUsd, pct, flowsUsd, basis, attribution, byProfile, spark]
+
+    PortfolioTotals:
+      type: object
+      properties:
+        assetsUsd: { type: number }
+        debtUsd: { type: number }
+        netUsd: { type: number }
+      required: [assetsUsd, debtUsd, netUsd]
+
+    AllocationSlice:
+      type: object
+      properties:
+        asset: { type: string }
+        qty: { type: number }
+        usd: { type: number }
+        pct: { type: number }
+      required: [asset, qty, usd, pct]
+
+    Mover:
+      type: object
+      properties:
+        asset: { type: string }
+        usd: { type: number }
+        priceUsd: { type: number }
+        change24hPct: { type: ["number", "null"] }
+        pnl24hUsd: { type: ["number", "null"] }
+      required: [asset, usd, priceUsd, change24hPct, pnl24hUsd]
+
+    ProfileTotals:
+      type: object
+      properties:
+        containerId: { type: string }
+        name: { type: string }
+        type: { type: string }
+        assetsUsd: { type: number }
+        debtUsd: { type: number }
+        netUsd: { type: number }
+        ltv: { type: ["number", "null"] }
+        targetLtv: { type: ["number", "null"] }
+      required: [containerId, name, type, assetsUsd, debtUsd, netUsd, ltv, targetLtv]
+
+    ExchangeTotals:
+      type: object
+      properties:
+        exchange: { type: string, enum: [binance, luno] }
+        assetsUsd: { type: number }
+        debtUsd: { type: number }
+      required: [exchange, assetsUsd, debtUsd]
+
+    LoanTotals:
+      type: object
+      properties:
+        count: { type: integer }
+        debtUsd: { type: number }
+        collateralUsd: { type: number }
+        ltv: { type: ["number", "null"] }
+        dailyInterestUsd: { type: number }
+      required: [count, debtUsd, collateralUsd, ltv, dailyInterestUsd]
+
+    ImportSummary:
+      type: object
+      properties:
+        state: { $ref: "#/components/schemas/ImportState" }
+        progress: { type: number, description: 0 to 1 }
+        earliest: { type: ["string", "null"] }
+        flaggedCount: { type: integer }
+      required: [state, progress, earliest, flaggedCount]
+
+    PortfolioOverview:
+      type: object
+      properties:
+        available: { type: boolean }
+        reason: { type: string }
+        asOf: { type: ["string", "null"] }
+        scope: { type: string }
+        fxUsdToZar: { type: ["number", "null"] }
+        fxSource: { type: string, enum: [luno, binance, reference, none] }
+        totals: { $ref: "#/components/schemas/PortfolioTotals" }
+        today: { $ref: "#/components/schemas/PnlPeriod" }
+        week: { $ref: "#/components/schemas/PnlPeriod" }
+        month: { $ref: "#/components/schemas/PnlPeriod" }
+        allocation:
+          type: array
+          items: { $ref: "#/components/schemas/AllocationSlice" }
+        movers:
+          type: array
+          items: { $ref: "#/components/schemas/Mover" }
+        profiles:
+          type: array
+          items: { $ref: "#/components/schemas/ProfileTotals" }
+        exchanges:
+          type: array
+          items: { $ref: "#/components/schemas/ExchangeTotals" }
+        loans: { $ref: "#/components/schemas/LoanTotals" }
+        sparkline:
+          type: array
+          description: Last 7 days of net worth in USD, oldest first
+          items: { type: number }
+        import: { $ref: "#/components/schemas/ImportSummary" }
+        flags:
+          type: array
+          items: { type: string }
+      required: [available, asOf, scope, fxUsdToZar, fxSource, totals, today, week, month, allocation, movers, profiles, exchanges, loans, sparkline, import, flags]
+
+    PerformancePoint:
+      type: object
+      properties:
+        t: { type: string }
+        netUsd: { type: number }
+        assetsUsd: { type: number }
+        debtUsd: { type: number }
+        flowUsd: { type: number, description: External flow recorded in this interval }
+        pnlUsd: { type: number, description: Cumulative P&L since the range start }
+        twrPct: { type: number, description: Cumulative time-weighted return since the range start }
+        fx: { type: ["number", "null"] }
+      required: [t, netUsd, assetsUsd, debtUsd, flowUsd, pnlUsd, twrPct, fx]
+
+    PerformanceSummary:
+      type: object
+      properties:
+        startUsd: { type: ["number", "null"] }
+        endUsd: { type: ["number", "null"] }
+        pnlUsd: { type: ["number", "null"] }
+        twrPct: { type: ["number", "null"] }
+        flowsUsd: { type: number }
+        highUsd: { type: ["number", "null"] }
+        lowUsd: { type: ["number", "null"] }
+        maxDrawdownPct: { type: ["number", "null"] }
+      required: [startUsd, endUsd, pnlUsd, twrPct, flowsUsd, highUsd, lowUsd, maxDrawdownPct]
+
+    PortfolioPerformance:
+      type: object
+      properties:
+        available: { type: boolean }
+        range: { $ref: "#/components/schemas/PerformanceRange" }
+        scope: { type: string }
+        basis: { $ref: "#/components/schemas/PnlBasis" }
+        points:
+          type: array
+          items: { $ref: "#/components/schemas/PerformancePoint" }
+        summary: { $ref: "#/components/schemas/PerformanceSummary" }
+        attribution:
+          oneOf:
+            - $ref: "#/components/schemas/PnlAttribution"
+            - type: "null"
+      required: [available, range, scope, basis, points, summary, attribution]
+
+    AssetPosition:
+      type: object
+      properties:
+        exchange: { type: string, enum: [binance, luno, pickle_rick] }
+        linkId: { type: string }
+        linkName: { type: string }
+        containerId: { type: ["string", "null"] }
+        wallet:
+          type: string
+          description: Spot, earn, collateral, or wallet on an exchange. Pickle Rick rows use the statement institution.
+        qty: { type: number }
+        usd: { type: number }
+        includeInTotal:
+          type: boolean
+          description: False when the line is already included in a parent statement total.
+        balanceKnown:
+          type: boolean
+          description: False when the statement has no snapshot balance yet.
+      required: [exchange, linkId, linkName, containerId, wallet, qty, usd]
+
+    PortfolioAsset:
+      type: object
+      properties:
+        asset: { type: string }
+        qty: { type: number }
+        usd: { type: number }
+        priceUsd: { type: number }
+        pct: { type: number, description: Share of gross assets in percent }
+        change24hPct: { type: ["number", "null"] }
+        debtQty: { type: number }
+        debtUsd: { type: number }
+        costBasisUsd: { type: ["number", "null"] }
+        unrealizedUsd: { type: ["number", "null"] }
+        quoteDate:
+          type: string
+          description: Portal day for a Peresec asset-swap holding (as_of, or the latest perec-as point when that day is later). Absent on exchange rows.
+        quoteCurrency:
+          type: string
+          description: Currency of that holding balance. The balance itself is qty.
+        priorValue:
+          type: number
+          description: Previous point on this holding's balance series (Peresec asset-swap, or Interactive Brokers equity). Absent when there is no earlier point, and absent when a 24-hour ticker percent is already set.
+        positions:
+          type: array
+          items: { $ref: "#/components/schemas/AssetPosition" }
+      required: [asset, qty, usd, priceUsd, pct, change24hPct, debtQty, debtUsd, costBasisUsd, unrealizedUsd, positions]
+
+    PortfolioAssets:
+      type: object
+      properties:
+        available: { type: boolean }
+        reason: { type: string }
+        asOf: { type: ["string", "null"] }
+        scope: { type: string }
+        fxUsdToZar: { type: ["number", "null"] }
+        assets:
+          type: array
+          items: { $ref: "#/components/schemas/PortfolioAsset" }
+      required: [available, asOf, scope, fxUsdToZar, assets]
+
+    PricePoint:
+      type: object
+      properties:
+        t: { type: string }
+        usd: { type: number }
+      required: [t, usd]
+
+    HoldingPoint:
+      type: object
+      properties:
+        t: { type: string }
+        qty: { type: number }
+        usd: { type: number }
+        byContainer:
+          type: object
+          description: Quantity per profile id; key "none" for accounts not in a profile
+          additionalProperties: { type: number }
+      required: [t, qty, usd, byContainer]
+
+    LedgerEventView:
+      type: object
+      properties:
+        id: { type: string }
+        t: { type: string }
+        type: { type: string, description: "deposit, withdrawal, buy, sell, convert, income, fee, interest, borrow, repay, adjustment" }
+        asset: { type: string }
+        qty: { type: number, description: Signed quantity change for this asset }
+        usd: { type: ["number", "null"] }
+        debt: { type: boolean, description: "True for loan-balance changes; qty is then negative when the amount owed grows" }
+        exchange: { type: string, enum: [binance, luno] }
+        linkId: { type: string }
+        containerId: { type: ["string", "null"] }
+        note: { type: string }
+      required: [id, t, type, asset, qty, usd, debt, exchange, linkId, containerId, note]
+
+    CostBasis:
+      type: object
+      properties:
+        method: { $ref: "#/components/schemas/CgtMethod" }
+        qty: { type: number }
+        totalCostUsd: { type: number }
+        avgCostUsd: { type: ["number", "null"] }
+        realizedUsd: { type: number }
+        complete: { type: boolean, description: False when part of the history is missing or flagged }
+      required: [method, qty, totalCostUsd, avgCostUsd, realizedUsd, complete]
+
+    PortfolioAssetDetail:
+      type: object
+      properties:
+        available: { type: boolean }
+        asset: { $ref: "#/components/schemas/PortfolioAsset" }
+        priceHistory:
+          type: array
+          items: { $ref: "#/components/schemas/PricePoint" }
+        holdingHistory:
+          type: array
+          items: { $ref: "#/components/schemas/HoldingPoint" }
+        events:
+          type: array
+          items: { $ref: "#/components/schemas/LedgerEventView" }
+        costBasis:
+          oneOf:
+            - $ref: "#/components/schemas/CostBasis"
+            - type: "null"
+        fxUsdToZar: { type: ["number", "null"] }
+      required: [available, asset, priceHistory, holdingHistory, events, costBasis, fxUsdToZar]
+
+    LoanPosition:
+      type: object
+      description: >
+        One open loan. Trigger prices are the collateral prices (USD) at which
+        LTV reaches the profile target, the margin call level and liquidation,
+        holding the debt value constant.
+      properties:
+        loanId: { type: string }
+        exchange: { type: string, enum: [binance, luno] }
+        linkId: { type: string }
+        linkName: { type: string }
+        containerId: { type: ["string", "null"] }
+        profileName: { type: ["string", "null"] }
+        asset: { type: string }
+        debtQty: { type: number }
+        debtUsd: { type: number }
+        collateralAsset: { type: string }
+        collateralQty: { type: number }
+        collateralUsd: { type: number }
+        collateralPriceUsd: { type: ["number", "null"] }
+        ltv: { type: number }
+        marginCallLtv: { type: number }
+        liqLtv: { type: number }
+        targetLtv: { type: ["number", "null"] }
+        apr: { type: number }
+        hourlyRate: { type: number, description: Hourly interest rate as a decimal }
+        dailyInterestUsd: { type: number }
+        priceAtTargetUsd: { type: ["number", "null"] }
+        priceAtMarginCallUsd: { type: ["number", "null"] }
+        priceAtLiquidationUsd: { type: ["number", "null"] }
+        ltvChange7d: { type: ["number", "null"], description: Change in LTV percentage points over 7 days }
+      required:
+        - loanId
+        - exchange
+        - linkId
+        - linkName
+        - containerId
+        - profileName
+        - asset
+        - debtQty
+        - debtUsd
+        - collateralAsset
+        - collateralQty
+        - collateralUsd
+        - collateralPriceUsd
+        - ltv
+        - marginCallLtv
+        - liqLtv
+        - targetLtv
+        - apr
+        - hourlyRate
+        - dailyInterestUsd
+        - priceAtTargetUsd
+        - priceAtMarginCallUsd
+        - priceAtLiquidationUsd
+        - ltvChange7d
+
+    LoanProfile:
+      type: object
+      properties:
+        containerId: { type: ["string", "null"] }
+        name: { type: string }
+        debtUsd: { type: number }
+        collateralUsd: { type: number }
+        ltv: { type: ["number", "null"] }
+        targetLtv: { type: ["number", "null"] }
+        loanCount: { type: integer }
+      required: [containerId, name, debtUsd, collateralUsd, ltv, targetLtv, loanCount]
+
+    LoanHistoryPoint:
+      type: object
+      properties:
+        t: { type: string }
+        ltv: { type: ["number", "null"], description: Combined LTV for the scope }
+        loans:
+          type: object
+          description: loanId → LTV
+          additionalProperties: { type: number }
+        profiles:
+          type: object
+          description: containerId (or "none") → LTV
+          additionalProperties: { type: number }
+      required: [t, ltv, loans, profiles]
+
+    PortfolioLoans:
+      type: object
+      properties:
+        available: { type: boolean }
+        reason: { type: string }
+        asOf: { type: ["string", "null"] }
+        scope: { type: string }
+        range: { $ref: "#/components/schemas/PerformanceRange" }
+        fxUsdToZar: { type: ["number", "null"] }
+        totals: { $ref: "#/components/schemas/LoanTotals" }
+        loans:
+          type: array
+          items: { $ref: "#/components/schemas/LoanPosition" }
+        profiles:
+          type: array
+          items: { $ref: "#/components/schemas/LoanProfile" }
+        history:
+          type: array
+          items: { $ref: "#/components/schemas/LoanHistoryPoint" }
+        historyBasis:
+          type: string
+          description: >
+            `loans` uses per-loan snapshots. `aggregate` falls back to the
+            combined LTV recorded before per-loan history existed (all profiles
+            only). `none` means not enough history.
+          enum: [loans, aggregate, none]
+      required: [available, asOf, scope, range, fxUsdToZar, totals, loans, profiles, history, historyBasis]
+
+    ImportState:
+      type: string
+      enum: [unavailable, pending, running, partial, complete, error]
+
+    ImportSource:
+      type: object
+      properties:
+        exchange: { type: string, enum: [binance, luno] }
+        linkId: { type: string }
+        linkName: { type: string }
+        source: { type: string }
+        state: { $ref: "#/components/schemas/ImportState" }
+        rows: { type: integer }
+        coveredFrom: { type: ["string", "null"] }
+        coveredTo: { type: ["string", "null"] }
+        error: { type: ["string", "null"] }
+      required: [exchange, linkId, linkName, source, state, rows, coveredFrom, coveredTo, error]
+
+    ReconciliationRow:
+      type: object
+      properties:
+        containerId: { type: ["string", "null"] }
+        linkId: { type: string }
+        asset: { type: string }
+        snapshotQty: { type: number }
+        ledgerQty: { type: number }
+        adjustmentQty: { type: number }
+        adjustmentUsd: { type: number }
+        flagged: { type: boolean }
+      required: [containerId, linkId, asset, snapshotQty, ledgerQty, adjustmentQty, adjustmentUsd, flagged]
+
+    ImportStatus:
+      type: object
+      properties:
+        state: { $ref: "#/components/schemas/ImportState" }
+        progress: { type: number }
+        startedAt: { type: ["string", "null"] }
+        finishedAt: { type: ["string", "null"] }
+        earliest: { type: ["string", "null"] }
+        eventCount: { type: integer }
+        sources:
+          type: array
+          items: { $ref: "#/components/schemas/ImportSource" }
+        reconciliation:
+          type: array
+          items: { $ref: "#/components/schemas/ReconciliationRow" }
+        notes:
+          type: array
+          items: { type: string }
+      required: [state, progress, startedAt, finishedAt, earliest, eventCount, sources, reconciliation, notes]
+
+    AssetReturns:
+      type: object
+      properties:
+        asset: { type: string }
+        weight: { type: number, description: Share of gross assets, 0 to 1 }
+        debtWeight: { type: number, description: Debt in this asset as a share of gross assets, 0 to 1 }
+        returns:
+          type: array
+          description: Daily log returns, oldest first, up to 365
+          items: { type: number }
+      required: [asset, weight, debtWeight, returns]
+
+    CgtEstimate:
+      type: object
+      properties:
+        method: { $ref: "#/components/schemas/CgtMethod" }
+        taxYear: { type: string, description: South African tax year, e.g. 2026/27 (1 March to end February) }
+        profileType: { type: string, enum: [individual, trust, mixed] }
+        realizedGainUsd: { type: number }
+        realizedGainZar: { type: ["number", "null"] }
+        annualExclusionZar: { type: number }
+        inclusionRate: { type: number }
+        taxableGainZar: { type: ["number", "null"] }
+        unrealizedGainUsd: { type: ["number", "null"] }
+        disposals: { type: integer }
+        complete: { type: boolean }
+        taxRate: { type: number, description: Rate applied to the taxable gain; the trust rate and the individual top marginal rate }
+        profiles:
+          type: array
+          items: { $ref: "#/components/schemas/CgtProfileEstimate" }
+        taxIfSoldZar: { type: ["number", "null"], description: Estimated tax if every holding were sold today, all profiles in scope }
+      required: [method, taxYear, profileType, realizedGainUsd, realizedGainZar, annualExclusionZar, inclusionRate, taxableGainZar, unrealizedGainUsd, disposals, complete, taxRate, profiles, taxIfSoldZar]
+
+    CgtProfileEstimate:
+      type: object
+      properties:
+        containerId: { type: ["string", "null"] }
+        name: { type: string }
+        type: { type: string, enum: [individual, trust] }
+        realizedGainZar: { type: number, description: Realised this tax year }
+        unrealizedGainZar: { type: number, description: Value today minus cost of open holdings }
+        gainIfSoldZar: { type: number }
+        annualExclusionZar: { type: number }
+        inclusionRate: { type: number }
+        taxableIfSoldZar: { type: number }
+        taxIfSoldZar: { type: number }
+        complete: { type: boolean, description: False when some cost is unknown (deposits valued at market, or missing history) }
+      required: [containerId, name, type, realizedGainZar, unrealizedGainZar, gainIfSoldZar, annualExclusionZar, inclusionRate, taxableIfSoldZar, taxIfSoldZar, complete]
+
+    PortfolioAnalytics:
+      type: object
+      properties:
+        available: { type: boolean }
+        asOf: { type: ["string", "null"] }
+        scope: { type: string }
+        fxUsdToZar: { type: ["number", "null"] }
+        totals: { $ref: "#/components/schemas/PortfolioTotals" }
+        interest:
+          type: object
+          properties:
+            dailyUsd: { type: number }
+            monthlyUsd: { type: number }
+            yearlyUsd: { type: number }
+            paidLast30dUsd: { type: ["number", "null"] }
+            weightedApr: { type: ["number", "null"] }
+            dragPctOfAssets: { type: ["number", "null"], description: Yearly interest as a percent of gross assets }
+          required: [dailyUsd, monthlyUsd, yearlyUsd, paidLast30dUsd, weightedApr, dragPctOfAssets]
+        concentration:
+          type: object
+          properties:
+            hhi: { type: number, description: Herfindahl index 0 to 1 }
+            effectiveAssets: { type: number }
+            topAsset: { type: ["string", "null"] }
+            topPct: { type: number }
+          required: [hhi, effectiveAssets, topAsset, topPct]
+        contributions:
+          type: object
+          properties:
+            depositedUsd: { type: number }
+            withdrawnUsd: { type: number }
+            netContributedUsd: { type: number }
+            growthUsd: { type: ["number", "null"] }
+            since: { type: ["string", "null"] }
+            basis: { $ref: "#/components/schemas/PnlBasis" }
+            monthly:
+              type: array
+              description: Last 12 Johannesburg months, oldest first; empty without a reconstructed ledger
+              items:
+                type: object
+                properties:
+                  month: { type: string, description: YYYY-MM }
+                  contributedUsd: { type: number, description: Net external flows }
+                  growthUsd: { type: number, description: Change in net value not explained by flows }
+                  endUsd: { type: number }
+                required: [month, contributedUsd, growthUsd, endUsd]
+          required: [depositedUsd, withdrawnUsd, netContributedUsd, growthUsd, since, basis, monthly]
+        income:
+          type: object
+          properties:
+            last30dUsd: { type: number }
+            last365dUsd: { type: number }
+          required: [last30dUsd, last365dUsd]
+        risk:
+          type: object
+          properties:
+            volatility30dPct: { type: ["number", "null"], description: Annualised }
+            maxDrawdownPct: { type: ["number", "null"] }
+            bestDayPct: { type: ["number", "null"] }
+            worstDayPct: { type: ["number", "null"] }
+            stablePct: { type: number, description: Stablecoins and cash as a percent of gross assets }
+          required: [volatility30dPct, maxDrawdownPct, bestDayPct, worstDayPct, stablePct]
+        cgt: { $ref: "#/components/schemas/CgtEstimate" }
+        assetReturns:
+          type: array
+          items: { $ref: "#/components/schemas/AssetReturns" }
+        loans:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string }
+              containerId: { type: ["string", "null"] }
+              asset: { type: string }
+              collateralAsset: { type: string }
+              debtUsd: { type: number }
+              collateralUsd: { type: number }
+              ltv: { type: number }
+              marginCallLtv: { type: number }
+              liqLtv: { type: number }
+              apr: { type: number }
+            required: [id, containerId, asset, collateralAsset, debtUsd, collateralUsd, ltv, marginCallLtv, liqLtv, apr]
+      required: [available, asOf, scope, fxUsdToZar, totals, interest, concentration, contributions, income, risk, cgt, assetReturns, loans]
+
+    RefreshAccepted:
+      type: object
+      properties:
+        accepted: { type: boolean }
+        running: { type: boolean }
+        nextAllowedAt: { type: string }
+      required: [accepted, running, nextAllowedAt]

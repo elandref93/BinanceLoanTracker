@@ -3,6 +3,9 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { getDataDir, ensureDataDir } from "./dataDir";
 import { logger } from "./logger";
+import { isDirectStorageKey } from "./profileStorageKey";
+import { isStorageFileKey, userStorageKey } from "./userWriteLock";
+import { logSubject } from "./logger";
 
 // Per-user encrypted-at-rest? No — the API is gated by Apple Sign-In and HTTPS,
 // and the user *is* the only reader. We store the raw JSON blob the mobile app
@@ -12,21 +15,27 @@ import { logger } from "./logger";
 // Persistence/data-dir resolution (Azure /home, ACCOUNT_SYNC_DIR override) is
 // shared with credential + snapshot storage in ./dataDir.
 
-/** Distinct per-user blobs. Each maps to its own file so they sync independently. */
-export type SyncKind = "accounts" | "settings" | "annotations";
+/**
+ * Distinct per-user blobs. Each maps to its own file so they sync independently.
+ * `scenarios` is the strategy list. It is not part of settings: the phone
+ * replaces that blob from currency, LTV targets, and alert rules.
+ */
+export type SyncKind = "accounts" | "settings" | "annotations" | "scenarios";
 
 export type StoredRecord = { updatedAt: string } & Record<string, unknown>;
 
-function fileForHash(hash: string, kind: SyncKind): string {
+function fileForHash(hash: string, kind: SyncKind): string | null {
+  if (!isStorageFileKey(hash)) return null;
   // "accounts" keeps the original bare filename for backwards compatibility
   // with blobs already on disk; other kinds get a suffix.
   const name = kind === "accounts" ? `${hash}.json` : `${hash}.${kind}.json`;
   return path.join(getDataDir(), name);
 }
 
-function fileFor(sub: string, kind: SyncKind): string {
-  const hash = crypto.createHash("sha256").update(sub).digest("hex");
-  return fileForHash(hash, kind);
+function fileFor(sub: string, kind: SyncKind): string | null {
+  // userStorageKey hashes ordinary Apple subs. The pinned web profile id is
+  // already the on-disk filename, so reads and writes use that key directly.
+  return fileForHash(userStorageKey(sub), kind);
 }
 
 async function ensureDir(): Promise<void> {
@@ -38,6 +47,7 @@ export async function readRecord(
   kind: SyncKind,
 ): Promise<StoredRecord | null> {
   const target = fileFor(sub, kind);
+  if (!target) return null;
   try {
     const raw = await fs.readFile(target, "utf8");
     const parsed = JSON.parse(raw) as StoredRecord;
@@ -47,13 +57,13 @@ export async function readRecord(
     const code = (err as NodeJS.ErrnoException).code;
     if (code === "ENOENT") {
       logger.info(
-        { op: "storage.read", kind, userId: sub, path: target, hit: false },
+        { op: "storage.read", kind, user: logSubject(sub), hit: false, dataDir: getDataDir(), direct: isDirectStorageKey(sub) },
         "accountStorage: read miss",
       );
       return null;
     }
     logger.warn(
-      { err, code, op: "storage.read", kind, userId: sub, path: target },
+      { err, code, op: "storage.read", kind, user: logSubject(sub) },
       "accountStorage: read failed",
     );
     return null;
@@ -71,6 +81,7 @@ export async function readRecordByHash(
   kind: SyncKind,
 ): Promise<StoredRecord | null> {
   const target = fileForHash(hash, kind);
+  if (!target) return null;
   try {
     const raw = await fs.readFile(target, "utf8");
     const parsed = JSON.parse(raw) as StoredRecord;
@@ -79,7 +90,7 @@ export async function readRecordByHash(
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === "ENOENT") return null;
     logger.warn(
-      { err, op: "storage.readByHash", kind, path: target },
+      { err, op: "storage.readByHash", kind },
       "accountStorage: read-by-hash failed",
     );
     return null;
@@ -87,14 +98,17 @@ export async function readRecordByHash(
 }
 
 /**
- * True when this Apple `sub` already has anything on disk (sync blobs,
- * encrypted credentials, or an LTV snapshot). Used by Apple identity linking
- * so a new Expo Go `sub` is aliased onto the established TestFlight user
- * rather than the other way around.
+ * True when this Apple `sub` already has an identity-bearing blob on disk
+ * (account, settings, or annotation sync, encrypted credentials, or an LTV
+ * snapshot). Used by Apple identity linking so a new Expo Go `sub` is aliased
+ * onto the established TestFlight user rather than the other way around.
+ * Scenario files are omitted on purpose: they must not change which profile
+ * is treated as canonical.
  */
 export async function hasPersistedUserData(sub: string): Promise<boolean> {
   await ensureDir();
-  const hash = crypto.createHash("sha256").update(sub).digest("hex");
+  const hash = userStorageKey(sub);
+  if (!isStorageFileKey(hash)) return false;
   const dir = getDataDir();
   const candidates = [
     fileForHash(hash, "accounts"),
@@ -104,6 +118,7 @@ export async function hasPersistedUserData(sub: string): Promise<boolean> {
     path.join(dir, `${hash}.ltv.json`),
   ];
   for (const target of candidates) {
+    if (!target) continue;
     try {
       await fs.access(target);
       return true;
@@ -121,6 +136,7 @@ export async function writeRecord(
 ): Promise<void> {
   await ensureDir();
   const target = fileFor(sub, kind);
+  if (!target) throw new Error("Invalid storage key");
   const tmp = `${target}.${crypto.randomBytes(6).toString("hex")}.tmp`;
   const body = JSON.stringify(rec);
   const bytes = Buffer.byteLength(body, "utf8");
@@ -128,13 +144,13 @@ export async function writeRecord(
     await fs.writeFile(tmp, body, { encoding: "utf8", mode: 0o600 });
     await fs.rename(tmp, target);
     logger.info(
-      { op: "storage.write", kind, userId: sub, path: target, bytes },
+      { op: "storage.write", kind, user: logSubject(sub), bytes },
       "accountStorage: write+rename ok",
     );
   } catch (err) {
     const code = (err as NodeJS.ErrnoException).code;
     logger.error(
-      { err, code, op: "storage.write", kind, userId: sub, path: target, bytes },
+      { err, code, op: "storage.write", kind, user: logSubject(sub), bytes },
       "accountStorage: write+rename failed",
     );
     throw err;

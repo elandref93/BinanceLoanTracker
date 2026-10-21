@@ -189,6 +189,19 @@ function warningFor(input: {
   return null;
 }
 
+/** Read-only email → canonical user bindings. Does not rewrite the identity file. */
+export async function listAppleEmailBindings(): Promise<
+  Array<{ canonicalSub: string; normalizedEmail: string }>
+> {
+  return withLock(async () => {
+    const store = await loadStore();
+    return Object.entries(store.emails).map(([normalizedEmail, raw]) => ({
+      normalizedEmail,
+      canonicalSub: canonicalOf(store, raw) ?? raw,
+    }));
+  });
+}
+
 export async function resolveAppleUser(
   input: ResolveAppleUserInput,
 ): Promise<ResolveAppleUserResult> {

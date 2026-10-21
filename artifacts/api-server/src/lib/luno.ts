@@ -82,6 +82,10 @@ export class LunoApiError extends Error {
 
 const LUNO_BASE = "https://api.luno.com";
 
+// Calls leave from this API process. Luno (and Binance) IP allow-lists must
+// use the App Service outbound addresses documented in
+// .github/workflows/deploy-backend.yml. Do not hard-code those IPs here.
+
 function basicAuth(creds: LunoCredentials): string {
   return `Basic ${Buffer.from(`${creds.keyId}:${creds.keySecret}`).toString("base64")}`;
 }
@@ -98,7 +102,7 @@ function lunoEndpoint(path: string): string {
   return path.split("?")[0];
 }
 
-async function lunoFetch<T>(
+export async function lunoFetch<T>(
   path: string,
   creds: LunoCredentials | null,
 ): Promise<T> {

@@ -12,6 +12,10 @@ import {
 import { buildConsolidatedExtras } from "./consolidatedSnapshot";
 import { isCryptoConfigured } from "./secretCrypto";
 import { logger } from "./logger";
+import { withUserWriteLock } from "./userWriteLock";
+import { fillPortfolioGaps } from "./portfolio/gapFill";
+import { repairStoredPeresec } from "./portfolio/perecRepairStore";
+import { refreshUser } from "./portfolio/service";
 
 // Periodically recomputes each user's Binance LTV from their stored (encrypted)
 // credentials and writes a snapshot. This is what makes data fresh even when the
@@ -40,46 +44,68 @@ export async function runOnce(): Promise<void> {
     for (const hash of hashes) {
       try {
         const creds = await loadDecryptedByHash(hash);
-        if (!creds || creds.binance.length === 0) continue;
-        const client = buildBinanceClient(creds.binance);
-        const summary = await computeLoanSummary(client);
-        const prev = await readSnapshotByHash(hash);
-        const history = [
-          ...(prev?.history ?? []),
-          { t: summary.asOf, ltv: summary.aggregateLtv },
-        ].slice(-MAX_HISTORY);
-        // Consolidated bundle (loans, holdings, interest, per-container LTV,
-        // daily-charge history, FX). Guarded so a failure here still lets the
-        // core LTV snapshot write.
-        let extras = {};
-        try {
-          extras = await buildConsolidatedExtras({
-            hash,
-            client,
-            summary,
-            lunoAccounts: creds.luno,
-            prev,
-          });
-        } catch (err) {
-          logger.warn(
-            { err, op: "scheduler.consolidated" },
-            "consolidated bundle build failed — writing LTV-only snapshot",
-          );
+        if (creds && (creds.binance.length > 0 || creds.luno.length > 0)) {
+          try {
+            await refreshUser(hash, creds);
+          } catch (err) {
+            logger.warn({ err, op: "scheduler.portfolio" }, "portfolio snapshot failed for one user");
+          }
         }
-        await writeSnapshotByHash(hash, {
-          updatedAt: new Date().toISOString(),
-          asOf: summary.asOf,
-          aggregateLtv: summary.aggregateLtv,
-          totalDebtUsd: summary.totalDebtUsd,
-          totalCollateralUsd: summary.totalCollateralUsd,
-          history,
-          ...extras,
-        });
+        if (creds && creds.binance.length > 0) {
+          const client = buildBinanceClient(creds.binance);
+          const summary = await computeLoanSummary(client);
+          // Same per-user lock as settings and credential writes. The Binance
+          // read stays outside the lock; the snapshot read-modify-write does not.
+          await withUserWriteLock(hash, async () => {
+            const prev = await readSnapshotByHash(hash);
+            const history = [
+              ...(prev?.history ?? []),
+              { t: summary.asOf, ltv: summary.aggregateLtv },
+            ].slice(-MAX_HISTORY);
+            // Consolidated bundle (loans, holdings, interest, per-container LTV,
+            // daily-charge history, FX). Guarded so a failure here still lets the
+            // core LTV snapshot write.
+            let extras = {};
+            try {
+              extras = await buildConsolidatedExtras({
+                hash,
+                client,
+                summary,
+                lunoAccounts: creds.luno,
+                prev,
+              });
+            } catch (err) {
+              logger.warn(
+                { err, op: "scheduler.consolidated" },
+                "consolidated bundle build failed — writing LTV-only snapshot",
+              );
+            }
+            await writeSnapshotByHash(hash, {
+              updatedAt: new Date().toISOString(),
+              asOf: summary.asOf,
+              aggregateLtv: summary.aggregateLtv,
+              totalDebtUsd: summary.totalDebtUsd,
+              totalCollateralUsd: summary.totalCollateralUsd,
+              history,
+              ...extras,
+            });
+          });
+        }
       } catch (err) {
         logger.warn(
           { err, op: "scheduler.user" },
           "scheduled LTV compute failed for one user",
         );
+      }
+      try {
+        await repairStoredPeresec(hash);
+      } catch (err) {
+        logger.warn({ err, op: "portfolio.perec-repair" }, "peresec snapshot repair failed for one user");
+      }
+      try {
+        await fillPortfolioGaps(hash);
+      } catch (err) {
+        logger.warn({ err, op: "portfolio.gapfill" }, "portfolio gap fill failed for one user");
       }
     }
   } catch (err) {
@@ -113,4 +139,8 @@ export function startScheduler(): void {
     { op: "scheduler.init", schedule: SCHEDULE },
     "scheduled LTV compute started",
   );
+  // The first cron slot can be 15 minutes away. Fill downtime as soon as the process is up.
+  void runOnce().catch((err) => {
+    logger.error({ err, op: "scheduler.tick" }, "scheduled LTV tick failed");
+  });
 }

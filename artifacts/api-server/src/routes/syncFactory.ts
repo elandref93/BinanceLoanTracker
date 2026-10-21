@@ -1,13 +1,17 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 import { readRecord, writeRecord, type SyncKind } from "../lib/accountStorage";
-import { logger } from "../lib/logger";
+import { logger, logSubject } from "../lib/logger";
+import { chooseSyncUpdatedAt, isRejectedSyncWrite } from "../lib/syncUpdatedAt";
+import { stripAccountSyncSecrets } from "../lib/stripAccountSecrets";
+import { userStorageKey, withUserWriteLock } from "../lib/userWriteLock";
 
-// Shared implementation for the per-user "blob sync" endpoints (accounts +
-// settings). Both follow the same contract: GET returns the stored record,
-// PUT does an atomic per-user last-write-wins update keyed by client
-// `updatedAt`, returning 409 + the current record when the incoming push is
-// older (so the device re-pulls instead of clobbering).
+// Shared implementation for the per-user blob sync endpoints (accounts,
+// settings, annotations, and strategy scenarios). GET returns the stored record,
+// PUT does an atomic per-user last-write-wins update. Mobile sends `updatedAt`
+// and that string is compared as-is (equal timestamps conflict, so the phone
+// re-pulls). Web omits `updatedAt`; the server assigns its clock and the same
+// comparison still applies, so a phone write that is already newer wins.
 
 type Options = {
   kind: SyncKind;
@@ -15,32 +19,25 @@ type Options = {
   payloadKey: string;
   /** Reject obviously-wrong payload shapes before persisting. */
   validatePayload: (v: unknown) => boolean;
+  /**
+   * Optional transform applied to the payload before it is written.
+   * Account sync uses this to drop exchange secrets. The client's
+   * `updatedAt` is unchanged.
+   */
+  sanitizePayload?: (payload: unknown) => unknown;
 };
 
 const Body = z
-  .object({ updatedAt: z.string().min(1).max(64) })
+  .object({ updatedAt: z.string().min(1).max(64).optional() })
   .passthrough();
 
 export function makeSyncRouter({
   kind,
   payloadKey,
   validatePayload,
+  sanitizePayload,
 }: Options): IRouter {
   const router: IRouter = Router();
-
-  // Per-user serialization so read-compare-write is atomic per `sub`, even
-  // when two devices race a PUT (Node interleaves at await boundaries).
-  const userLocks = new Map<string, Promise<unknown>>();
-  function withUserLock<T>(sub: string, fn: () => Promise<T>): Promise<T> {
-    const prev = userLocks.get(sub) ?? Promise.resolve();
-    const chained = prev.then(fn, fn);
-    const tail = chained.catch(() => undefined);
-    userLocks.set(sub, tail);
-    void tail.then(() => {
-      if (userLocks.get(sub) === tail) userLocks.delete(sub);
-    });
-    return chained;
-  }
 
   router.get("/sync", async (req, res) => {
     const sub = req.userId;
@@ -51,17 +48,17 @@ export function makeSyncRouter({
     const rec = await readRecord(sub, kind);
     if (!rec) {
       logger.info(
-        { op: "sync.get", kind, userId: sub, hit: false, status: 404 },
+        { op: "sync.get", kind, user: logSubject(sub), hit: false, status: 404 },
         `${kind}/sync miss`,
       );
       res.status(404).json({ error: "No synced data" });
       return;
     }
     logger.info(
-      { op: "sync.get", kind, userId: sub, hit: true, status: 200 },
+      { op: "sync.get", kind, user: logSubject(sub), hit: true, status: 200 },
       `${kind}/sync hit`,
     );
-    res.json(rec);
+    res.json(stripAccountSyncSecrets(rec));
   });
 
   router.put("/sync", async (req, res) => {
@@ -76,7 +73,7 @@ export function makeSyncRouter({
         {
           op: "sync.put",
           kind,
-          userId: sub,
+          user: logSubject(sub),
           status: 400,
           reason: "invalid-body",
           issues: parsed.error.issues.map((i) => i.code),
@@ -92,7 +89,7 @@ export function makeSyncRouter({
         {
           op: "sync.put",
           kind,
-          userId: sub,
+          user: logSubject(sub),
           status: 400,
           reason: "invalid-payload-shape",
         },
@@ -107,17 +104,21 @@ export function makeSyncRouter({
       : payload && typeof payload === "object"
         ? Object.keys(payload).length
         : 0;
+    const clock = chooseSyncUpdatedAt(parsed.data.updatedAt, new Date());
     try {
-      const outcome = await withUserLock(sub, async () => {
+      const outcome = await withUserWriteLock(userStorageKey(sub), async () => {
         const existing = await readRecord(sub, kind);
         // Strict `>=` so equal timestamps don't silently overwrite — the
         // tying client re-pulls and retries with a fresh monotonic timestamp.
-        if (existing && existing.updatedAt >= parsed.data.updatedAt) {
+        if (existing && isRejectedSyncWrite(existing.updatedAt, clock.updatedAt)) {
           return { kind: "conflict" as const, existing };
         }
+        const storedPayload = stripAccountSyncSecrets(
+          sanitizePayload ? sanitizePayload(payload) : payload,
+        );
         await writeRecord(sub, kind, {
-          updatedAt: parsed.data.updatedAt,
-          [payloadKey]: payload,
+          updatedAt: clock.updatedAt,
+          [payloadKey]: storedPayload,
         });
         return { kind: "ok" as const };
       });
@@ -126,32 +127,34 @@ export function makeSyncRouter({
           {
             op: "sync.put",
             kind,
-            userId: sub,
+            user: logSubject(sub),
             status: 409,
             reason: "stale",
-            incomingUpdatedAt: parsed.data.updatedAt,
+            incomingUpdatedAt: clock.updatedAt,
+            clockSource: clock.source,
             existingUpdatedAt: outcome.existing.updatedAt,
           },
           `${kind}/sync rejected (conflict)`,
         );
-        res.status(409).json(outcome.existing);
+        res.status(409).json(stripAccountSyncSecrets(outcome.existing));
         return;
       }
       logger.info(
         {
           op: "sync.put",
           kind,
-          userId: sub,
+          user: logSubject(sub),
           status: 200,
           items: itemCount,
-          updatedAt: parsed.data.updatedAt,
+          updatedAt: clock.updatedAt,
+          clockSource: clock.source,
         },
         `${kind}/sync accepted (ok)`,
       );
-      res.json({ ok: true, updatedAt: parsed.data.updatedAt });
+      res.json({ ok: true, updatedAt: clock.updatedAt });
     } catch (err) {
       logger.error(
-        { err, op: "sync.put", kind, userId: sub, status: 500 },
+        { err, op: "sync.put", kind, user: logSubject(sub), status: 500 },
         `${kind}/sync PUT failed`,
       );
       res.status(500).json({ error: "Failed to persist sync blob" });

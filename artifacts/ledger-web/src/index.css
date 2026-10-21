@@ -1,0 +1,269 @@
+@import "tailwindcss";
+
+@theme {
+  --color-background: #06090c;
+  --color-foreground: #e6f1f7;
+  --color-card: #0e141a;
+  --color-card-elevated: #131b23;
+  --color-card-foreground: #e6f1f7;
+  --color-primary: #00f0ff;
+  --color-primary-foreground: #06090c;
+  --color-secondary: #131b23;
+  --color-secondary-foreground: #e6f1f7;
+  --color-muted: #0e141a;
+  --color-muted-foreground: #8a9ba8;
+  --color-subtle: #5b6b77;
+  --color-accent: #00f0ff;
+  --color-accent-foreground: #06090c;
+  --color-destructive: #ff4d6d;
+  --color-destructive-foreground: #ffffff;
+  --color-ok: #1fb6a6;
+  --color-warn: #f5a524;
+  --color-danger: #ff4d6d;
+  --color-gain: #22c55e;
+  --color-loss: #f43f5e;
+  --color-border: #1b242c;
+  --color-border-strong: #26323c;
+  --color-input: #1b242c;
+  --radius-ledger: 14px;
+
+  --breakpoint-wide: 1366px;
+
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI Variable Text", "Segoe UI", system-ui,
+    sans-serif;
+
+  --text-hero: 44px;
+  --text-hero--line-height: 48px;
+  --text-hero--letter-spacing: -0.02em;
+  --text-title: 22px;
+  --text-title--line-height: 28px;
+  --text-heading: 17px;
+  --text-heading--line-height: 22px;
+  --text-body: 15px;
+  --text-body--line-height: 20px;
+  --text-caption: 13px;
+  --text-caption--line-height: 18px;
+  --text-micro: 11px;
+  --text-micro--line-height: 14px;
+
+  --ease-ledger: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-spring: cubic-bezier(0.32, 1.25, 0.5, 1);
+
+  --animate-fade-in: fade-in 220ms var(--ease-ledger) both;
+  --animate-rise-in: rise-in 260ms var(--ease-ledger) both;
+  --animate-shimmer: shimmer 1.4s linear infinite;
+  --animate-tint-pulse: tint-pulse 900ms var(--ease-ledger);
+  --animate-grow-x: grow-x 600ms var(--ease-ledger) both;
+  --animate-sheet-up: sheet-up 280ms var(--ease-ledger) both;
+  --animate-pop-in: pop-in 220ms var(--ease-spring) both;
+  --animate-spin-slow: spin 900ms linear infinite;
+
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+  @keyframes rise-in {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  @keyframes shimmer {
+    from {
+      background-position: -200% 0;
+    }
+    to {
+      background-position: 200% 0;
+    }
+  }
+  @keyframes tint-pulse {
+    0% {
+      background-color: var(--pulse-color, transparent);
+    }
+    100% {
+      background-color: transparent;
+    }
+  }
+  @keyframes grow-x {
+    from {
+      transform: scaleX(0);
+    }
+    to {
+      transform: scaleX(1);
+    }
+  }
+  @keyframes sheet-up {
+    from {
+      transform: translateY(100%);
+    }
+    to {
+      transform: translateY(0);
+    }
+  }
+  @keyframes pop-in {
+    from {
+      opacity: 0;
+      transform: scale(0.96);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+}
+
+@utility tabular {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+@utility pt-safe {
+  padding-top: env(safe-area-inset-top);
+}
+@utility pb-safe {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+@utility pl-safe {
+  padding-left: env(safe-area-inset-left);
+}
+@utility pr-safe {
+  padding-right: env(safe-area-inset-right);
+}
+
+@utility skeleton {
+  background: linear-gradient(90deg, #0e141a 0%, #17212a 50%, #0e141a 100%);
+  background-size: 200% 100%;
+  animation: var(--animate-shimmer);
+  border-radius: 8px;
+}
+
+@keyframes chart-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@utility chart-draw {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: chart-draw 900ms var(--ease-ledger) forwards;
+}
+
+/* Range slider: 44px touch target, thin track, round thumb. */
+@utility ledger-range {
+  appearance: none;
+  height: 2.75rem;
+  background: transparent;
+  cursor: pointer;
+  touch-action: pan-y;
+  &::-webkit-slider-runnable-track {
+    height: 4px;
+    border-radius: 999px;
+    background: var(--color-border-strong);
+  }
+  &::-moz-range-track {
+    height: 4px;
+    border-radius: 999px;
+    background: var(--color-border-strong);
+  }
+  &::-webkit-slider-thumb {
+    appearance: none;
+    width: 22px;
+    height: 22px;
+    margin-top: -9px;
+    border-radius: 999px;
+    background: var(--color-foreground);
+    border: 3px solid var(--color-primary);
+    box-shadow: 0 2px 8px rgb(0 0 0 / 0.4);
+  }
+  &::-moz-range-thumb {
+    width: 16px;
+    height: 16px;
+    border-radius: 999px;
+    background: var(--color-foreground);
+    border: 3px solid var(--color-primary);
+  }
+}
+
+@utility no-scrollbar {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    min-height: 100%;
+    max-width: 100%;
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+    background: var(--color-background);
+    overflow-x: clip;
+  }
+
+  body {
+    margin: 0;
+    overflow-x: clip;
+    background: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-sans);
+    font-size: var(--text-body);
+    line-height: var(--text-body--line-height);
+    color-scheme: dark;
+    -webkit-font-smoothing: antialiased;
+    -webkit-tap-highlight-color: transparent;
+    overscroll-behavior-y: none;
+  }
+
+  button,
+  a,
+  [role="button"] {
+    touch-action: manipulation;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+    border-radius: 6px;
+  }
+
+  ::selection {
+    background: rgb(0 240 255 / 0.25);
+  }
+}
+
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 180ms;
+  animation-timing-function: var(--ease-ledger);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+    scroll-behavior: auto !important;
+  }
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none !important;
+  }
+}

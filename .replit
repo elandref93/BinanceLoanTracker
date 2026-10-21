@@ -29,7 +29,7 @@ outputType = "console"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "echo 'Dev servers (API + Expo + Canvas) start automatically and power the preview. To publish a TestFlight build manually, run:  pnpm --filter @workspace/ledger-mobile run tf:build'"
+args = "echo 'Dev servers start the API and the web app.'"
 
 [agent]
 stack = "PNPM_WORKSPACE"

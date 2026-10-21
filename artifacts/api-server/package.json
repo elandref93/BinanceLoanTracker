@@ -6,21 +6,23 @@
   "scripts": {
     "dev": "export NODE_ENV=development && pnpm run build && pnpm run start",
     "build": "node ./build.mjs",
-    "start": "node --enable-source-maps ./dist/index.mjs",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "start": "node --enable-source-maps --env-file-if-exists=.env ./dist/index.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "tsx --test src/lib/stripAccountSecrets.test.ts src/lib/clerkLedgerSession.test.ts src/lib/microsoftLinkDecision.test.ts src/lib/microsoftSignInAllowlist.test.ts src/lib/syncUpdatedAt.test.ts src/lib/readiness.test.ts src/lib/credentialStore.test.ts src/lib/migrateAccountSecrets.test.ts src/lib/productionStartup.test.ts src/lib/binanceClock.test.ts src/lib/logRedaction.test.ts src/lib/webSession.test.ts src/lib/browserOrigin.test.ts src/lib/userWriteLock.test.ts src/lib/browserAuth.http.test.ts src/lib/scenariosSync.http.test.ts src/lib/portfolio/engine.test.ts src/lib/portfolio/gapFill.test.ts src/lib/portfolio/perecRepair.test.ts src/lib/portfolio/views.test.ts src/lib/portfolio/loans.test.ts src/lib/portfolio/binanceImport.test.ts src/lib/portfolio/pickleRick.test.ts src/lib/portfolio/ticker24h.test.ts"
   },
   "dependencies": {
+    "@clerk/express": "^2.1.80",
     "@sentry/node": "^7.120.4",
     "@workspace/api-zod": "workspace:*",
     "@workspace/db": "workspace:*",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.6",
     "drizzle-orm": "catalog:",
-    "express": "^5.2.1",
-    "jose": "^6.2.3",
-    "node-cron": "^4.2.1",
-    "pino": "^9.14.0",
-    "pino-http": "^10.5.0",
+    "express": "^5.3.0",
+    "jose": "^6.2.12",
+    "node-cron": "^4.6.0",
+    "pino": "^10.4.0",
+    "pino-http": "^11.0.0",
     "zod": "catalog:"
   },
   "devDependencies": {
@@ -28,9 +30,10 @@
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/node": "catalog:",
-    "esbuild": "0.27.3",
+    "esbuild": "0.28.2",
     "esbuild-plugin-pino": "^2.3.3",
-    "pino-pretty": "^13.1.3",
-    "thread-stream": "3.1.0"
+    "pino-pretty": "^13.2.0",
+    "thread-stream": "4.2.0",
+    "tsx": "catalog:"
   }
 }

@@ -9,6 +9,8 @@ import {
 } from "jose";
 import { createPrivateKey, createPublicKey, type KeyObject } from "node:crypto";
 
+import { WEB_SESSION_IDLE_SECONDS } from "./webSession";
+
 const AUDIENCE = "binance-loan-tracker-mobile";
 
 // The original HS256 issuer (a bare name, not a URL). Tokens minted before the
@@ -25,12 +27,34 @@ const DEFAULT_OIDC_ISSUER =
 
 const RS_ALG = "RS256";
 const HS_ALG = "HS256";
-const TOKEN_LIFETIME_SECONDS = 60 * 60 * 24 * 30; // 30 days
+const TOKEN_LIFETIME_SECONDS = 60 * 60 * 24 * 30; // 30 days — mobile bearer only
+const WEB_CHANNEL = "web";
+
+/**
+ * Thrown when neither RS256 nor the legacy HMAC secret is configured.
+ * Callers must show a server-configuration failure. This is not an
+ * allowlist rejection, and the message must not include a key value.
+ */
+export class SigningKeyMissingError extends Error {
+  readonly code = "signing_unavailable" as const;
+
+  constructor() {
+    super(
+      "No signing key configured. Set SESSION_JWT_PRIVATE_KEY (RS256, " +
+        "recommended) or SESSION_JWT_SECRET (legacy HS256).",
+    );
+    this.name = "SigningKeyMissingError";
+  }
+}
+
+export const MOBILE_SESSION_LIFETIME_SECONDS = TOKEN_LIFETIME_SECONDS;
 
 export interface SessionClaims {
   sub: string;
   email?: string;
   name?: string;
+  /** Set only on browser cookie sessions. Mobile bearers omit it. */
+  chn?: typeof WEB_CHANNEL;
 }
 
 export function getOidcIssuer(): string {
@@ -168,15 +192,21 @@ export async function getPublicJwks(): Promise<{ keys: JWK[] }> {
   return { keys };
 }
 
-export async function signSession(claims: SessionClaims): Promise<string> {
+async function signToken(
+  claims: SessionClaims,
+  lifetimeSeconds: number,
+  nowMs: number,
+): Promise<string> {
+  const issuedAt = Math.floor(nowMs / 1000);
   const builder = new SignJWT({
     ...(claims.email !== undefined ? { email: claims.email } : {}),
     ...(claims.name !== undefined ? { name: claims.name } : {}),
+    ...(claims.chn !== undefined ? { chn: claims.chn } : {}),
   })
     .setAudience(AUDIENCE)
     .setSubject(claims.sub)
-    .setIssuedAt()
-    .setExpirationTime(Math.floor(Date.now() / 1000) + TOKEN_LIFETIME_SECONDS);
+    .setIssuedAt(issuedAt)
+    .setExpirationTime(issuedAt + lifetimeSeconds);
 
   // Prefer RS256 (asymmetric) when a private key is configured — this is what
   // Azure Easy Auth validates against our published JWKS. Falls back to the
@@ -192,15 +222,36 @@ export async function signSession(claims: SessionClaims): Promise<string> {
 
   const secret = getSecret();
   if (!secret) {
-    throw new Error(
-      "No signing key configured. Set SESSION_JWT_PRIVATE_KEY (RS256, " +
-        "recommended) or SESSION_JWT_SECRET (legacy HS256).",
-    );
+    throw new SigningKeyMissingError();
   }
   return builder
     .setProtectedHeader({ alg: HS_ALG })
     .setIssuer(LEGACY_ISSUER)
     .sign(secret);
+}
+
+/** Mobile bearer. Lifetime stays 30 days and is not the browser idle window. */
+export async function signSession(claims: SessionClaims): Promise<string> {
+  return signToken(
+    { sub: claims.sub, email: claims.email, name: claims.name },
+    TOKEN_LIFETIME_SECONDS,
+    Date.now(),
+  );
+}
+
+/**
+ * Browser cookie JWT. `exp` is one idle window after this call. Re-issuing on
+ * a later request slides the window; the mobile bearer is a different token.
+ */
+export async function signWebSession(
+  claims: Omit<SessionClaims, "chn">,
+  nowMs: number = Date.now(),
+): Promise<string> {
+  return signToken(
+    { ...claims, chn: WEB_CHANNEL },
+    WEB_SESSION_IDLE_SECONDS,
+    nowMs,
+  );
 }
 
 export type SessionVerifyFailure =
@@ -233,6 +284,7 @@ async function verifyWith(
         sub: payload.sub,
         email: typeof payload.email === "string" ? payload.email : undefined,
         name: typeof payload.name === "string" ? payload.name : undefined,
+        chn: payload.chn === WEB_CHANNEL ? WEB_CHANNEL : undefined,
       },
     };
   } catch (err) {
@@ -305,4 +357,14 @@ export async function verifySession(
     lastFailure = result;
   }
   return lastFailure;
+}
+
+/** Browser cookie only. A mobile bearer is rejected even if its signature is valid. */
+export async function verifyWebSession(token: string): Promise<SessionVerifyResult> {
+  const result = await verifySession(token);
+  if (!result.ok) return result;
+  if (result.claims.chn !== WEB_CHANNEL) {
+    return { ok: false, reason: "wrong_audience_or_issuer" };
+  }
+  return result;
 }

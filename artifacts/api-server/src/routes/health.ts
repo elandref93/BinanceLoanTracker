@@ -1,13 +1,19 @@
 import { Router, type IRouter } from "express";
-import { HealthCheckResponse } from "@workspace/api-zod";
+import { constants as fsConstants } from "node:fs";
+import { promises as fs } from "node:fs";
+import { HealthCheckResponse, ReadinessCheckResponse } from "@workspace/api-zod";
+import { ensureDataDir } from "../lib/dataDir";
 import { logger } from "../lib/logger";
+import { aggregateReadiness, microsoftConfigCheck } from "../lib/readiness";
+import { isCryptoConfigured } from "../lib/secretCrypto";
 
 const router: IRouter = Router();
 
 // Liveness — returns 200 only when the server has the env vars it needs to
 // actually do work. Azure App Service uses this for its health probe; if it
 // returns non-200 the instance is recycled. Keep it cheap (no upstream
-// network calls): JWT signing keys + Apple audience are the bare minimum.
+// network calls): a JWT signing key is the bare minimum. Apple bundle id is
+// not a liveness input; a missing mobile setting must not recycle the process.
 router.get("/healthz", (_req, res) => {
   const missing: string[] = [];
   // A signing key is required — either the RS256 private key (preferred, used
@@ -18,7 +24,6 @@ router.get("/healthz", (_req, res) => {
   if (!hasRsaKey && !hasHsSecret) {
     missing.push("SESSION_JWT_PRIVATE_KEY or SESSION_JWT_SECRET");
   }
-  if (!process.env.APPLE_BUNDLE_ID) missing.push("APPLE_BUNDLE_ID");
 
   if (missing.length > 0) {
     logger.warn(
@@ -40,5 +45,40 @@ router.get("/healthz", (_req, res) => {
   const version = process.env.GIT_COMMIT ?? "2026-09-10-apple-identity-link";
   res.json({ ...data, version });
 });
+
+// Readiness is separate from liveness on purpose. Azure App Service probes
+// /api/healthz and recycles the instance when that probe is non-200. This
+// route may return 503 when web-only configuration is missing, and it must
+// not be set as the App Service health check path.
+router.get("/readyz", async (_req, res) => {
+  const checks = {
+    encryptionKey: isCryptoConfigured() ? ("ok" as const) : ("missing" as const),
+    dataDir: await dataDirCheck(),
+    microsoft: microsoftConfigCheck(process.env),
+  };
+  const status = aggregateReadiness(checks);
+  const body = ReadinessCheckResponse.parse({ status, checks });
+  if (status !== "ready") {
+    logger.warn(
+      { op: "readyz", status, checks },
+      "readyz not ready",
+    );
+  }
+  res.status(status === "ready" ? 200 : 503).json(body);
+});
+
+async function dataDirCheck(): Promise<"ok" | "unavailable"> {
+  try {
+    const dir = await ensureDataDir();
+    await fs.access(dir, fsConstants.W_OK);
+    return "ok";
+  } catch {
+    logger.warn(
+      { op: "readyz", check: "dataDir" },
+      "readiness data directory unavailable",
+    );
+    return "unavailable";
+  }
+}
 
 export default router;

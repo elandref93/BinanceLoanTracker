@@ -36,6 +36,7 @@ let _baseUrl: string | null = null;
 let _authTokenGetter: AuthTokenGetter | null = null;
 let _extraHeadersGetter: ExtraHeadersGetter | null = null;
 let _authFailureHandler: AuthFailureHandler | null = null;
+let _credentials: RequestCredentials | undefined;
 
 /**
  * Set a base URL that is prepended to every relative request URL
@@ -61,6 +62,14 @@ export function setBaseUrl(url: string | null): void {
  */
 export function setAuthTokenGetter(getter: AuthTokenGetter | null): void {
   _authTokenGetter = getter;
+}
+
+/**
+ * Send cookies on API calls. The web app sets `"include"` so the HttpOnly
+ * session cookie is sent. Leave unset for the mobile bearer client.
+ */
+export function setFetchCredentials(value: RequestCredentials | null): void {
+  _credentials = value ?? undefined;
 }
 
 /**
@@ -411,7 +420,12 @@ export async function customFetch<T = unknown>(
   for (;;) {
     let response: Response;
     try {
-      response = await fetch(input, { ...init, method, headers });
+      response = await fetch(input, {
+        ...init,
+        method,
+        headers,
+        credentials: init.credentials ?? _credentials,
+      });
     } catch (err) {
       // Network / DNS / TLS failure. Retry idempotent verbs a couple of
       // times so a flapping Wi-Fi handoff doesn't surface as a hard error.

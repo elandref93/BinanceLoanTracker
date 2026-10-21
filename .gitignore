@@ -48,6 +48,14 @@ Thumbs.db
 .cache/
 .local/
 
+# Local secrets. Docker already excludes these; keep them out of git too.
+.env
+.env.*
+!.env.example
+
+# Per-user account sync, encrypted credentials, and identity files.
+artifacts/api-server/data/
+
 # Azure deployment / diagnostics artifacts (downloaded locally; never committed)
 applogs/
 applogs.zip

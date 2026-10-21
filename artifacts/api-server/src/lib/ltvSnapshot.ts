@@ -3,6 +3,7 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { getDataDir, ensureDataDir } from "./dataDir";
 import { logger } from "./logger";
+import { isStorageFileKey, userStorageKey } from "./userWriteLock";
 
 // Server-computed LTV snapshots, one file per user (sha256(sub).ltv.json). The
 // scheduler writes these; the app reads them via GET /api/ltv/snapshot so it has
@@ -73,18 +74,21 @@ export interface LtvSnapshot {
 }
 
 function hashFor(sub: string): string {
-  return crypto.createHash("sha256").update(sub).digest("hex");
+  return userStorageKey(sub);
 }
 
-function fileForHash(hash: string): string {
+function fileForHash(hash: string): string | null {
+  if (!isStorageFileKey(hash)) return null;
   return path.join(getDataDir(), `${hash}${SUFFIX}`);
 }
 
 export async function readSnapshotByHash(
   hash: string,
 ): Promise<LtvSnapshot | null> {
+  const target = fileForHash(hash);
+  if (!target) return null;
   try {
-    const raw = await fs.readFile(fileForHash(hash), "utf8");
+    const raw = await fs.readFile(target, "utf8");
     const p = JSON.parse(raw) as Partial<LtvSnapshot>;
     if (typeof p?.updatedAt !== "string") return null;
     return {
@@ -131,6 +135,7 @@ export async function writeSnapshotByHash(
 ): Promise<void> {
   await ensureDataDir();
   const target = fileForHash(hash);
+  if (!target) throw new Error("Invalid storage key");
   const tmp = `${target}.${crypto.randomBytes(6).toString("hex")}.tmp`;
   await fs.writeFile(tmp, JSON.stringify(snap), {
     encoding: "utf8",

@@ -15,10 +15,8 @@ import {
   createMultiplexLunoClient,
   createRealLunoClient,
 } from "../lib/luno";
+import { loadDecryptedExchange } from "../lib/credentialStore";
 import { logger } from "../lib/logger";
-
-const MAX_ACCOUNTS_HEADER_BYTES = 16 * 1024;
-const MAX_ACCOUNTS = 10;
 
 const router: IRouter = Router();
 
@@ -58,46 +56,13 @@ interface DeviceLunoAccount {
   apiSecret: string;
 }
 
-// The device sends `X-Luno-Accounts` with the same shape as `X-Binance-Accounts`
-// — base64 JSON `[{id, name, apiKey, apiSecret}]`. We keep `apiKey/apiSecret`
-// naming for symmetry with the binance header; on Luno these map to
-// `key_id`/`key_secret`.
-function parseLunoAccountsHeader(req: Request): DeviceLunoAccount[] | null {
-  const header = req.header("x-luno-accounts");
-  if (!header) return null;
-  if (header.length > MAX_ACCOUNTS_HEADER_BYTES) {
-    logger.warn(
-      { len: header.length },
-      "X-Luno-Accounts header exceeds size cap",
-    );
-    return null;
-  }
-  try {
-    const json = Buffer.from(header, "base64").toString("utf8");
-    if (json.length > MAX_ACCOUNTS_HEADER_BYTES) return null;
-    const parsed = JSON.parse(json);
-    if (!Array.isArray(parsed) || parsed.length === 0) return null;
-    if (parsed.length > MAX_ACCOUNTS) return null;
-    const out: DeviceLunoAccount[] = [];
-    for (const r of parsed) {
-      if (!r || typeof r !== "object") continue;
-      const id = typeof r.id === "string" ? r.id : null;
-      const name = typeof r.name === "string" ? r.name : null;
-      const apiKey = typeof r.apiKey === "string" ? r.apiKey : null;
-      const apiSecret = typeof r.apiSecret === "string" ? r.apiSecret : null;
-      if (id && name && apiKey && apiSecret) {
-        out.push({ id, name, apiKey, apiSecret });
-      }
-    }
-    return out.length > 0 ? out : null;
-  } catch (err) {
-    logger.warn({ err }, "X-Luno-Accounts header parse failed");
-    return null;
-  }
+async function accountsForRequest(req: Request): Promise<DeviceLunoAccount[] | null> {
+  if (!req.userId) return null;
+  return loadDecryptedExchange(req.userId, "luno");
 }
 
-function clientFor(req: Request): LunoClient {
-  const accounts = parseLunoAccountsHeader(req);
+async function clientFor(req: Request): Promise<LunoClient> {
+  const accounts = await accountsForRequest(req);
   if (!accounts) return emptyClient;
   return createMultiplexLunoClient(
     accounts.map((a) => ({
@@ -112,7 +77,7 @@ function clientFor(req: Request): LunoClient {
 
 router.get("/wallets", async (req, res, next) => {
   try {
-    const wallets = await clientFor(req).listWallets();
+    const wallets = await (await clientFor(req)).listWallets();
     res.json(ListLunoWalletsResponse.parse({ wallets }));
   } catch (err) {
     next(err);
@@ -123,7 +88,7 @@ router.get("/transactions", async (req, res, next) => {
   try {
     const { asset, accountId, limit } =
       ListLunoTransactionsQueryParams.parse(req.query);
-    const transactions = await clientFor(req).listTransactions({
+    const transactions = await (await clientFor(req)).listTransactions({
       asset,
       accountId,
       limit,
@@ -136,7 +101,7 @@ router.get("/transactions", async (req, res, next) => {
 
 router.get("/pending", async (req, res, next) => {
   try {
-    const withdrawals = await clientFor(req).listPendingWithdrawals();
+    const withdrawals = await (await clientFor(req)).listPendingWithdrawals();
     res.json(ListLunoPendingResponse.parse({ withdrawals }));
   } catch (err) {
     next(err);
@@ -146,7 +111,7 @@ router.get("/pending", async (req, res, next) => {
 router.get("/ticker", async (req, res, next) => {
   try {
     const { pair } = GetLunoTickerQueryParams.parse(req.query);
-    const ticker = await clientFor(req).getTicker(pair);
+    const ticker = await (await clientFor(req)).getTicker(pair);
     res.json(GetLunoTickerResponse.parse(ticker));
   } catch (err) {
     next(err);
@@ -165,7 +130,7 @@ router.get("/tickers", async (req, res, next) => {
           .filter(Boolean),
       ),
     ).slice(0, MAX_TICKER_PAIRS);
-    const tickers = await clientFor(req).getTickers(list);
+    const tickers = await (await clientFor(req)).getTickers(list);
     res.json(GetLunoTickersResponse.parse({ tickers }));
   } catch (err) {
     next(err);
@@ -186,8 +151,18 @@ router.use(
       });
       return;
     }
-    const message = err instanceof Error ? err.message : "Internal error";
-    res.status(400).json({ error: message });
+    const declared = (err as { status?: unknown }).status;
+    const status =
+      typeof declared === "number" && declared >= 400 && declared <= 599
+        ? declared
+        : 400;
+    const message =
+      status === 503
+        ? "Stored credentials could not be loaded"
+        : err instanceof Error
+          ? err.message
+          : "Internal error";
+    res.status(status).json({ error: message });
   },
 );
 

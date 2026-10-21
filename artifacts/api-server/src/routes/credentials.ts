@@ -4,6 +4,9 @@ import {
   putCredentials,
   getCredentialMeta,
   deleteCredentials,
+  upsertCredentialLink,
+  deleteCredentialLink,
+  type Exchange,
 } from "../lib/credentialStore";
 import { isCryptoConfigured } from "../lib/secretCrypto";
 import { logger } from "../lib/logger";
@@ -33,6 +36,18 @@ const PutBody = z
     message: "Provide at least one binance or luno account.",
   });
 
+const ExchangeParam = z.enum(["binance", "luno"]);
+const LinkIdParam = z.string().min(1).max(128);
+const LinkBody = z.object({
+  name: z.string().min(1).max(128),
+  apiKey: z.string().min(1).max(512),
+  apiSecret: z.string().min(1).max(512),
+});
+
+function pathParam(value: string | string[] | undefined): string {
+  return typeof value === "string" ? value : "";
+}
+
 function ensureConfigured(): void {
   if (!isCryptoConfigured()) {
     const e = new Error(
@@ -48,11 +63,11 @@ router.put("/", async (req, res, next) => {
     ensureConfigured();
     const userId = req.userId!;
     const body = PutBody.parse(req.body);
-    const accounts = await putCredentials(userId, {
+    const stored = await putCredentials(userId, {
       binance: body.binance,
       luno: body.luno,
     });
-    res.json({ updatedAt: new Date().toISOString(), accounts });
+    res.json(stored);
   } catch (err) {
     next(err);
   }
@@ -78,6 +93,36 @@ router.delete("/", async (req, res, next) => {
   }
 });
 
+router.put("/:exchange/:id", async (req, res, next) => {
+  try {
+    ensureConfigured();
+    const exchange: Exchange = ExchangeParam.parse(pathParam(req.params.exchange));
+    const id = LinkIdParam.parse(pathParam(req.params.id));
+    const body = LinkBody.parse(req.body);
+    const stored = await upsertCredentialLink(req.userId!, exchange, {
+      id,
+      name: body.name,
+      apiKey: body.apiKey,
+      apiSecret: body.apiSecret,
+    });
+    res.json(stored);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.delete("/:exchange/:id", async (req, res, next) => {
+  try {
+    ensureConfigured();
+    const exchange: Exchange = ExchangeParam.parse(pathParam(req.params.exchange));
+    const id = LinkIdParam.parse(pathParam(req.params.id));
+    await deleteCredentialLink(req.userId!, exchange, id);
+    res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.use(
   (
     err: unknown,
@@ -93,11 +138,11 @@ router.use(
           : 400;
     logger.warn({ op: "credentials.error", status }, "credentials route error");
     const message =
-      err instanceof z.ZodError
-        ? "Invalid credentials payload"
-        : err instanceof Error
-          ? err.message
-          : "Internal error";
+      status === 503
+        ? "Credentials are unavailable"
+        : err instanceof z.ZodError
+          ? "Invalid credentials payload"
+          : "Invalid credentials payload";
     res.status(status).json({ error: message });
   },
 );

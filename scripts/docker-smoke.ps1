@@ -29,14 +29,17 @@ if ($Build) {
 Invoke-DockerQuiet @('rm', '-f', $container)
 
 Write-Host "-> Starting $container on host port $HostPort ..."
-# The smoke test only hits public endpoints (/api/healthz), so the auth env
-# vars need only be PRESENT, not real — the container would still fail to
-# boot if they were missing entirely (cached config validation).
+# The image sets NODE_ENV=production, so boot also requires an encryption
+# key, an explicit origin allow-list, and a writable data directory. These
+# values are smoke-test stand-ins. Liveness stays on /api/healthz.
 docker run -d --name $container `
     -p ${HostPort}:8080 `
     -e PORT=8080 `
     -e APPLE_BUNDLE_ID=com.ubuntu.life.ledger `
     -e SESSION_JWT_SECRET=smoke_test_secret_at_least_32_bytes_xxxxxxx `
+    -e CREDENTIAL_ENCRYPTION_KEY=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA= `
+    -e ALLOWED_ORIGINS=http://127.0.0.1:18080 `
+    -e ACCOUNT_SYNC_DIR=/tmp/ledger-account-sync `
     $Image | Out-Null
 if ($LASTEXITCODE -ne 0) { throw "docker run failed (exit $LASTEXITCODE)" }
 

@@ -7,7 +7,12 @@ import express, {
 import cors from "cors";
 import pinoHttp from "pino-http";
 import router from "./routes";
-import { logger } from "./lib/logger";
+import type { Logger } from "pino";
+import cookieParser from "cookie-parser";
+import { isBrowserOriginAllowed } from "./lib/browserOrigin";
+import { httpLogSerializers, logger } from "./lib/logger";
+import { clerkMiddleware } from "@clerk/express";
+import { attachBrowserAuth } from "./lib/requestAuth";
 import { Sentry } from "./lib/sentry";
 
 const app: Express = express();
@@ -27,25 +32,15 @@ app.use(
   }),
 );
 
-app.use(
-  pinoHttp({
-    logger,
-    serializers: {
-      req(req) {
-        return {
-          id: req.id,
-          method: req.method,
-          url: req.url?.split("?")[0],
-        };
-      },
-      res(res) {
-        return {
-          statusCode: res.statusCode,
-        };
-      },
-    },
-  }),
-);
+/** Request log used by the API. Tests pass a capturing logger; production uses the shared one. */
+export function httpRequestLogger(baseLogger: Logger = logger) {
+  return pinoHttp({
+    logger: baseLogger,
+    serializers: httpLogSerializers,
+  });
+}
+
+app.use(httpRequestLogger());
 
 // CORS: pin to the configured front-end origins instead of reflecting any
 // Origin header. The mobile app talks server-to-server (no Origin header at
@@ -60,10 +55,13 @@ app.use(
   cors({
     credentials: true,
     origin(origin, cb) {
-      // Server-to-server / native fetch — no Origin → allow.
-      if (!origin) return cb(null, true);
-      if (ALLOWED_ORIGINS.length === 0) return cb(null, true);
-      if (ALLOWED_ORIGINS.includes(origin)) return cb(null, true);
+      // No Origin: non-browser clients. A browser Origin must be listed.
+      // Development also accepts a private-network host so the Vite proxy can
+      // forward a phone page on the LAN. An empty allow-list does not reflect
+      // a public origin.
+      if (isBrowserOriginAllowed(origin, ALLOWED_ORIGINS, process.env.NODE_ENV)) {
+        return cb(null, true);
+      }
       return cb(new Error("CORS: origin not allowed"));
     },
   }),
@@ -79,10 +77,12 @@ app.use((_req, res, next) => {
 
 app.use(express.json({ limit: "256kb" }));
 app.use(express.urlencoded({ extended: true, limit: "256kb" }));
+app.use(cookieParser());
 
-// Lightweight per-IP rate limiter — no external dep. Two buckets:
-// - sign-in:  10 req / 5 min
-// - default:  120 req / min
+// Lightweight per-IP rate limiter — no external dep. Buckets:
+// - sign-in exchange:  10 req / 5 min
+// - session probe:     60 req / min
+// - default:           120 req / min
 type Bucket = { count: number; resetAt: number };
 const buckets = new Map<string, Bucket>();
 
@@ -122,15 +122,47 @@ setInterval(
   5 * 60 * 1000,
 ).unref();
 
+// Only the sign-in exchange gets the strict bucket. The session probe runs on
+// every app focus, so it shares the default bucket and a failed probe is never
+// treated as a sign-out by the web app.
 app.use(
-  "/api/auth",
+  "/api/auth/clerk",
   rateLimit({ max: 10, windowMs: 5 * 60 * 1000, keyPrefix: "auth" }),
+);
+app.use(
+  "/api/auth/session",
+  rateLimit({ max: 60, windowMs: 60 * 1000, keyPrefix: "session" }),
 );
 app.use(
   "/api",
   rateLimit({ max: 120, windowMs: 60 * 1000, keyPrefix: "api" }),
 );
 
+// Clerk attaches its own auth object when a Clerk session cookie is present.
+// Mobile requests carry a Ledger bearer; those skip Clerk so an app token is
+// not parsed as a Clerk session. A Clerk failure does not replace that bearer.
+if (process.env.CLERK_SECRET_KEY) {
+  const clerkAuth = clerkMiddleware();
+  app.use((req, res, next) => {
+    if (req.header("authorization")) {
+      next();
+      return;
+    }
+    clerkAuth(req, res, (err) => {
+      if (err) {
+        logger.warn(
+          { err, op: "auth.clerk.middleware" },
+          "clerk middleware did not attach auth",
+        );
+        next();
+        return;
+      }
+      next();
+    });
+  });
+}
+
+app.use("/api", attachBrowserAuth());
 app.use("/api", router);
 
 // Last-resort error handler: sanitize so we never leak stack traces or

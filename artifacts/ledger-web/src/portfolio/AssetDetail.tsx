@@ -17,16 +17,18 @@ import {
   eventsByMonth,
   exchangeLabel,
   sliceRange,
+  describeHeldPosition,
   statementQuoteParts,
   unrealizedPct,
   whereLabel,
   type ActivityRow,
+  type HeldRowCopy,
   type AssetRange,
 } from "@/portfolio/holdings";
 import { ExpectedReturnCard } from "@/portfolio/ExpectedReturnCard";
 import { PortfolioUnavailable } from "@/portfolio/PortfolioUnavailable";
 import { isSavedSnapshot } from "@/portfolio/snapshotFlags";
-import { investmentPath, layerForStep, parseDrillStep, productLabel, readInvestmentLayer, type InvestmentLayer } from "@/portfolio/perecDrill";
+import { investmentPath, layerForStep, lookthroughLines, parseDrillStep, productLabel, readInvestmentLayer, type InvestmentLayer, type LookthroughLine } from "@/portfolio/perecDrill";
 import { useAssetDetail } from "@/portfolio/queries";
 import { Balance, useDiscreet } from "@/prefs/DiscreetMode";
 import { DISCREET_PLACEHOLDER } from "@/prefs/discreet";
@@ -348,17 +350,23 @@ function HeldCard(props: { detail: PortfolioAssetDetail; savedSnapshot?: boolean
   const symbol = holdingTitle(raw, row.positions);
   const positions = [...row.positions].sort((a, b) => b.usd - a.usd);
   const showProfile = new Set(positions.map((position) => position.containerId ?? "none")).size > 1 || (prefs.person === "user" && prefs.scope === "all");
+  const entries = positions.flatMap((position) => {
+    const copy = heldCopy(position, symbol, showProfile ? profileName(position.containerId ?? "none") : null);
+    return copy ? [{ position, copy }] : [];
+  });
 
   return (
     <Card aria-labelledby="asset-held-title">
       <h2 id="asset-held-title" className="mb-2 text-heading font-semibold">
         Where it's held
       </h2>
-      {positions.length === 0 && row.debtQty <= 0 ? <p className="text-caption text-muted-foreground">Nothing held right now.</p> : null}
+      {entries.length === 0 && row.debtQty <= 0 ? (
+        <p className="text-caption text-muted-foreground">{positions.length > 0 ? "No open positions in this account." : "Nothing held right now."}</p>
+      ) : null}
       <ul className="-mx-1">
-        {positions.map((position) => (
+        {entries.map(({ position, copy }) => (
           <li key={`${position.linkId}:${position.wallet}`}>
-            <PositionRow position={position} share={row.usd > 0 ? (position.usd / row.usd) * 100 : 0} symbol={symbol} profile={showProfile ? profileName(position.containerId ?? "none") : null} savedSnapshot={props.savedSnapshot} />
+            <PositionRow position={position} copy={copy} share={row.usd > 0 ? (position.usd / row.usd) * 100 : 0} symbol={symbol} savedSnapshot={props.savedSnapshot} />
           </li>
         ))}
         {row.debtQty > 0 ? (
@@ -390,38 +398,42 @@ function HeldCard(props: { detail: PortfolioAssetDetail; savedSnapshot?: boolean
   );
 }
 
-function PositionRow(props: { position: AssetPosition; share: number; symbol: string; profile: string | null; savedSnapshot?: boolean }) {
-  const prefs = usePrefs();
-  const { position } = props;
+function heldCopy(position: AssetPosition, symbol: string, profile: string | null): HeldRowCopy | null {
   const nested = position.includeInTotal === false;
   const instrument = displayHoldingTitle(position.linkName, isPeresecHolding(position.linkName, [position]));
   const hideSource = !nested && position.exchange === "pickle_rick" && isNinetyOneHolding(position.linkName, [position]);
   const where = hideSource ? "" : whereLabel(position.exchange, position.wallet, null);
-  const included = nested ? "Included in the total" : "";
-  const secondary = nested ? [props.profile, included].filter(Boolean).join(" · ") : hideSource ? "" : props.profile ? where : instrument;
-  const title = nested ? instrument : props.profile || where || props.symbol;
+  return describeHeldPosition(position, { instrument, profile, where, hideSource, symbol });
+}
+
+function PositionRow(props: { position: AssetPosition; copy: HeldRowCopy; share: number; symbol: string; savedSnapshot?: boolean }) {
+  const prefs = usePrefs();
+  const { position, copy } = props;
   const balanceKnown = position.balanceKnown !== false;
-  const exchangeMark = where ? <ExchangeMark exchange={position.exchange} /> : null;
+  const exchangeMark = copy.markOn === "none" ? null : <ExchangeMark exchange={position.exchange} />;
+  const titleClass = copy.wrap ? "min-w-0 break-words" : "min-w-0 truncate";
   return (
     <div className="px-1 py-2.5">
-      <div className="flex items-center gap-3">
+      <div className={cx("flex gap-3", copy.wrap ? "items-start" : "items-center")}>
         <span className="min-w-0 flex-1">
           <span className="flex min-w-0 items-center gap-1 text-body font-medium">
-            {props.profile ? null : exchangeMark}
-            <span className="min-w-0 truncate">{title}</span>
+            {copy.markOn === "title" ? exchangeMark : null}
+            <span className={titleClass}>{copy.title}</span>
           </span>
-          {secondary || included ? (
+          {copy.caption ? (
             <span className="flex min-w-0 items-center gap-1 text-caption text-muted-foreground">
-              {props.profile ? exchangeMark : null}
-              <span className="min-w-0 truncate">{secondary}</span>
+              {copy.markOn === "caption" ? exchangeMark : null}
+              <span className={copy.wrap ? "min-w-0 break-words" : "min-w-0 truncate"}>{copy.caption}</span>
             </span>
           ) : null}
         </span>
         <span className="shrink-0 text-right">
           <span className="block text-body font-semibold tabular">{balanceKnown ? prefs.money(position.usd, { whole: true }) : "—"}</span>
-          <span className="block text-micro text-muted-foreground tabular">
-            {!balanceKnown ? "—" : props.savedSnapshot && position.qty === 0 ? "Qty not in snapshot" : <Balance text={fmtQty(position.qty, props.symbol)} />}
-          </span>
+          {copy.repeatAccountQuantity ? (
+            <span className="block text-micro text-muted-foreground tabular">
+              {!balanceKnown ? "—" : props.savedSnapshot && position.qty === 0 ? "Qty not in snapshot" : <Balance text={fmtQty(position.qty, props.symbol)} />}
+            </span>
+          ) : null}
         </span>
       </div>
       <div className="mt-2 h-1 overflow-hidden rounded-full bg-card-elevated" aria-hidden="true">
@@ -556,6 +568,13 @@ function layerMoney(value: number | null, currency: string): string {
   return currency ? `${fmtNum(value, 2)} ${currency}` : fmtNum(value, 2);
 }
 
+function lineQuantity(value: number | null): string {
+  if (value == null) return "—";
+  if (Number.isInteger(value)) return fmtNum(value, 0);
+  const places = Math.abs(value) >= 1 ? 4 : 6;
+  return fmtNum(value, places);
+}
+
 function InsideLink(props: { layer: InvestmentLayer; to: string; className?: string }) {
   return (
     <Card className={props.className} aria-labelledby="asset-inside-title">
@@ -572,6 +591,54 @@ function InsideLink(props: { layer: InvestmentLayer; to: string; className?: str
         </span>
         <Icon name="chevronRight" size={16} className="shrink-0 text-subtle" />
       </Link>
+    </Card>
+  );
+}
+
+function LineList(props: { title: string; lines: LookthroughLine[] }) {
+  if (props.lines.length === 0) return null;
+  return (
+    <div className="mt-3">
+      <h3 className="text-caption font-medium text-muted-foreground">{props.title}</h3>
+      <ul>
+        {props.lines.map((line, index) => (
+          <li key={`${props.title}|${index}`} className="flex min-h-14 items-center gap-3 border-t border-border py-2 first:border-t-0">
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-body font-medium">{line.name}</span>
+              <span className="block text-caption text-muted-foreground tabular">{lineQuantity(line.quantity)}</span>
+            </span>
+            <span className="shrink-0 text-caption font-semibold tabular">
+              <Balance text={layerMoney(line.value, line.currency)} />
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function LayerLines(props: { layer: InvestmentLayer }) {
+  const lines = lookthroughLines(props.layer);
+  if (lines == null) return null;
+  if (lines === "unavailable") {
+    return (
+      <Card aria-labelledby="layer-lines-title">
+        <h2 id="layer-lines-title" className="text-heading font-semibold">
+          Lines
+        </h2>
+        <p className="mt-3 text-caption text-muted-foreground">The portal did not return the lines.</p>
+      </Card>
+    );
+  }
+  const asOf = props.layer.linesAsOf;
+  return (
+    <Card aria-labelledby="layer-lines-title">
+      <h2 id="layer-lines-title" className="text-heading font-semibold">
+        Lines
+      </h2>
+      {asOf ? <p className="mt-1 text-caption text-muted-foreground">{fmtDayMonth(`${asOf}T12:00:00+02:00`)}</p> : null}
+      <LineList title="Assets" lines={lines.assets} />
+      <LineList title="Cash" lines={lines.cash} />
     </Card>
   );
 }
@@ -594,6 +661,7 @@ function LayerScreen(props: { layer: InvestmentLayer; next: InvestmentLayer | nu
         </p>
       </Card>
       {props.next ? <InsideLink layer={props.next} to={investmentPath(props.asset, props.next.kind)} /> : null}
+      <LayerLines layer={layer} />
       <Card aria-labelledby="layer-history-title">
         <h2 id="layer-history-title" className="text-heading font-semibold">
           History

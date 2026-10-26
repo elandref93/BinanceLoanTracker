@@ -640,8 +640,8 @@ describe("pickle rick holdings", () => {
     const lines = mapped.positions.filter((position) => position.parentLinkId === account.linkId);
     assert.equal(lines.every((position) => position.includeInTotal === false && position.containerId === PERSONAL_ID), true);
     assert.equal(lines.filter((position) => position.linkId.includes("|pos:")).length, 3);
-    assert.equal(lines.some((position) => position.linkName === "Beta · -3"), true);
-    assert.equal(lines.some((position) => position.linkName === "Landen note · 1"), true);
+    assert.equal(lines.some((position) => position.linkName === "Beta · short · 3 shares"), true);
+    assert.equal(lines.some((position) => position.linkName === "Landen note · 1 share"), true);
     assert.equal(lines.find((position) => position.linkId.endsWith("|cash:USD"))?.qty, 5);
     assert.equal(mapped.positions.some((position) => position.linkId === "account:2" || position.linkId === "account:9" || position.linkId === "investment:50"), false);
     assert.equal(mapped.positions.some((position) => /binance|luno/i.test(`${position.linkName}\n${position.wallet}\n${position.asset}`)), false);
@@ -692,6 +692,68 @@ describe("pickle rick holdings", () => {
       [90, 100],
     );
     assert.equal(detail.asset.qty, 100);
+  });
+
+  it("mapPickleRickHoldings_interactiveBrokers_optionAndStockStayInsideNav", () => {
+    const mapped = mapPickleRickHoldings(
+      {
+        interactive_brokers: {
+          accounts: [
+            {
+              section: "all",
+              account_id: "U7",
+              currency: "USD",
+              report: {
+                account: { account_id: "U7", currency: "USD", account_type: "Individual" },
+                nav_value: 100,
+                cash: [{ currency: "USD", ending_cash: 5 }],
+                positions: [
+                  { symbol: "IBKR", name: "Interactive Brokers", asset_category: "STK", asset_type: "STK", quantity: 4, value: 20, currency: "USD", side: "Long" },
+                  {
+                    symbol: "IBKR",
+                    name: "IBKR",
+                    asset_category: "OPT",
+                    asset_type: "OPT",
+                    put_call: "C",
+                    expiry: "2026-10-30",
+                    quantity: 11,
+                    value: 30,
+                    currency: "USD",
+                    side: "Long",
+                  },
+                ],
+                equity_history: [
+                  { date: "2026-10-01", currency: "USD", total: 90 },
+                  { date: "2026-10-02", currency: "USD", total: 110 },
+                ],
+              },
+            },
+          ],
+        },
+      },
+      null,
+      profiles,
+    );
+    const account = mapped.positions.find((position) => position.includeInTotal !== false);
+    assert.ok(account);
+    assert.equal(account.qty, 100);
+    const lines = mapped.positions.filter((position) => position.parentLinkId === account.linkId);
+    assert.equal(lines.length, 3);
+    assert.equal(lines.every((position) => position.includeInTotal === false), true);
+    const names = lines.map((position) => position.linkName);
+    assert.equal(names.includes("Interactive Brokers · 4 shares"), true);
+    assert.equal(names.includes("IBKR · 11 contracts · expires 30 October 2026"), true);
+    assert.equal(names.filter((name) => name === "USD cash").length, 1);
+    const counted = mapped.positions
+      .filter((position) => position.includeInTotal !== false)
+      .reduce((sum, position) => sum + position.qty * (mapped.prices[position.asset] ?? 0), 0);
+    assert.equal(counted, 100);
+    assert.equal(counted === 20 + 30 + 5 + 100, false);
+    const equity = mapped.series.find((item) => item.kind === "ibkr");
+    assert.deepEqual(
+      equity?.points.map((point) => point.value),
+      [90, 110],
+    );
   });
 
   it("mapPickleRickHoldings_interactiveBrokersOverview_isTheAccountAndTrustWhenThePayloadSaysSo", () => {
@@ -861,5 +923,240 @@ describe("pickle rick holdings", () => {
       { date: "2026-08-20", amount: 4, currency: "USD" },
     ]);
     assert.equal(series?.points.reduce((sum, point) => sum + (point.value ?? 0), 0), 26);
+  });
+
+  it("mapPickleRickHoldings_underlyingLines_showOnTheDeepestLayerAndStayOutOfNav", () => {
+    const mapped = mapPickleRickHoldings(
+      {
+        holdings: [
+          row({
+            key: "investment:1",
+            account_number: "0433383",
+            kind: "investment",
+            name: "Trust Peresec",
+            institution: "Peresec",
+            currency: "USD",
+            balance: 100,
+            as_of: "2026-10-13",
+            history: [
+              { date: "2026-10-12", value: 80, currency: "USD", change: null, product: "perec-as" },
+              { date: "2026-10-13", value: 100, currency: "USD", change: 20, product: "perec-as" },
+            ],
+          }),
+          row({
+            key: "investment:3",
+            account_number: "0454918",
+            kind: "investment",
+            name: "Personal Peresec",
+            institution: "Peresec",
+            currency: "USD",
+            balance: 50,
+            as_of: "2026-10-13",
+            history: [{ date: "2026-10-13", value: 50, currency: "USD", change: 5, product: "perec-as" }],
+          }),
+        ],
+        history: [
+          {
+            key: "0433383|perec-weib",
+            account_number: "0433383",
+            product: "perec-weib",
+            currency: "USD",
+            history: [{ date: "2026-10-13", value: 7, currency: "USD", change: 1, product: "perec-weib" }],
+          },
+          {
+            key: "0433383|perec-eib",
+            account_number: "0433383",
+            product: "perec-eib",
+            currency: "USD",
+            history: [{ date: "2026-10-13", value: 3, currency: "USD", change: null, product: "perec-eib" }],
+          },
+          {
+            key: "0454918|perec-weib",
+            account_number: "0454918",
+            product: "perec-weib",
+            currency: "USD",
+            history: [{ date: "2026-10-13", value: 9, currency: "USD", change: 1, product: "perec-weib" }],
+          },
+          {
+            key: "0454918|perec-eib",
+            account_number: "0454918",
+            product: "perec-eib",
+            currency: "USD",
+            history: [{ date: "2026-10-13", value: null, currency: "USD", change: null, product: "perec-eib" }],
+          },
+        ],
+        peresec_underlying: [
+          {
+            as_of: "2026-10-21",
+            layer: "eib",
+            fund_code: "EIB 1",
+            deeper_eib: "EIB 1",
+            lines_available: true,
+            currency: "USD",
+            net_asset_value: 9,
+            cash_total: null,
+            rolls_up_into: "investment:1",
+            sleeve: null,
+            assets: [
+              { name: "Sample equity", instrument_code: "EQ1", asset_class: "equity", currency: "USD", quantity: 12, market_price: 1, market_value: 4, zar_value: 4 },
+              { name: "Unpriced note", instrument_code: "NOTE", asset_class: "other", currency: "USD", quantity: null, market_price: null, market_value: null, zar_value: null },
+            ],
+            cash: [{ name: "Sample cash", currency: "USD", quantity: 3, settled_balance: 3, accruals: null, market_value: 3, zar_value: 3 }],
+          },
+          {
+            as_of: "2026-10-21",
+            layer: "eib",
+            fund_code: "EIB 2",
+            deeper_eib: "EIB 2",
+            lines_available: false,
+            currency: "USD",
+            net_asset_value: null,
+            cash_total: "",
+            rolls_up_into: "investment:3",
+            sleeve: { name: "Parent wrapper", currency: "USD", quantity: 1, market_value: 6 },
+            assets: [{ name: "Hidden equity", instrument_code: "HID", asset_class: "equity", currency: "USD", quantity: 4, market_value: 4 }],
+            cash: [{ name: "Wrapper cash", currency: "USD", quantity: 8, settled_balance: 8, accruals: 0, market_value: 8, zar_value: 8 }],
+          },
+        ],
+      },
+      20,
+      profiles,
+    );
+
+    const trust = mapped.positions.find((position) => position.linkId === "investment:1");
+    const personal = mapped.positions.find((position) => position.linkId === "investment:3");
+    assert.equal(trust?.qty, 100);
+    assert.equal(personal?.qty, 50);
+    assert.equal(mapped.positions.length, 2);
+    const counted = mapped.positions
+      .filter((position) => position.includeInTotal !== false && position.balanceKnown !== false)
+      .reduce((sum, position) => sum + position.qty * (mapped.prices[position.asset] ?? 0), 0);
+    assert.equal(counted, 150);
+
+    const trustAs = mapped.series.find((item) => item.key === "investment:1");
+    const personalAs = mapped.series.find((item) => item.key === "investment:3");
+    assert.equal(trustAs?.points.some((point) => point.product === "perec-as" && point.value === 100), true);
+    assert.equal(trustAs?.points.some((point) => point.product === "perec-weib" || point.product === "perec-eib"), false);
+    assert.equal(trustAs?.underlying?.depth, "eib");
+    assert.equal(trustAs?.underlying?.cashTotal, null);
+    assert.equal(trustAs?.underlying?.lines.some((line) => line.name === "Sample equity" && line.quantity === 12), true);
+    assert.equal(personalAs?.underlying?.depth, "unavailable");
+    assert.equal(personalAs?.underlying?.netAssetValue, null);
+    assert.equal(personalAs?.underlying?.cashTotal, null);
+    assert.deepEqual(personalAs?.underlying?.lines, []);
+    assert.equal(JSON.stringify(personalAs?.underlying).includes("Wrapper cash"), false);
+    assert.equal(JSON.stringify(personalAs?.underlying).includes("Parent wrapper"), false);
+    assert.equal(JSON.stringify(mapped.series).includes("Wrapper cash"), false);
+
+    const trustEib = mapped.series.find((item) => item.accountNumber === "0433383" && item.kind === "eib");
+    assert.equal(trustEib?.points.length, 1);
+    assert.equal(trustEib?.points[0]?.value, 3);
+    assert.equal(trustEib?.points[0]?.change, null);
+    assert.equal(trustEib?.underlying, undefined);
+
+    const trustLayers = investmentLayers(mapped.series, trust?.asset ?? "");
+    const personalLayers = investmentLayers(mapped.series, personal?.asset ?? "");
+    assert.equal(trustLayers?.name, "WEIB");
+    assert.equal(trustLayers?.value, 7);
+    assert.equal(trustLayers?.lines, undefined);
+    assert.equal(trustLayers?.inside?.name, "EIB");
+    assert.equal(trustLayers?.inside?.value, 3);
+    assert.equal(trustLayers?.inside?.linesAvailable, true);
+    assert.equal(trustLayers?.inside?.linesAsOf, "2026-10-21");
+    assert.equal(trustLayers?.inside?.cashTotal, null);
+    assert.equal(trustLayers?.inside?.lines?.find((line) => line.name === "Sample equity")?.quantity, 12);
+    assert.equal(trustLayers?.inside?.lines?.find((line) => line.name === "Sample cash")?.quantity, 3);
+    assert.equal(trustLayers?.inside?.lines?.find((line) => line.name === "Unpriced note")?.quantity, null);
+    assert.equal(trustLayers?.inside?.lines?.find((line) => line.name === "Unpriced note")?.value, null);
+    assert.equal(trustLayers?.inside?.lines?.some((line) => line.quantity === 0 || line.value === 0), false);
+    assert.equal(personalLayers?.lines, undefined);
+    assert.equal(personalLayers?.inside?.linesAvailable, false);
+    assert.equal(personalLayers?.inside?.value, null);
+    assert.equal(personalLayers?.inside?.netAssetValue, null);
+    assert.equal(personalLayers?.inside?.cashTotal, null);
+    assert.deepEqual(personalLayers?.inside?.lines, []);
+    assert.equal(JSON.stringify(personalLayers).includes("Wrapper cash"), false);
+    assert.equal(JSON.stringify(personalLayers).includes("Hidden equity"), false);
+
+    const book: PriceBook = { close: () => 0, fx: () => 20, fxIsReference: () => false, hourly: () => [], daily: () => ({}) };
+    const derived: Derived = {
+      state: { ...state(mapped.positions, mapped.prices, [], profiles), statementSeries: mapped.series, asOf: Date.parse("2026-10-21T12:00:00+02:00") },
+      points: [],
+      ledger: null,
+      events: [],
+      linkContainer: new Map(),
+      book,
+      recon: null,
+      series: null,
+      reconciliation: [],
+      containerTypes: new Map(),
+    };
+    const detail = buildAssetDetail(derived, trust?.asset ?? "");
+    assert.equal(detail.asset.qty, 100);
+    assert.equal(detail.asset.priorValue, 80);
+    assert.equal(detail.inside?.inside?.lines?.some((line) => line.quantity === 12), true);
+    assert.equal(detail.holdingHistory.some((point) => point.qty === 12 || point.qty === 3), false);
+    assert.equal(detail.holdingHistory.some((point) => point.qty === 100), true);
+    const merged = mergeStatementHistory([], { ...state(mapped.positions, mapped.prices, [], profiles), statementSeries: mapped.series });
+    assert.equal(JSON.stringify(merged).includes("Sample equity"), false);
+    assert.equal(JSON.stringify(merged).includes("Wrapper cash"), false);
+  });
+
+  it("mapPickleRickHoldings_weibDeepest_putsLinesOnWeibOnly", () => {
+    const mapped = mapPickleRickHoldings(
+      {
+        holdings: [
+          row({
+            key: "investment:1",
+            account_number: "0433383",
+            kind: "investment",
+            name: "Trust Peresec",
+            institution: "Peresec",
+            currency: "USD",
+            balance: 40,
+            as_of: "2026-10-13",
+          }),
+        ],
+        history: [
+          {
+            key: "0433383|perec-weib",
+            account_number: "0433383",
+            product: "perec-weib",
+            currency: "USD",
+            history: [{ date: "2026-10-13", value: 4, currency: "USD", change: 1, product: "perec-weib" }],
+          },
+        ],
+        peresec_underlying: [
+          {
+            as_of: "2026-10-21",
+            layer: "weib",
+            fund_code: "WEIB 1",
+            deeper_eib: null,
+            lines_available: true,
+            currency: "USD",
+            net_asset_value: null,
+            cash_total: "",
+            rolls_up_into: "investment:1",
+            sleeve: null,
+            assets: [{ name: "WEIB equity", instrument_code: "W1", asset_class: "equity", currency: "USD", quantity: 6, market_value: 5 }],
+            cash: [{ name: "WEIB cash", currency: "USD", quantity: 2, market_value: 2 }],
+          },
+        ],
+      },
+      null,
+      profiles,
+    );
+    const trust = mapped.positions.find((position) => position.linkId === "investment:1");
+    assert.equal(trust?.qty, 40);
+    const layers = investmentLayers(mapped.series, trust?.asset ?? "");
+    assert.equal(layers?.kind, "weib");
+    assert.equal(layers?.value, 4);
+    assert.equal(layers?.netAssetValue, null);
+    assert.equal(layers?.cashTotal, null);
+    assert.equal(layers?.inside, null);
+    assert.equal(layers?.lines?.find((line) => line.name === "WEIB equity")?.quantity, 6);
+    assert.equal(layers?.lines?.find((line) => line.name === "WEIB cash")?.kind, "cash");
+    assert.equal(mapped.series.find((item) => item.kind === "weib")?.points[0]?.value, 4);
+    assert.equal(mapped.series.some((item) => item.kind === "eib"), false);
   });
 });

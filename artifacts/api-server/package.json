@@ -11,15 +11,15 @@
     "test": "tsx --test src/lib/stripAccountSecrets.test.ts src/lib/clerkLedgerSession.test.ts src/lib/microsoftLinkDecision.test.ts src/lib/microsoftSignInAllowlist.test.ts src/lib/syncUpdatedAt.test.ts src/lib/readiness.test.ts src/lib/credentialStore.test.ts src/lib/migrateAccountSecrets.test.ts src/lib/productionStartup.test.ts src/lib/binanceClock.test.ts src/lib/logRedaction.test.ts src/lib/webSession.test.ts src/lib/browserOrigin.test.ts src/lib/userWriteLock.test.ts src/lib/browserAuth.http.test.ts src/lib/scenariosSync.http.test.ts src/lib/portfolio/engine.test.ts src/lib/portfolio/gapFill.test.ts src/lib/portfolio/perecRepair.test.ts src/lib/portfolio/views.test.ts src/lib/portfolio/loans.test.ts src/lib/portfolio/binanceImport.test.ts src/lib/portfolio/pickleRick.test.ts src/lib/portfolio/ticker24h.test.ts"
   },
   "dependencies": {
-    "@clerk/express": "^2.1.80",
-    "@sentry/node": "^7.120.4",
+    "@clerk/express": "^2.1.83",
+    "@sentry/node": "^11.9.0",
     "@workspace/api-zod": "workspace:*",
     "@workspace/db": "workspace:*",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.6",
     "drizzle-orm": "catalog:",
     "express": "^5.3.0",
-    "jose": "^6.2.12",
+    "jose": "^6.2.13",
     "node-cron": "^4.6.0",
     "pino": "^10.4.0",
     "pino-http": "^11.0.0",

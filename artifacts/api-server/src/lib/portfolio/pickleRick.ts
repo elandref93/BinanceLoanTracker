@@ -1,6 +1,6 @@
 import { logger } from "../logger";
 import { childProfileForLabel, ensureChildProfiles } from "./childProfiles";
-import type { ContainerInfo, PortfolioState, Position, StatementFlow, StatementPoint, StatementSeries } from "./types";
+import type { ContainerInfo, LookthroughLine, PeresecUnderlying, PortfolioState, Position, StatementFlow, StatementPoint, StatementSeries } from "./types";
 
 export type InvestmentPoint = {
   date: string;
@@ -18,6 +18,16 @@ export type InvestmentLayer = {
   currency: string;
   points: InvestmentPoint[];
   inside: InvestmentLayer | null;
+  /** Latest look-through lines. Empty when the portal did not return them. */
+  lines?: LookthroughLine[];
+  /** False when this EIB exists but the portal did not return its lines. */
+  linesAvailable?: boolean;
+  /** Portal day for `lines` (YYYY-MM-DD). */
+  linesAsOf?: string;
+  /** Deepest-fund total from the snapshot. Null when the source left it blank. */
+  netAssetValue?: number | null;
+  /** Deepest-fund cash total from the snapshot. Null when the source left it blank. */
+  cashTotal?: number | null;
 };
 
 export const PICKLE_RICK_EXCHANGE = "pickle_rick" as const;
@@ -367,6 +377,50 @@ function formatShare(value: number): string {
   return String(Math.round(value * 1e8) / 1e8);
 }
 
+const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"] as const;
+
+/** "30 October 2026" from an ISO day. Blank when the day is not a calendar date. */
+function plainDay(iso: string | null): string | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso ?? "");
+  if (!match) return null;
+  const month = MONTHS[Number(match[2]) - 1];
+  const day = Number(match[3]);
+  if (!month || day < 1) return null;
+  return `${day} ${month} ${match[1]}`;
+}
+
+/** Options and futures are contracts. Stocks and other lines are shares. */
+function isContractLine(category: string, kind: string, putCall: string): boolean {
+  const hay = `${category} ${kind}`.toUpperCase();
+  if (/\b(OPT|FOP|FUT|WAR|IOPT)\b/.test(hay)) return true;
+  if (/(option|future)/i.test(`${category} ${kind}`)) return true;
+  return putCall.trim().length > 0;
+}
+
+function isShortLine(qty: number | null, side: string): boolean {
+  if (qty != null && qty < 0) return true;
+  return /^(short|s|sell)$/i.test(side.trim());
+}
+
+/**
+ * Plain holding line: instrument, short when the quantity is negative,
+ * contracts or shares, and the expiry when the report has one.
+ */
+function ibkrOpenLabel(row: Record<string, unknown>): string {
+  const name = text(row.name) || text(row.symbol) || text(row.description);
+  const qty = amount(row.quantity);
+  const unit = isContractLine(text(row.asset_category), text(row.asset_type), text(row.put_call)) ? "contract" : "share";
+  const parts = [name];
+  if (isShortLine(qty, text(row.side))) parts.push("short");
+  if (qty != null) {
+    const count = formatShare(Math.abs(qty));
+    parts.push(`${count} ${count === "1" ? unit : `${unit}s`}`);
+  }
+  const expiry = plainDay(isoDay(text(row.expiry)));
+  if (expiry) parts.push(`expires ${expiry}`);
+  return parts.filter((part) => part.length > 0).join(" · ");
+}
+
 function isBrokerAccount(position: Position): boolean {
   if (position.parentLinkId || position.includeInTotal === false) return false;
   return /interactive brokers|\bibkr\b/i.test(`${position.wallet}\n${position.linkName}\n${position.asset}`);
@@ -585,9 +639,13 @@ function attachInteractiveBrokers(
       if (category === "CASH" || kind === "cash") return;
       const name = text(row.name) || text(row.symbol) || text(row.description);
       if (!name || mentionsExchange([name, text(row.symbol), text(row.description), text(row.asset)])) return;
-      const shares = amount(row.quantity);
-      const label = shares == null ? name : `${name} · ${formatShare(shares)}`;
-      const lineId = `${account.linkId}|pos:${safeToken(text(row.conid) || text(row.symbol) || String(line + 1)) || line + 1}`;
+      const label = ibkrOpenLabel(row);
+      const conid = text(row.conid);
+      const strike = typeof row.strike === "number" && Number.isFinite(row.strike) ? String(row.strike) : text(row.strike);
+      const fallback = [text(row.symbol), text(row.expiry), text(row.put_call), strike, String(line + 1)].filter((part) => part.length > 0).join(".");
+      const token = safeToken(conid || fallback) || String(line + 1);
+      let lineId = `${account.linkId}|pos:${token}`;
+      if (positions.some((position) => position.linkId === lineId)) lineId = `${account.linkId}|pos:${safeToken(`${token}-${line + 1}`) || line + 1}`;
       if (positions.some((position) => position.linkId === lineId)) return;
       const asset = uniqueAsset(name, lineId, used);
       const lineCurrency = normaliseCurrency(text(row.currency)) || parsed.currency;
@@ -688,6 +746,9 @@ function attachInteractiveBrokers(
  * WEIB and EIB stay on that same investment as drill-down layers. They are
  * not list rows and are not added to the asset-swap balance. A line with
  * `rolls_up_into` is nested on its parent and does not count toward net worth.
+ * `peresec_underlying` is the latest cash and asset lines at the deepest
+ * layer for that portal date. Those lines are stored on the asset-swap series
+ * and are not added to `holdings[].balance` or to the daily series.
  * `interactive_brokers` is the Flex report. Its account balance is the net
  * asset value, on Personal unless that payload says trust. Open positions
  * and ending cash nest on the account and are not added to it. Equity history
@@ -817,6 +878,7 @@ export function mapPickleRickHoldings(
   for (const item of series) {
     if (item.kind === "as") item.points.sort((a, b) => a.date.localeCompare(b.date) || a.product.localeCompare(b.product));
   }
+  attachPeresecUnderlying(record, asByKey);
   attachInteractiveBrokers(record, fx, containers, positions, prices, used, series);
   appendChildHistoryPositions(record, fx, containers, positions, prices, used);
   return { positions, prices, series };
@@ -914,6 +976,78 @@ export function separateChildHoldings(state: PortfolioState): PortfolioState {
   return { ...state, containers, positions, prices, ...(statementSeries ? { statementSeries } : {}) };
 }
 
+function nullableAmount(value: unknown): number | null {
+  const parsed = finiteNumber(value);
+  return typeof parsed === "number" ? parsed : null;
+}
+
+function readLookthroughLines(value: unknown, kind: "cash" | "asset", fallbackCurrency: string): LookthroughLine[] {
+  if (!Array.isArray(value)) return [];
+  const lines: LookthroughLine[] = [];
+  for (const item of value) {
+    if (!isRecord(item)) continue;
+    const name = text(item.name) || text(item.instrument_code);
+    if (!name) continue;
+    const quantity = finiteNumber(item.quantity);
+    const amount = finiteNumber(item.market_value);
+    const currency = normaliseCurrency(text(item.currency)) || fallbackCurrency;
+    lines.push({
+      kind,
+      name,
+      quantity: typeof quantity === "number" ? quantity : null,
+      value: typeof amount === "number" ? amount : null,
+      currency,
+    });
+  }
+  return lines;
+}
+
+/**
+ * WEIB with no deeper EIB keeps that WEIB's cash and assets.
+ * An EIB whose lines were returned keeps that EIB's cash and assets.
+ * An EIB whose lines were not returned keeps neither, including any WEIB cash
+ * or sleeve line that arrived on the same object.
+ */
+function readUnderlying(row: Record<string, unknown>): PeresecUnderlying | null {
+  const asOf = text(row.as_of).slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(asOf)) return null;
+  const layer = text(row.layer).toLowerCase();
+  if (layer !== "eib" && layer !== "weib") return null;
+  const deeperRaw = row.deeper_eib;
+  const deeperEib = deeperRaw == null || deeperRaw === "" ? null : text(deeperRaw) || null;
+  const linesAvailable = row.lines_available === true;
+  const depth: PeresecUnderlying["depth"] =
+    layer === "weib" && deeperEib == null ? "weib" : layer === "eib" && linesAvailable ? "eib" : "unavailable";
+  const currency = normaliseCurrency(text(row.currency));
+  const lines =
+    depth === "unavailable" ? [] : [...readLookthroughLines(row.assets, "asset", currency), ...readLookthroughLines(row.cash, "cash", currency)];
+  return {
+    asOf,
+    depth,
+    currency,
+    netAssetValue: nullableAmount(row.net_asset_value),
+    cashTotal: nullableAmount(row.cash_total),
+    lines,
+  };
+}
+
+/** Stores one latest underlying snapshot on the asset-swap series it rolls up into. */
+function attachPeresecUnderlying(body: Record<string, unknown>, asByKey: Map<string, StatementSeries>): void {
+  const raw = body.peresec_underlying;
+  const rows = Array.isArray(raw) ? raw : isRecord(raw) ? [raw] : [];
+  for (const row of rows) {
+    if (!isRecord(row)) continue;
+    const rollsUp = text(row.rolls_up_into);
+    if (rollsUp !== TRUST_AS_KEY && rollsUp !== PERSONAL_AS_KEY) continue;
+    const parent = asByKey.get(rollsUp);
+    if (!parent) continue;
+    const parsed = readUnderlying(row);
+    if (!parsed) continue;
+    if (parent.underlying && parent.underlying.asOf > parsed.asOf) continue;
+    parent.underlying = parsed;
+  }
+}
+
 function layerFrom(series: StatementSeries, kind: "weib" | "eib", name: string): InvestmentLayer {
   const points = [...series.points].sort((a, b) => a.date.localeCompare(b.date) || a.product.localeCompare(b.product));
   let value: number | null = null;
@@ -939,10 +1073,51 @@ function layerFrom(series: StatementSeries, kind: "weib" | "eib", name: string):
   };
 }
 
+function blankLayer(kind: "weib" | "eib", currency: string): InvestmentLayer {
+  return { kind, name: kind === "weib" ? "WEIB" : "EIB", value: null, currency, points: [], inside: null };
+}
+
+function layerByKind(root: InvestmentLayer, kind: "weib" | "eib"): InvestmentLayer | null {
+  if (root.kind === kind) return root;
+  if (root.inside?.kind === kind) return root.inside;
+  return null;
+}
+
+/** Finds the layer the snapshot belongs on, adding an empty shell when history has no such series. */
+function ensureLookthroughLayer(root: InvestmentLayer, kind: "weib" | "eib", currency: string): { root: InvestmentLayer; layer: InvestmentLayer } {
+  const found = layerByKind(root, kind);
+  if (found) return { root, layer: found };
+  const created = blankLayer(kind, currency);
+  if (kind === "eib" && root.kind === "weib") {
+    root.inside = created;
+    return { root, layer: created };
+  }
+  if (kind === "weib") {
+    created.inside = root.kind === "eib" ? root : root.inside;
+    return { root: created, layer: created };
+  }
+  return { root: created, layer: created };
+}
+
+function stampLookthrough(layer: InvestmentLayer, record: PeresecUnderlying): void {
+  layer.linesAsOf = record.asOf;
+  layer.netAssetValue = record.netAssetValue;
+  layer.cashTotal = record.cashTotal;
+  if (record.depth === "unavailable") {
+    layer.linesAvailable = false;
+    layer.lines = [];
+    return;
+  }
+  layer.linesAvailable = true;
+  layer.lines = record.lines.map((line) => ({ ...line }));
+}
+
 /**
  * WEIB is the layer inside an asset-swap investment. EIB is inside WEIB.
  * Side series match the parent asset, or the same account when an older
  * snapshot stored them under their own names. A null value is kept.
+ * Look-through lines from `peresec_underlying` sit on the deepest available
+ * layer and do not replace that layer's daily points.
  */
 export function investmentLayers(series: readonly StatementSeries[], asset: string): InvestmentLayer | null {
   const parent = series.find((item) => item.kind === "as" && item.asset === asset);
@@ -952,12 +1127,20 @@ export function investmentLayers(series: readonly StatementSeries[], asset: stri
   const weib = findKind("weib");
   const eib = findKind("eib");
   const eibLayer = eib ? layerFrom(eib, "eib", "EIB") : null;
+  let root: InvestmentLayer | null = null;
   if (weib) {
-    const layer = layerFrom(weib, "weib", "WEIB");
-    layer.inside = eibLayer;
-    return layer;
+    root = layerFrom(weib, "weib", "WEIB");
+    root.inside = eibLayer;
+  } else {
+    root = eibLayer;
   }
-  return eibLayer;
+  const record = parent?.underlying;
+  if (!record) return root;
+  const kind = record.depth === "weib" ? "weib" : "eib";
+  if (!root) root = blankLayer(kind, record.currency);
+  const placed = ensureLookthroughLayer(root, kind, record.currency || root.currency);
+  stampLookthrough(placed.layer, record);
+  return placed.root;
 }
 
 /** Keeps the last Pickle Rick rows when the source answers 401 or 503. Exchange statement rows are never kept. */

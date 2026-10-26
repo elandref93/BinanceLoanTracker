@@ -71,11 +71,39 @@ export interface StatementFlow {
 }
 
 /**
+ * One look-through line from `peresec_underlying`. `quantity` is the unit
+ * count. `value` is that line's market value. Blank amounts stay null.
+ */
+export interface LookthroughLine {
+  kind: "cash" | "asset";
+  name: string;
+  quantity: number | null;
+  value: number | null;
+  currency: string;
+}
+
+/**
+ * Latest portal look-through for one Peresec investment. This is one date,
+ * not the daily `perec-as`, `perec-weib`, or `perec-eib` series. `unavailable`
+ * means an EIB sits under the WEIB but its lines were not returned, so `lines`
+ * stays empty.
+ */
+export interface PeresecUnderlying {
+  asOf: string;
+  depth: "weib" | "eib" | "unavailable";
+  currency: string;
+  netAssetValue: number | null;
+  cashTotal: number | null;
+  lines: LookthroughLine[];
+}
+
+/**
  * A daily statement series stored beside the snapshot. Asset-swap series feed
  * net-worth history. WEIB and EIB are drill-down layers on that investment,
  * not extra list rows. `ibkr` is the Interactive Brokers equity chart for that
  * account only and is not added to net worth. `flows` is present only when
- * that series has a cash-flow ledger.
+ * that series has a cash-flow ledger. `underlying` is the latest look-through
+ * and is not added to the asset-swap balance.
  */
 export interface StatementSeries {
   key: string;
@@ -89,6 +117,8 @@ export interface StatementSeries {
   asOf?: string;
   points: StatementPoint[];
   flows?: StatementFlow[];
+  /** Present on the asset-swap series when the holdings document sent `peresec_underlying`. */
+  underlying?: PeresecUnderlying;
 }
 
 /** Everything the server knows right now; recorded every 15 minutes. */

@@ -21,16 +21,24 @@ const app: Express = express();
 // client (used by the rate limiter below).
 app.set("trust proxy", 1);
 
-// Sentry request context must be the very first middleware. We extract only the
-// method + URL — never headers, cookies, query string or body — so session
-// tokens and Binance/Luno API keys are never sent to Sentry.
-app.use(
-  Sentry.Handlers.requestHandler({
-    request: ["method", "url"],
-    ip: false,
-    user: false,
-  }),
-);
+// Sentry request context must be the very first middleware. We attach only the
+// method + path — never headers, cookies, query string or body — so session
+// tokens and Binance/Luno API keys are never sent to Sentry. v11 has no
+// Handlers.requestHandler; the isolation scope keeps concurrent requests apart.
+app.use((req, _res, next) => {
+  Sentry.withIsolationScope((scope) => {
+    const pathOnly = (req.originalUrl || req.url || "").split("?")[0];
+    scope.addEventProcessor((event) => {
+      event.request = {
+        method: req.method,
+        url: pathOnly,
+      };
+      delete event.user;
+      return event;
+    });
+    next();
+  });
+});
 
 /** Request log used by the API. Tests pass a capturing logger; production uses the shared one. */
 export function httpRequestLogger(baseLogger: Logger = logger) {
@@ -172,7 +180,7 @@ app.use("/api", router);
 // Sentry capture happens centrally via the logger's `logMethod` hook (see
 // lib/logger.ts), so this `logger.error` both records the structured log AND
 // reports the error to Sentry with the request scope set up by the
-// requestHandler above — no separate Sentry error middleware needed.
+// isolation-scope middleware above — no separate Sentry error middleware needed.
 app.use(
   (err: unknown, req: Request, res: Response, _next: NextFunction): void => {
     // Derive the status FIRST so we can log at the right level. Upstream

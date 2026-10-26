@@ -3,6 +3,9 @@
   "version": "0.0.0",
   "license": "MIT",
   "packageManager": "pnpm@10.26.1",
+  "engines": {
+    "node": "26.12.1"
+  },
   "pnpm": {
     "autoInstallPeers": false,
     "overrides": {
@@ -119,8 +122,8 @@
   "optionalDependencies": {
     "@esbuild/linux-x64": "0.28.2",
     "@esbuild/win32-x64": "0.28.2",
-    "@rollup/rollup-linux-x64-gnu": "4.64.12",
-    "@rollup/rollup-win32-x64-msvc": "4.64.12",
+    "@rollup/rollup-linux-x64-gnu": "4.65.0",
+    "@rollup/rollup-win32-x64-msvc": "4.65.0",
     "@tailwindcss/oxide-linux-x64-gnu": "4.3.3",
     "@tailwindcss/oxide-win32-x64-msvc": "4.3.3",
     "lightningcss-linux-x64-gnu": "1.33.0",

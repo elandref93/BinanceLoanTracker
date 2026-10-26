@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 
 import type { AssetPosition, LedgerEventView, PortfolioAsset } from "@workspace/api-client-react";
 
 import { fmtQty } from "../domain/format";
-import { collapseRecurring, debtProfileLabel, displayHoldingTitle, eventsByMonth, groupPlacesByProfile, holdingMovePct, holdingTitle, listHoldings, lunoUsdcZarMid, matchesQuery, owedWarningText, partitionDust, profileBlocks, profileDebts, sliceRange, sourcePlaces, statementDayPct, statementQuoteParts, unrealizedPct, usdcDebtAtLuno, usdcOwedLineText, usdcOwedSplit, whereLabel } from "./holdings";
+import { collapseRecurring, debtProfileLabel, describeHeldPosition, displayHoldingTitle, eventsByMonth, groupPlacesByProfile, holdingMovePct, holdingTitle, listHoldings, lunoUsdcZarMid, matchesQuery, owedWarningText, partitionDust, profileBlocks, profileDebts, sliceRange, sourcePlaces, statementDayPct, statementQuoteParts, unrealizedPct, usdcDebtAtLuno, usdcOwedLineText, usdcOwedSplit, whereLabel } from "./holdings";
 
 const position = (partial: Partial<AssetPosition>): AssetPosition => ({
   exchange: "binance",
@@ -324,6 +326,99 @@ describe("portfolio holdings", () => {
     assert.equal(Math.round(income.qty * 10) / 10, 1.3);
     assert.equal(income.usd, null);
     assert.equal(income.from, "2026-10-01T03:00:00Z");
+  });
+
+  it("describeHeldPosition_optionAndStock_renderAsTwoRowsInsideTheAccount", () => {
+    const account = position({
+      exchange: "pickle_rick",
+      linkId: "ibkr:sample",
+      linkName: "Interactive Brokers",
+      wallet: "Interactive Brokers",
+      qty: 100,
+      usd: 100,
+    });
+    const stock = position({
+      exchange: "pickle_rick",
+      linkId: "ibkr:sample|pos:stk",
+      linkName: "Interactive Brokers · 4 shares",
+      wallet: "Interactive Brokers",
+      qty: 20,
+      usd: 20,
+      includeInTotal: false,
+    });
+    const option = position({
+      exchange: "pickle_rick",
+      linkId: "ibkr:sample|pos:opt",
+      linkName: "IBKR · 11 contracts · expires 30 October 2026",
+      wallet: "Interactive Brokers",
+      qty: 30,
+      usd: 30,
+      includeInTotal: false,
+    });
+    const lines = [account, option, stock].flatMap((item) => {
+      const copy = describeHeldPosition(item, {
+        instrument: item.linkName,
+        profile: "Personal",
+        where: "Interactive Brokers",
+        hideSource: false,
+        symbol: "Interactive Brokers",
+      });
+      return copy ? [{ ...copy, usd: item.usd }] : [];
+    });
+    const html = renderToStaticMarkup(
+      createElement(
+        "section",
+        { "aria-labelledby": "asset-held-title" },
+        createElement("h2", { id: "asset-held-title" }, "Where it's held"),
+        createElement(
+          "ul",
+          null,
+          lines.map((line) =>
+            createElement(
+              "li",
+              { key: line.title },
+              createElement("span", null, line.title),
+              line.caption ? createElement("span", null, line.caption) : null,
+            ),
+          ),
+        ),
+      ),
+    );
+    assert.equal(lines.length, 2);
+    assert.equal((html.match(/<li/g) ?? []).length, 2);
+    assert.equal(html.includes("11 contracts"), true);
+    assert.equal(html.includes("30 October"), true);
+    assert.equal(html.includes("shares"), true);
+    assert.equal(html.includes("Included in the total"), false);
+    assert.equal(html.includes("Personal"), false);
+    assert.equal(lines.some((line) => line.caption === "11 contracts · expires 30 October 2026"), true);
+    assert.equal(lines.some((line) => line.caption === "4 shares" && line.title === "Interactive Brokers"), true);
+    assert.equal(lines.every((line) => line.repeatAccountQuantity === false), true);
+    const listedValue = lines.reduce((sum, line) => sum + line.usd, 0);
+    assert.equal(listedValue === account.usd, false);
+    assert.equal(account.usd, 100);
+
+    const nested = describeHeldPosition(
+      position({ exchange: "pickle_rick", linkId: "investment:9", linkName: "Inner fund", wallet: "Peresec", includeInTotal: false }),
+      { instrument: "Inner fund", profile: "Personal", where: "Peresec", hideSource: false, symbol: "Peresec" },
+    );
+    assert.equal(nested?.caption.includes("Included in the total"), false);
+    const binance = describeHeldPosition(position({ exchange: "binance", wallet: "spot", linkName: "Binance" }), {
+      instrument: "Binance",
+      profile: null,
+      where: "Binance · Spot",
+      hideSource: false,
+      symbol: "BTC",
+    });
+    const luno = describeHeldPosition(position({ exchange: "luno", wallet: "wallet", linkName: "Luno" }), {
+      instrument: "Luno",
+      profile: null,
+      where: "Luno · Wallet",
+      hideSource: false,
+      symbol: "BTC",
+    });
+    assert.equal(binance?.markOn, "title");
+    assert.equal(luno?.markOn, "title");
   });
 });
 

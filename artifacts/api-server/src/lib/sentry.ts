@@ -1,11 +1,12 @@
 /**
  * Sentry wiring for the api-server.
  *
- * We use @sentry/node v7 deliberately: the server is shipped as a SINGLE
- * esbuild bundle with NO node_modules at runtime (see the Dockerfile). v7 is
- * fully self-contained (no @opentelemetry/* runtime deps), so it bundles into
- * one file cleanly. v8+ requires OpenTelemetry packages that are externalized
- * in build.mjs and would be missing at runtime.
+ * The server is shipped as a SINGLE esbuild bundle with NO node_modules at
+ * runtime (see the Dockerfile). @sentry/node v11 no longer exposes
+ * `Handlers.requestHandler`; request data is limited here and in the
+ * per-request scope in app.ts. OpenTelemetry is bundled into that same file
+ * (it is not externalized in build.mjs) so the process can start without a
+ * node_modules tree.
  *
  * Scope: capture unhandled server errors + uncaught exceptions/rejections to
  * the Sentry cloud dashboard, alongside the existing structured Pino logs.
@@ -30,16 +31,36 @@ export function initSentry(): void {
     environment: process.env.NODE_ENV || "production",
     // Errors only — no performance tracing for this small private service.
     tracesSampleRate: 0,
-    // Financial app: never auto-collect IPs / PII. Request headers, cookies and
-    // bodies (which carry session tokens and Binance/Luno API keys) are also
-    // excluded at the requestHandler level in app.ts.
-    sendDefaultPii: false,
-    // Defense-in-depth: strip any query string from the captured request URL so
-    // a secret can never leak through a query param.
+    // Financial app: keep method + path only. Headers, cookies, bodies, query
+    // strings, and user/IP fields can carry session tokens and exchange keys.
+    dataCollection: {
+      userInfo: false,
+      cookies: false,
+      httpHeaders: false,
+      httpBodies: [],
+      urlQueryParams: false,
+      databaseQueryData: false,
+      stackFrameVariables: false,
+    },
+    // express is bundled into this process, so module instrumentation is not
+    // how we capture errors. The logger hook does that; this stops the
+    // integration from sending a second copy of the same 5xx.
+    integrations: [
+      Sentry.expressIntegration({
+        shouldHandleError: false,
+      }),
+    ],
+    // Defense-in-depth: the event may only carry method + path, never a query
+    // string, headers, cookies, body, or user.
     beforeSend(event) {
-      if (event.request?.url) {
-        event.request.url = event.request.url.split("?")[0];
+      const method = event.request?.method;
+      const url = event.request?.url?.split("?")[0];
+      if (method || url) {
+        event.request = { method, url };
+      } else {
+        delete event.request;
       }
+      delete event.user;
       return event;
     },
   });

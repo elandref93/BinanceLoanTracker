@@ -11,8 +11,8 @@
     "test": "tsx --test src/env.test.ts src/theme/ledgerColors.test.ts src/pages/dashboardState.test.ts src/session/browserSession.test.ts src/domain/format.test.ts src/domain/decimalInput.test.ts src/domain/risk.test.ts src/domain/loanDetail.test.ts src/domain/alertRules.test.ts src/domain/portfolio.test.ts src/domain/leverageSim.test.ts src/domain/strategyView.test.ts src/domain/historyView.test.ts src/domain/settingsView.test.ts src/domain/leverageScenarios.test.ts src/accounts/accountModel.test.ts src/prefs/preferences.test.ts src/prefs/discreet.test.tsx src/charts/geometry.test.ts src/home/insights.test.ts src/portfolio/holdings.test.ts src/portfolio/expectedReturn.test.ts src/portfolio/perecDrill.test.ts src/loans/loanModel.test.ts src/insights/forecast.test.ts src/insights/insightsModel.test.ts"
   },
   "dependencies": {
-    "@clerk/react": "^6.17.8",
-    "@clerk/react-router": "^3.6.35",
+    "@clerk/react": "^6.18.1",
+    "@clerk/react-router": "^3.6.38",
     "@tanstack/react-query": "catalog:",
     "@workspace/api-client-react": "workspace:*",
     "cryptocurrency-icons": "0.18.1",

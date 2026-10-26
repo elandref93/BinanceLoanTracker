@@ -224,6 +224,83 @@ export function whereLabel(exchange: string, wallet: string, profile?: string | 
   return parts.join(" · ");
 }
 
+const BROKER = /interactive brokers|\bibkr\b/i;
+
+/** The account row whose quantity is net asset value. Nested lines are not this row. */
+export function isBrokerAccountPosition(position: { includeInTotal?: boolean; wallet: string; linkName: string; linkId: string }): boolean {
+  if (position.includeInTotal === false) return false;
+  if (position.linkId.startsWith("ibkr:") && !position.linkId.includes("|")) return true;
+  return BROKER.test(`${position.wallet}\n${position.linkName}`);
+}
+
+/** An open line already inside the Interactive Brokers account total. */
+export function isBrokerInsideAccount(position: { includeInTotal?: boolean; wallet: string; linkId: string }): boolean {
+  return position.includeInTotal === false && (position.linkId.startsWith("ibkr:") || BROKER.test(position.wallet));
+}
+
+export type HeldRowCopy = {
+  title: string;
+  caption: string;
+  /** Binance and Luno marks stay on the wallet line. Nested broker lines do not add one. */
+  markOn: "title" | "caption" | "none";
+  /** False when the quantity is already written as shares or contracts, so the account name is not repeated. */
+  repeatAccountQuantity: boolean;
+  wrap: boolean;
+};
+
+const QUANTITY_PART = /^-?\d+(?:\.\d+)? (?:shares?|contracts?)$/i;
+
+/** Splits a broker label into the instrument and the shares, contracts, side, and expiry. */
+export function splitBrokerHolding(label: string): { title: string; caption: string } {
+  const parts = label.split(" · ").map((part) => part.trim()).filter((part) => part.length > 0);
+  const caption: string[] = [];
+  while (parts.length > 1) {
+    const last = parts[parts.length - 1] ?? "";
+    if (/^expires /i.test(last) || QUANTITY_PART.test(last) || last.toLowerCase() === "short") {
+      caption.unshift(parts.pop() as string);
+      continue;
+    }
+    break;
+  }
+  return { title: parts.join(" · "), caption: caption.join(" · ") };
+}
+
+/**
+ * Copy for one Where it's held row. The Interactive Brokers account balance
+ * is omitted. Nested lines do not say they are included in the total.
+ */
+export function describeHeldPosition(
+  position: Pick<AssetPosition, "includeInTotal" | "wallet" | "linkName" | "linkId" | "exchange">,
+  input: { instrument: string; profile: string | null; where: string; hideSource: boolean; symbol: string },
+): HeldRowCopy | null {
+  if (isBrokerAccountPosition(position)) return null;
+  if (isBrokerInsideAccount(position)) {
+    const split = splitBrokerHolding(input.instrument);
+    return {
+      title: split.title,
+      caption: split.caption,
+      markOn: "none",
+      repeatAccountQuantity: false,
+      wrap: true,
+    };
+  }
+  const nested = position.includeInTotal === false;
+  if (nested) {
+    const markOn = !input.where ? "none" : input.profile ? "caption" : "title";
+    return {
+      title: input.instrument,
+      caption: input.profile ?? "",
+      markOn,
+      repeatAccountQuantity: true,
+      wrap: false,
+    };
+  }
+  const title = input.profile || input.where || input.symbol;
+  const caption = input.hideSource ? "" : input.profile ? input.where : input.instrument;
+  const markOn = input.hideSource || !input.where ? "none" : input.profile ? "caption" : "title";
+  return { title, caption, markOn, repeatAccountQuantity: true, wrap: false };
+}
+
 export function walletLabel(wallet: string): string {
   if (wallet === "spot") return "Spot";
   if (wallet === "earn") return "Earn";

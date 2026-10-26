@@ -5,7 +5,7 @@
 # runtime image needs only node + the dist/ output. No node_modules at runtime.
 
 # ---------- Build stage ----------
-FROM node:24-alpine AS build
+FROM node:26.12.1-alpine AS build
 # corepack reads the pnpm version from the workspace's root package.json
 # (the "packageManager" field) so we don't have to hard-code it here.
 RUN corepack enable
@@ -43,7 +43,7 @@ COPY lib/db/               ./lib/db/
 RUN pnpm --filter @workspace/api-server run build
 
 # ---------- Runtime stage ----------
-FROM node:24-alpine AS runtime
+FROM node:26.12.1-alpine AS runtime
 ENV NODE_ENV=production
 WORKDIR /app
 

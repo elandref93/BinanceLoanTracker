@@ -21,6 +21,7 @@ import {
   type ReturnStatus,
 } from "@/portfolio/expectedReturn";
 import { investmentPath } from "@/portfolio/perecDrill";
+import { ReturnCalculationNote } from "@/portfolio/returnCalculationNote";
 import { useScopeParam } from "@/portfolio/queries";
 import { saveSettings } from "@/settings/settingsApi";
 import { displaySymbol } from "@/ui/AssetIcon";
@@ -101,32 +102,30 @@ export function ExpectedReturnCard(props: { detail: PortfolioAssetDetail; savedS
     void save(parsed);
   }
 
+  const annualFigure = stored == null ? null : fmtPct(stored, Number.isInteger(stored) ? 0 : 1);
+
   return (
     <Card className={props.className} aria-labelledby="expected-return-title">
-      <SectionHeader
-        id="expected-return-title"
-        title="Expected return"
-        caption="Annual target, prorated from the first history point"
-      />
-      <form onSubmit={onSubmit} className="flex flex-wrap items-end gap-3">
-        <label className="block text-caption text-muted-foreground" htmlFor={fieldId}>
-          Expected annual return
-          <span className="mt-1 flex items-center gap-2">
-            <input
-              id={fieldId}
-              inputMode="decimal"
-              value={draft}
-              onChange={(event) => {
-                setDraft(event.target.value);
-                setDirty(true);
-                setMessage(null);
-              }}
-              className="w-28 rounded-ledger border border-border bg-background px-3 py-2 text-body text-foreground"
-              autoComplete="off"
-              disabled={saving || settings.isPending}
-            />
-            <span aria-hidden="true">%</span>
-          </span>
+      <form onSubmit={onSubmit} className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <h2 id="expected-return-title" className="text-caption font-medium text-muted-foreground">
+          Expected return
+        </h2>
+        <label className="flex items-center gap-1.5 text-caption text-muted-foreground" htmlFor={fieldId}>
+          <span className="sr-only">Expected annual return</span>
+          <input
+            id={fieldId}
+            inputMode="decimal"
+            value={draft}
+            onChange={(event) => {
+              setDraft(event.target.value);
+              setDirty(true);
+              setMessage(null);
+            }}
+            className="w-16 rounded-ledger border border-border bg-background px-2 py-1 text-caption text-foreground tabular"
+            autoComplete="off"
+            disabled={saving || settings.isPending}
+          />
+          <span aria-hidden="true">%</span>
         </label>
         <Button type="submit" variant="primary" size="sm" disabled={saving || settings.isPending}>
           {saving ? "Saving…" : "Save"}
@@ -146,41 +145,44 @@ export function ExpectedReturnCard(props: { detail: PortfolioAssetDetail; savedS
             Clear
           </Button>
         ) : null}
+        {stored == null ? (
+          <p className="text-caption text-muted-foreground">No expected return is set for this holding.</p>
+        ) : comparison ? (
+          <>
+            <dl className="flex min-w-0 flex-wrap items-baseline gap-x-4 gap-y-1">
+              <div className="flex items-baseline gap-1.5">
+                <dt className="text-micro font-medium uppercase tracking-wider text-muted-foreground">Target so far</dt>
+                <dd className="text-caption font-semibold tabular">{fmtPct(comparison.expectedPct)}</dd>
+              </div>
+              <div className="flex items-baseline gap-1.5">
+                <dt className="text-micro font-medium uppercase tracking-wider text-muted-foreground">Actual</dt>
+                <dd className="text-caption font-semibold tabular">{comparison.actualPct == null ? "—" : fmtSignedPct(comparison.actualPct)}</dd>
+              </div>
+              <div className="flex items-baseline gap-1.5">
+                <dt className="text-micro font-medium uppercase tracking-wider text-muted-foreground">Versus target</dt>
+                <dd className={cx("text-caption font-semibold tabular", statusClass(comparison.status))}>
+                  {comparison.status == null ? "—" : returnStatusLabel(comparison.status, comparison.gapPp)}
+                </dd>
+              </div>
+            </dl>
+            <ReturnCalculationNote
+              noteId={`${fieldId}-calculation`}
+              period={`${annualFigure} a year since ${fmtDate(comparison.startedAt)}, prorated by the share of a year elapsed`}
+              flows={comparison.flowsRemoved ? "Deposits and withdrawals are left out of the actual return." : null}
+            />
+          </>
+        ) : (
+          <p className="text-caption text-muted-foreground">
+            {props.savedSnapshot ? "History is not in the saved snapshot." : "Not enough history to compare yet."}
+          </p>
+        )}
+        {comparison?.actualPct == null && stored != null && comparison ? (
+          <p className="basis-full text-micro text-muted-foreground">Actual return needs a real starting value.</p>
+        ) : null}
       </form>
       {message ? (
-        <p role={message.alert ? "alert" : "status"} className={cx("mt-3 text-caption", message.alert ? "text-danger" : "text-muted-foreground")}>
+        <p role={message.alert ? "alert" : "status"} className={cx("mt-2 text-caption", message.alert ? "text-danger" : "text-muted-foreground")}>
           {message.text}
-        </p>
-      ) : null}
-      {stored == null ? (
-        <p className="mt-3 text-caption text-muted-foreground">No expected return is set for this holding.</p>
-      ) : comparison ? (
-        <dl className="mt-4 grid grid-cols-3 gap-3">
-          <div>
-            <dt className="text-micro font-medium uppercase tracking-wider text-muted-foreground">Target so far</dt>
-            <dd className="mt-1 text-body font-semibold tabular">{fmtPct(comparison.expectedPct)}</dd>
-          </div>
-          <div>
-            <dt className="text-micro font-medium uppercase tracking-wider text-muted-foreground">Actual</dt>
-            <dd className="mt-1 text-body font-semibold tabular">{comparison.actualPct == null ? "—" : fmtSignedPct(comparison.actualPct)}</dd>
-          </div>
-          <div>
-            <dt className="text-micro font-medium uppercase tracking-wider text-muted-foreground">Versus target</dt>
-            <dd className={cx("mt-1 text-body font-semibold tabular", statusClass(comparison.status))}>
-              {comparison.status == null ? "—" : returnStatusLabel(comparison.status, comparison.gapPp)}
-            </dd>
-          </div>
-        </dl>
-      ) : (
-        <p className="mt-3 text-caption text-muted-foreground">
-          {props.savedSnapshot ? "History is not in the saved snapshot." : "Not enough history to compare yet."}
-        </p>
-      )}
-      {stored != null && comparison ? (
-        <p className="mt-3 text-micro text-muted-foreground">
-          {fmtPct(stored, Number.isInteger(stored) ? 0 : 1)} a year since {fmtDate(comparison.startedAt)}. The target so far is that percent times the share of a year elapsed.
-          {comparison.flowsRemoved ? " Deposits and withdrawals are left out of the actual return." : ""}
-          {comparison.actualPct == null ? " Actual return is not shown because the starting value is not a real position." : ""}
         </p>
       ) : null}
     </Card>

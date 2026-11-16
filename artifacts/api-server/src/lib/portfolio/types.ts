@@ -71,26 +71,52 @@ export interface StatementFlow {
 }
 
 /**
- * One look-through line from `peresec_underlying`. `quantity` is the unit
- * count. `value` is that line's market value. Blank amounts stay null.
+ * One look-through line from a portal table in `peresec_underlying`.
+ * `equity`, `derivative`, and `cash` are those tables. `asset` is only the
+ * older `assets` list, used when the portal did not send equities or derivatives.
+ * `quantity` is the unit count. `value` is market value. Blank amounts stay null
+ * and are not filled with zero. Negatives stay negative.
+ * `expNav` is the portal EXP / NAV percentage, not a money amount.
  */
 export interface LookthroughLine {
-  kind: "cash" | "asset";
+  kind: "cash" | "equity" | "derivative" | "asset";
   name: string;
   quantity: number | null;
   value: number | null;
   currency: string;
+  /** Portal `asset_class`. Absent on cash and when the source left it blank. */
+  assetClass?: string;
+  /** Portal instrument code. Absent on cash and when the source left it blank. */
+  instrumentCode?: string;
+  /** Null when the portal did not send a cost. Never invented as zero. */
+  costPrice: number | null;
+  marketPrice: number | null;
+  pnl: number | null;
+  /** Cash table only. Null on instrument lines and when the source left it blank. */
+  settledBalance: number | null;
+  accruals: number | null;
+  zarValue: number | null;
+  zarExposure: number | null;
+  /** EXP / NAV percentage. Null when the source left it blank. */
+  expNav: number | null;
 }
 
 /**
  * Latest portal look-through for one Peresec investment. This is one date,
- * not the daily `perec-as`, `perec-weib`, or `perec-eib` series. `unavailable`
- * means an EIB sits under the WEIB but its lines were not returned, so `lines`
- * stays empty.
+ * not the daily `perec-as`, `perec-weib`, or `perec-eib` series. The lines are
+ * the portal equities, derivatives, and cash tables. They are not added to the
+ * asset-swap balance, the WEIB total, or net worth. `depth` stays `weib` when
+ * that book did not return lines. `unavailable` is an EIB whose lines were
+ * withheld, and `layer` is still `eib` so the snapshot is not guessed.
+ * `lines` stays empty in either withheld case.
  */
 export interface PeresecUnderlying {
   asOf: string;
   depth: "weib" | "eib" | "unavailable";
+  /** Book the portal named. Kept when `linesAvailable` is false. */
+  layer?: "weib" | "eib";
+  /** False when the portal did not return lines. */
+  linesAvailable?: boolean;
   currency: string;
   netAssetValue: number | null;
   cashTotal: number | null;

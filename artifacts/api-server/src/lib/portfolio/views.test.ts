@@ -7,7 +7,7 @@ import { classifyLunoRow } from "./lunoImport";
 import type { PriceBook } from "./prices";
 import { jhbDay, jhbDayStart } from "./time";
 import type { DebtPosition, HistoryPoint, LedgerEvent, PortfolioState, Position, StatementSeries } from "./types";
-import { buildAnalytics, buildAssetDetail, buildAssets, buildImportStatus, buildOverview, buildPerformance, downsampleKeepingDays, perecStatementQuote, statementPriorValue } from "./views";
+import { buildAnalytics, buildAssetDetail, buildAssets, buildImportStatus, buildOverview, buildPerformance, downsampleKeepingDays, perecStatementQuote, statementDayExternalFlow, statementPriorValue } from "./views";
 
 const noon = (day: string) => jhbDayStart(day) + 12 * 60 * 60 * 1000;
 const AS_OF = noon("2026-10-11");
@@ -437,6 +437,7 @@ describe("statement prior value", () => {
     const prior = statementPriorValue(state({ positions: [held], statementSeries: series, change24h: {} }), [], note, null, 100);
     assert.equal(prior, 80);
     assert.equal(prior != null && (100 - prior) / prior > 0, true);
+    assert.equal(statementDayExternalFlow(state({ positions: [held], statementSeries: series, change24h: {} }), note, null, 100), null);
     assert.equal((100 - (prior ?? 0)) / (prior ?? 1), 20 / 80);
     const only = statementPriorValue(
       state({
@@ -571,6 +572,108 @@ describe("statement prior value", () => {
       1.1,
     );
     assert.equal(coin, null);
+  });
+
+  it("statementDayExternalFlow_removesADepositOrWithdrawalFromThatIntervalOnly", () => {
+    const series: StatementSeries[] = [
+      {
+        key: "investment:1",
+        kind: "as",
+        accountNumber: "0433383",
+        product: "",
+        containerId: null,
+        asset: note,
+        currency: "ZAR",
+        points: [
+          { date: "2026-11-09", value: 100, currency: "ZAR", change: null, product: "perec-as" },
+          { date: "2026-11-10", value: 180, currency: "ZAR", change: 80, product: "perec-as" },
+        ],
+        flows: [
+          { date: "2026-11-09", amount: 50, currency: "ZAR" },
+          { date: "2026-11-10", amount: 80, currency: "ZAR" },
+        ],
+      },
+    ];
+    const position: Position = { ...held, linkId: "investment:1", qty: 180 };
+    const derived = bare({ positions: [position], statementSeries: series, fx: 20 });
+    const flow = statementDayExternalFlow(derived.state, note, null, 180);
+    assert.equal(flow, 80);
+    const listed = buildAssets(derived, undefined);
+    const row = listed.assets.find((item) => item.asset === note);
+    assert.equal(row?.priorValue, 100);
+    assert.equal(row?.dayExternalFlow, 80);
+    assert.equal(row != null && row.priorValue != null && (row.qty - row.priorValue - (row.dayExternalFlow ?? 0)) / row.priorValue, 0);
+    const detail = buildAssetDetail(derived, note);
+    assert.equal(detail.externalFlows.some((item) => item.usd === 80 / 20), true);
+    assert.equal(detail.externalFlows.some((item) => item.usd === 50 / 20), true);
+
+    const withdrawn: StatementSeries[] = [
+      {
+        ...series[0]!,
+        points: [
+          { date: "2026-11-09", value: 100, currency: "ZAR", change: null, product: "perec-as" },
+          { date: "2026-11-10", value: 60, currency: "ZAR", change: -40, product: "perec-as" },
+        ],
+        flows: [{ date: "2026-11-10", amount: -40, currency: "ZAR" }],
+      },
+    ];
+    const afterWithdrawal = bare({ positions: [{ ...position, qty: 60 }], statementSeries: withdrawn, fx: 20 });
+    assert.equal(statementDayExternalFlow(afterWithdrawal.state, note, null, 60), -40);
+    const onePoint = bare({
+      positions: [{ ...position, qty: 180 }],
+      statementSeries: [{ ...series[0]!, points: [series[0]!.points[1]!], flows: series[0]!.flows }],
+    });
+    assert.equal(buildAssets(onePoint, undefined).assets.find((item) => item.asset === note)?.priorValue, undefined);
+    assert.equal(buildAssets(onePoint, undefined).assets.find((item) => item.asset === note)?.dayExternalFlow, undefined);
+  });
+
+  it("statementDayExternalFlow_failedConversion_isNotZeroOrAPartialTotal", () => {
+    const series: StatementSeries[] = [
+      {
+        key: "investment:1",
+        kind: "as",
+        accountNumber: "0433383",
+        product: "",
+        containerId: null,
+        asset: note,
+        currency: "ZAR",
+        points: [
+          { date: "2026-11-09", value: 100, currency: "ZAR", change: null, product: "perec-as" },
+          { date: "2026-11-10", value: 180, currency: "ZAR", change: null, product: "perec-as" },
+        ],
+        flows: [
+          { date: "2026-11-09", amount: 4, currency: "USD" },
+          { date: "2026-11-10", amount: 10, currency: "ZAR" },
+          { date: "2026-11-10", amount: 5, currency: "USD" },
+          { date: "2026-11-10", amount: 0, currency: "EUR" },
+        ],
+      },
+    ];
+    const position: Position = { ...held, linkId: "investment:1", qty: 180 };
+    const missingFx = bare({ positions: [position], statementSeries: series, fx: null });
+    assert.equal(statementDayExternalFlow(missingFx.state, note, null, 180), "incomplete");
+    const withheld = buildAssets(missingFx, undefined).assets.find((item) => item.asset === note);
+    assert.equal(withheld?.priorValue, 100);
+    assert.equal(withheld?.dayExternalFlow, null);
+    assert.notEqual(withheld?.dayExternalFlow, 10);
+
+    const converted = bare({ positions: [position], statementSeries: series, fx: 20 });
+    assert.equal(statementDayExternalFlow(converted.state, note, null, 180), 110);
+
+    const sameCurrency = bare({
+      positions: [position],
+      statementSeries: [{ ...series[0]!, flows: [{ date: "2026-11-10", amount: 10, currency: "ZAR" }] }],
+      fx: null,
+    });
+    assert.equal(statementDayExternalFlow(sameCurrency.state, note, null, 180), 10);
+
+    const none = bare({
+      positions: [position],
+      statementSeries: [{ ...series[0]!, flows: [] }],
+      fx: null,
+    });
+    assert.equal(statementDayExternalFlow(none.state, note, null, 180), null);
+    assert.equal(buildAssets(none, undefined).assets.find((item) => item.asset === note)?.dayExternalFlow, undefined);
   });
 });
 

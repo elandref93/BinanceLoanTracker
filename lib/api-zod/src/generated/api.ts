@@ -612,6 +612,7 @@ export const GetPortfolioAssetsResponse = zod.object({
   "quoteDate": zod.string().optional(),
   "quoteCurrency": zod.string().optional(),
   "priorValue": zod.number().optional(),
+  "dayExternalFlow": zod.number().nullable().optional().describe('Net external cash between the previous point and the latest balance, in the same units as qty. Absent when that interval has no external flow. Null when a flow in the interval could not be converted.'),
   "positions": zod.array(zod.object({
   "exchange": zod.enum(['binance', 'luno', 'pickle_rick']),
   "linkId": zod.string(),
@@ -733,6 +734,7 @@ export const GetPortfolioAssetResponse = zod.object({
   "quoteDate": zod.string().optional(),
   "quoteCurrency": zod.string().optional(),
   "priorValue": zod.number().optional(),
+  "dayExternalFlow": zod.number().nullable().optional().describe('Net external cash between the previous point and the latest balance, in the same units as qty. Absent when that interval has no external flow. Null when a flow in the interval could not be converted.'),
   "positions": zod.array(zod.object({
   "exchange": zod.enum(['binance', 'luno', 'pickle_rick']),
   "linkId": zod.string(),

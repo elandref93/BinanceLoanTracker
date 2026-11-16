@@ -1,6 +1,6 @@
 import type { AssetPosition, LedgerEventView, PortfolioAssetDetail } from "@workspace/api-client-react";
 import { useCallback, useMemo, useRef, useState } from "react";
-import { Link, useLocation, useSearchParams } from "react-router";
+import { Link, useLocation } from "react-router";
 
 import { PerformanceChart, type ChartTone } from "@/charts/PerformanceChart";
 import { fmtDateTime, fmtDayMonth, fmtDisplayMoney, fmtNum, fmtPct, fmtQty, fmtSignedPct, fmtTime, fmtUsd, MINUS, NBSP } from "@/domain/format";
@@ -28,7 +28,7 @@ import {
 import { ExpectedReturnCard } from "@/portfolio/ExpectedReturnCard";
 import { PortfolioUnavailable } from "@/portfolio/PortfolioUnavailable";
 import { isSavedSnapshot } from "@/portfolio/snapshotFlags";
-import { investmentPath, layerForStep, lookthroughLines, parseDrillStep, productLabel, readInvestmentLayer, type InvestmentLayer, type LookthroughLine } from "@/portfolio/perecDrill";
+import { costIndicationClass, costVersusMarket, investmentBook, layerChain, LOOKTHROUGH_COLUMN_LABEL, lookthroughColumns, lookthroughColumnMasked, lookthroughGroups, lookthroughLines, lookthroughSnapshotTotals, optionHealth, portalLineText, readInvestmentLayer, type InvestmentLayer, type LookthroughGroup, type LookthroughLine, type OptionHealth } from "@/portfolio/perecDrill";
 import { useAssetDetail } from "@/portfolio/queries";
 import { Balance, useDiscreet } from "@/prefs/DiscreetMode";
 import { DISCREET_PLACEHOLDER } from "@/prefs/discreet";
@@ -71,27 +71,19 @@ export function AssetDetail(props: { asset: string; showBack?: boolean }) {
   const detail = useAssetDetail(props.asset);
   const data = detail.data;
   const { search } = useLocation();
-  const [searchParams] = useSearchParams();
-  const step = parseDrillStep(searchParams.get("inside"));
   const portfolioSearch = new URLSearchParams(search);
   portfolioSearch.delete("inside");
   const portfolioQuery = portfolioSearch.toString();
   const portfolioBack = props.showBack ? { to: portfolioQuery ? `/portfolio?${portfolioQuery}` : "/portfolio", label: "Portfolio" } : undefined;
   const symbol = displaySymbol(props.asset);
   const heading = holdingTitle(symbol);
-  const up =
-    step === "eib"
-      ? { to: investmentPath(symbol, "weib"), label: "WEIB" }
-      : step === "weib"
-        ? { to: investmentPath(symbol), label: heading }
-        : portfolioBack;
 
-  if (detail.isPending) return <DetailSkeleton back={up} />;
+  if (detail.isPending) return <DetailSkeleton back={portfolioBack} />;
   if (detail.isError && !data) {
     const finished = clientError(detail.error);
     return (
       <>
-        {up ? <PageHeader title={heading} back={up} /> : null}
+        {portfolioBack ? <PageHeader title={heading} back={portfolioBack} /> : null}
         <Notice tone="danger" title={finished ? `${heading} is not available` : `${heading} could not be loaded`} action={<Button size="sm" onClick={() => void detail.refetch()}>Try again</Button>}>
           {finished ? "This holding could not be opened." : "Ledger will keep retrying in the background."}
         </Notice>
@@ -100,12 +92,10 @@ export function AssetDetail(props: { asset: string; showBack?: boolean }) {
   }
   if (!data || !data.available) return <PortfolioUnavailable reason={(data as { reason?: string } | undefined)?.reason} title="This asset is not available yet" />;
   const inside = readInvestmentLayer((data as { inside?: unknown }).inside);
-  const drill = layerForStep(inside, step);
-  if (drill.current) return <LayerScreen layer={drill.current} next={drill.next} asset={symbol} back={up} stale={detail.isPlaceholderData} />;
-  return <DetailContent detail={data} back={portfolioBack} next={drill.next} stale={detail.isPlaceholderData} />;
+  return <DetailContent detail={data} back={portfolioBack} inside={inside} stale={detail.isPlaceholderData} />;
 }
 
-function DetailContent(props: { detail: PortfolioAssetDetail; back?: { to: string; label: string }; next: InvestmentLayer | null; stale: boolean }) {
+function DetailContent(props: { detail: PortfolioAssetDetail; back?: { to: string; label: string }; inside: InvestmentLayer | null; stale: boolean }) {
   const prefs = usePrefs();
   const { detail } = props;
   const row = detail.asset;
@@ -121,6 +111,8 @@ function DetailContent(props: { detail: PortfolioAssetDetail; back?: { to: strin
     places: row.positions.map((position) => ({ balanceKnown: position.balanceKnown !== false && position.includeInTotal !== false })),
   });
   const movePct = holdingMovePct(row);
+  const book = investmentBook(props.inside);
+  const layers = layerChain(props.inside);
 
   return (
     <div className={cx("@container transition-opacity duration-200", props.stale ? "opacity-60" : "opacity-100")}>
@@ -165,8 +157,9 @@ function DetailContent(props: { detail: PortfolioAssetDetail; back?: { to: strin
       ) : null}
       <div className="grid grid-cols-1 gap-4 @[760px]:grid-cols-2 lg:gap-5">
         <HeroCard detail={detail} savedSnapshot={savedSnapshot} className="@[760px]:col-span-2" />
+        {book ? <LayerLines layer={book} className="@[760px]:col-span-2" /> : null}
         {held ? <ExpectedReturnCard detail={detail} savedSnapshot={savedSnapshot} className="@[760px]:col-span-2" /> : null}
-        {props.next ? <InsideLink layer={props.next} to={investmentPath(symbol, props.next.kind)} className="@[760px]:col-span-2" /> : null}
+        {layers.length > 0 ? <LayerTotals layers={layers} className="@[760px]:col-span-2" /> : null}
         {statement ? null : <CostCard detail={detail} savedSnapshot={savedSnapshot} />}
         <HeldCard detail={detail} savedSnapshot={savedSnapshot} />
         {statement ? null : <ActivityCard events={detail.events} symbol={symbol} savedSnapshot={savedSnapshot} className="@[760px]:col-span-2" />}
@@ -568,128 +561,211 @@ function layerMoney(value: number | null, currency: string): string {
   return currency ? `${fmtNum(value, 2)} ${currency}` : fmtNum(value, 2);
 }
 
-function lineQuantity(value: number | null): string {
-  if (value == null) return "—";
-  if (Number.isInteger(value)) return fmtNum(value, 0);
-  const places = Math.abs(value) >= 1 ? 4 : 6;
-  return fmtNum(value, places);
+function layerHasDailyTotal(layer: InvestmentLayer): boolean {
+  if (typeof layer.value === "number") return true;
+  return layer.points.some((point) => typeof point.value === "number");
 }
 
-function InsideLink(props: { layer: InvestmentLayer; to: string; className?: string }) {
+function layerHasTotal(layer: InvestmentLayer): boolean {
+  return layerHasDailyTotal(layer) || lookthroughSnapshotTotals(layer).length > 0;
+}
+
+function snapshotWhen(asOf: string | null): string | null {
+  return asOf ? fmtDayMonth(`${asOf}T12:00:00+02:00`) : null;
+}
+
+function LayerTotals(props: { layers: InvestmentLayer[]; className?: string }) {
+  const layers = props.layers.filter(layerHasTotal);
+  if (layers.length === 0) return null;
   return (
-    <Card className={props.className} aria-labelledby="asset-inside-title">
-      <h2 id="asset-inside-title" className="mb-1 text-heading font-semibold">
-        Inside
+    <Card className={props.className} aria-labelledby="layer-totals-title">
+      <h2 id="layer-totals-title" className="text-caption font-medium text-muted-foreground">
+        Statement layers
       </h2>
-      <Link to={props.to} viewTransition className="flex min-h-14 items-center gap-3 rounded-xl px-1 py-2 transition-colors hover:bg-card-elevated">
-        <span className="min-w-0 flex-1">
-          <span className="block text-body font-medium">{props.layer.name}</span>
-          <span className="block text-caption text-muted-foreground">{props.layer.currency || "Statement layer"}</span>
-        </span>
-        <span className="shrink-0 text-body font-semibold tabular">
-          <Balance text={layerMoney(props.layer.value, props.layer.currency)} />
-        </span>
-        <Icon name="chevronRight" size={16} className="shrink-0 text-subtle" />
-      </Link>
+      <ul className="mt-1">
+        {layers.map((layer) => {
+          const first = layer.points[0];
+          const last = layer.points[layer.points.length - 1];
+          const span =
+            first && last && first.date !== last.date
+              ? `${fmtDayMonth(`${first.date}T12:00:00+02:00`)} – ${fmtDayMonth(`${last.date}T12:00:00+02:00`)}`
+              : last
+                ? fmtDayMonth(`${last.date}T12:00:00+02:00`)
+                : null;
+          const daily = layerHasDailyTotal(layer);
+          const snapshots = daily ? [] : lookthroughSnapshotTotals(layer);
+          return (
+            <li key={layer.kind} className="flex items-baseline justify-between gap-3 border-t border-border py-1.5 first:border-t-0">
+              <span className="min-w-0">
+                <span className="block text-body font-medium">{layer.name}</span>
+                {span ? <span className="block text-micro text-muted-foreground">{span}</span> : null}
+              </span>
+              {daily ? (
+                <span className="shrink-0 text-caption font-semibold tabular">
+                  <Balance text={layerMoney(layer.value, layer.currency)} />
+                </span>
+              ) : (
+                <span className="shrink-0 text-right">
+                  {snapshots.map((row) => {
+                    const when = snapshotWhen(row.asOf);
+                    return (
+                      <span key={row.label} className="block text-caption font-semibold tabular">
+                        <span className="mr-2 text-micro font-normal text-muted-foreground">
+                          {row.label}
+                          {when ? ` · ${when}` : ""}
+                        </span>
+                        <Balance text={layerMoney(row.value, layer.currency)} />
+                      </span>
+                    );
+                  })}
+                </span>
+              )}
+            </li>
+          );
+        })}
+      </ul>
     </Card>
   );
 }
 
-function LineList(props: { title: string; lines: LookthroughLine[] }) {
-  if (props.lines.length === 0) return null;
+function healthTone(health: OptionHealth["health"]): string {
+  if (health === "healthy") return "text-gain";
+  if (health === "at risk") return "text-loss";
+  if (health === "watch") return "text-warn";
+  return "";
+}
+
+/** Percent stays visible. The P&L amount is a figure, so discreet mode masks it. */
+function CostBeside(props: { line: LookthroughLine }) {
+  const gap = costVersusMarket(props.line);
+  if (!gap) return null;
   return (
-    <div className="mt-3">
-      <h3 className="text-caption font-medium text-muted-foreground">{props.title}</h3>
-      <ul>
-        {props.lines.map((line, index) => (
-          <li key={`${props.title}|${index}`} className="flex min-h-14 items-center gap-3 border-t border-border py-2 first:border-t-0">
-            <span className="min-w-0 flex-1">
-              <span className="block truncate text-body font-medium">{line.name}</span>
-              <span className="block text-caption text-muted-foreground tabular">{lineQuantity(line.quantity)}</span>
-            </span>
-            <span className="shrink-0 text-caption font-semibold tabular">
-              <Balance text={layerMoney(line.value, line.currency)} />
-            </span>
-          </li>
-        ))}
-      </ul>
+    <span className={cx("text-micro font-normal leading-snug", costIndicationClass(gap.favourable))}>
+      {gap.label}
+      {gap.pnlText ? (
+        <>
+          {" · "}
+          <Balance figure text={gap.pnlText} />
+        </>
+      ) : null}
+    </span>
+  );
+}
+
+function OptionNote(props: { note: OptionHealth }) {
+  return (
+    <span className="mt-0.5 block max-w-xl text-micro font-normal leading-snug text-muted-foreground">
+      {props.note.detail}
+      {props.note.health ? (
+        <>
+          {" · "}
+          <span className={healthTone(props.note.health)}>{props.note.health}</span>
+        </>
+      ) : null}
+    </span>
+  );
+}
+
+function LineTable(props: { group: LookthroughGroup; book: LookthroughLine[] }) {
+  const columns = lookthroughColumns(props.group);
+  if (props.group.lines.length === 0 || columns.length === 0) return null;
+  return (
+    <div className="mt-4">
+      <h3 className="text-caption font-medium text-muted-foreground">{props.group.title}</h3>
+      <div className="mt-1 max-w-full overflow-x-auto">
+        <table className="w-full min-w-[40rem] border-separate border-spacing-0 text-left text-caption">
+          <thead>
+            <tr className="text-micro text-muted-foreground">
+              {columns.map((column) => (
+                <th key={column} scope="col" className={cx("py-2 font-medium", column === "name" ? "pr-3 text-left" : "px-2 text-right")}>
+                  {LOOKTHROUGH_COLUMN_LABEL[column]}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {props.group.lines.map((line, index) => {
+              const note = line.kind === "derivative" ? optionHealth(line, props.book) : null;
+              return (
+                <tr key={`${props.group.title}|${index}`} className="border-t border-border">
+                  {columns.map((column) => {
+                    if (column === "name") {
+                      return (
+                        <th key={column} scope="row" className="border-t border-border py-2 pr-3 text-left text-body font-medium">
+                          <span className="block">{line.name}</span>
+                          {note ? <OptionNote note={note} /> : null}
+                        </th>
+                      );
+                    }
+                    const text = portalLineText(line, column);
+                    const shown = text == null ? null : lookthroughColumnMasked(column) ? <Balance figure text={text} /> : text;
+                    return (
+                      <td key={column} className="border-t border-border px-2 py-2 text-right align-baseline tabular">
+                        {column === "value" ? (
+                          <span className="inline-flex flex-wrap items-baseline justify-end gap-x-2">
+                            {shown}
+                            <CostBeside line={line} />
+                          </span>
+                        ) : (
+                          shown
+                        )}
+                      </td>
+                    );
+                  })}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
 
-function LayerLines(props: { layer: InvestmentLayer }) {
+function LayerLines(props: { layer: InvestmentLayer; className?: string }) {
   const lines = lookthroughLines(props.layer);
   if (lines == null) return null;
   if (lines === "unavailable") {
     return (
-      <Card aria-labelledby="layer-lines-title">
-        <h2 id="layer-lines-title" className="text-heading font-semibold">
-          Lines
+      <Card className={props.className} aria-labelledby="layer-lines-title">
+        <h2 id="layer-lines-title" className="text-caption font-medium text-muted-foreground">
+          {props.layer.name}
         </h2>
-        <p className="mt-3 text-caption text-muted-foreground">The portal did not return the lines.</p>
+        <p className="mt-2 text-caption text-muted-foreground">The portal did not return the lines.</p>
       </Card>
     );
   }
   const asOf = props.layer.linesAsOf;
+  const book = [...lines.assets, ...lines.cash];
+  const snapshots = lookthroughSnapshotTotals(props.layer);
   return (
-    <Card aria-labelledby="layer-lines-title">
-      <h2 id="layer-lines-title" className="text-heading font-semibold">
-        Lines
+    <Card className={props.className} aria-labelledby="layer-lines-title">
+      <h2 id="layer-lines-title" className="text-caption font-medium text-muted-foreground">
+        {props.layer.name}
+        {asOf ? <span className="font-normal"> · {fmtDayMonth(`${asOf}T12:00:00+02:00`)}</span> : null}
       </h2>
-      {asOf ? <p className="mt-1 text-caption text-muted-foreground">{fmtDayMonth(`${asOf}T12:00:00+02:00`)}</p> : null}
-      <LineList title="Assets" lines={lines.assets} />
-      <LineList title="Cash" lines={lines.cash} />
-    </Card>
-  );
-}
-
-function LayerScreen(props: { layer: InvestmentLayer; next: InvestmentLayer | null; asset: string; back?: { to: string; label: string }; stale: boolean }) {
-  const { layer } = props;
-  return (
-    <div className={cx("flex flex-col gap-4 transition-opacity duration-200", props.stale ? "opacity-60" : "opacity-100")}>
-      <PageHeader
-        title={layer.name}
-        back={props.back}
-        subtitle={<span>{holdingTitle(props.asset)}</span>}
-      />
-      <Card aria-labelledby="layer-value-title">
-        <p id="layer-value-title" className="text-caption font-medium text-muted-foreground">
-          {layer.currency ? `${layer.name} · ${layer.currency}` : layer.name}
-        </p>
-        <p className="mt-1 text-[clamp(1.6rem,8vw,2rem)] font-semibold leading-tight tracking-tight tabular">
-          <Balance text={layerMoney(layer.value, layer.currency)} />
-        </p>
-      </Card>
-      {props.next ? <InsideLink layer={props.next} to={investmentPath(props.asset, props.next.kind)} /> : null}
-      <LayerLines layer={layer} />
-      <Card aria-labelledby="layer-history-title">
-        <h2 id="layer-history-title" className="text-heading font-semibold">
-          History
-        </h2>
-        {layer.points.length === 0 ? (
-          <p className="mt-3 text-caption text-muted-foreground">No history for this layer yet.</p>
-        ) : (
-          <ul className="mt-2">
-            {layer.points.map((point) => (
-              <li key={`${point.date}|${point.product}`} className="flex min-h-14 items-center gap-3 border-t border-border py-2 first:border-t-0">
-                <span className="min-w-0 flex-1">
-                  <span className="block text-body font-medium">{fmtDayMonth(`${point.date}T12:00:00+02:00`)}</span>
-                  <span className="block text-caption text-muted-foreground">{productLabel(point.product)}</span>
+      {snapshots.length > 0 ? (
+        <ul className="mt-2">
+          {snapshots.map((row) => {
+            const when = snapshotWhen(row.asOf);
+            return (
+              <li key={row.label} className="flex items-baseline justify-between gap-3 py-1">
+                <span className="text-caption text-muted-foreground">
+                  {row.label}
+                  {when ? <span className="font-normal"> · {when}</span> : null}
                 </span>
-                <span className="shrink-0 text-right">
-                  <span className="block text-caption font-semibold tabular">
-                    <Balance text={layerMoney(point.value, point.currency || layer.currency)} />
-                  </span>
-                  <span className="block text-micro text-muted-foreground tabular">
-                    {point.change == null ? "—" : <Balance figure text={fmtNum(point.change, 2)} />}
-                  </span>
+                <span className="shrink-0 text-caption font-semibold tabular">
+                  <Balance text={layerMoney(row.value, props.layer.currency)} />
                 </span>
               </li>
-            ))}
-          </ul>
-        )}
-      </Card>
-    </div>
+            );
+          })}
+        </ul>
+      ) : null}
+      {lookthroughGroups(lines).map((group) => (
+        <LineTable key={group.title} group={group} book={book} />
+      ))}
+    </Card>
   );
 }
 

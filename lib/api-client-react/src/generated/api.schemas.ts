@@ -825,6 +825,12 @@ export interface PortfolioAsset {
    * no earlier point, and absent when `change24hPct` is already set.
    */
   priorValue?: number;
+  /**
+   * Net external cash between the previous point and the latest balance,
+   * in the same units as `qty`. Absent when that interval has no external flow.
+   * Null when a flow in the interval could not be converted. The day move is then omitted.
+   */
+  dayExternalFlow?: number | null;
   positions: AssetPosition[];
 }
 

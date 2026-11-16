@@ -1,5 +1,9 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+
+import { ReturnCalculationNote } from "./returnCalculationNote";
 
 import {
   applyExpectedReturn,
@@ -16,6 +20,22 @@ import {
 const DAY_MS = 86_400_000;
 
 describe("expected annual return", () => {
+  it("returnCalculationNote_isAButtonAndKeepsTheExplanationInThePage", () => {
+    const html = renderToStaticMarkup(
+      createElement(ReturnCalculationNote, {
+        noteId: "expected-return-note",
+        period: "12% a year since 1 Jan 2026, prorated by the share of a year elapsed",
+        flows: "Deposits and withdrawals are left out of the actual return.",
+      }),
+    );
+    assert.match(html, /<button[^>]*type="button"/);
+    assert.match(html, /aria-controls="expected-return-note"/);
+    assert.match(html, /aria-expanded="false"/);
+    assert.match(html, /prorated by the share of a year elapsed/);
+    assert.match(html, /Deposits and withdrawals are left out of the actual return/);
+    assert.equal(html.includes("title="), false);
+  });
+
   it("readExpectedReturns_unsetBlobHasNoPercent", () => {
     assert.deepEqual(readExpectedReturns({ currency: "ZAR", targetLtv: 55 }), {});
     assert.equal(readExpectedReturn({}, "BTC"), null);

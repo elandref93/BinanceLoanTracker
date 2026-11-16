@@ -746,9 +746,10 @@ function attachInteractiveBrokers(
  * WEIB and EIB stay on that same investment as drill-down layers. They are
  * not list rows and are not added to the asset-swap balance. A line with
  * `rolls_up_into` is nested on its parent and does not count toward net worth.
- * `peresec_underlying` is the latest cash and asset lines at the deepest
- * layer for that portal date. Those lines are stored on the asset-swap series
- * and are not added to `holdings[].balance` or to the daily series.
+ * `peresec_underlying` is the latest portal equities, derivatives, and cash
+ * for that book. `assets` repeats the instrument lines and is ignored when
+ * equities or derivatives is present. Those lines are stored on the asset-swap
+ * series and are not added to `holdings[].balance`, the WEIB total, or net worth.
  * `interactive_brokers` is the Flex report. Its account balance is the net
  * asset value, on Personal unless that payload says trust. Open positions
  * and ending cash nest on the account and are not added to it. Equity history
@@ -981,49 +982,87 @@ function nullableAmount(value: unknown): number | null {
   return typeof parsed === "number" ? parsed : null;
 }
 
-function readLookthroughLines(value: unknown, kind: "cash" | "asset", fallbackCurrency: string): LookthroughLine[] {
+function readAssetClass(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+/** Drops a raw account number from a line name. Instrument names stay. */
+function publicLineName(name: string): string {
+  return name
+    .replace(/\s*\(\s*(?:(?:acc(?:ount)?|a\/c)\s*:?\s*)?\d{4,}\s*\)/gi, "")
+    .replace(/\s*(?:acc(?:ount)?|a\/c)\s*:?\s*\d{4,}\b/gi, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
+function readLookthroughLines(value: unknown, kind: LookthroughLine["kind"], fallbackCurrency: string): LookthroughLine[] {
   if (!Array.isArray(value)) return [];
   const lines: LookthroughLine[] = [];
   for (const item of value) {
     if (!isRecord(item)) continue;
-    const name = text(item.name) || text(item.instrument_code);
+    const name = publicLineName(text(item.name) || (kind === "cash" ? "" : text(item.instrument_code)));
     if (!name) continue;
     const quantity = finiteNumber(item.quantity);
     const amount = finiteNumber(item.market_value);
     const currency = normaliseCurrency(text(item.currency)) || fallbackCurrency;
+    const assetClass = kind === "cash" ? undefined : readAssetClass(item.asset_class);
+    const instrumentCode = kind === "cash" ? "" : text(item.instrument_code);
+    const cash = kind === "cash";
     lines.push({
       kind,
       name,
       quantity: typeof quantity === "number" ? quantity : null,
       value: typeof amount === "number" ? amount : null,
       currency,
+      ...(assetClass ? { assetClass } : {}),
+      ...(instrumentCode ? { instrumentCode } : {}),
+      costPrice: cash ? null : nullableAmount(item.cost_price),
+      marketPrice: cash ? null : nullableAmount(item.market_price),
+      pnl: cash ? null : nullableAmount(item.pnl),
+      settledBalance: cash ? nullableAmount(item.settled_balance) : null,
+      accruals: cash ? nullableAmount(item.accruals) : null,
+      zarValue: nullableAmount(item.zar_value),
+      zarExposure: nullableAmount(item.zar_exposure),
+      expNav: nullableAmount(item.exp_nav),
     });
   }
   return lines;
 }
 
 /**
- * WEIB with no deeper EIB keeps that WEIB's cash and assets.
- * An EIB whose lines were returned keeps that EIB's cash and assets.
- * An EIB whose lines were not returned keeps neither, including any WEIB cash
- * or sleeve line that arrived on the same object.
+ * Equities, derivatives, and cash are the portal tables. `assets` repeats the
+ * instrument lines and is not read when either table is present.
+ * A book with lines stays on the layer the portal named, including a WEIB
+ * whose `deeper_eib` names a child that was not returned. A withheld book
+ * keeps that same layer: `weib` is not rewritten, and an unavailable EIB is
+ * not stored as a guess. It keeps no lines and does not borrow another book's cash.
  */
 function readUnderlying(row: Record<string, unknown>): PeresecUnderlying | null {
   const asOf = text(row.as_of).slice(0, 10);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(asOf)) return null;
   const layer = text(row.layer).toLowerCase();
   if (layer !== "eib" && layer !== "weib") return null;
-  const deeperRaw = row.deeper_eib;
-  const deeperEib = deeperRaw == null || deeperRaw === "" ? null : text(deeperRaw) || null;
+  const reportedLayer = layer === "weib" ? "weib" : "eib";
   const linesAvailable = row.lines_available === true;
-  const depth: PeresecUnderlying["depth"] =
-    layer === "weib" && deeperEib == null ? "weib" : layer === "eib" && linesAvailable ? "eib" : "unavailable";
+  const depth: PeresecUnderlying["depth"] = reportedLayer === "weib" || linesAvailable ? reportedLayer : "unavailable";
   const currency = normaliseCurrency(text(row.currency));
-  const lines =
-    depth === "unavailable" ? [] : [...readLookthroughLines(row.assets, "asset", currency), ...readLookthroughLines(row.cash, "cash", currency)];
+  const portalInstruments = Array.isArray(row.equities) || Array.isArray(row.derivatives);
+  const lines = !linesAvailable
+    ? []
+    : portalInstruments
+      ? [
+          ...readLookthroughLines(row.equities, "equity", currency),
+          ...readLookthroughLines(row.derivatives, "derivative", currency),
+          ...readLookthroughLines(row.cash, "cash", currency),
+        ]
+      : [...readLookthroughLines(row.assets, "asset", currency), ...readLookthroughLines(row.cash, "cash", currency)];
   return {
     asOf,
     depth,
+    layer: reportedLayer,
+    linesAvailable,
     currency,
     netAssetValue: nullableAmount(row.net_asset_value),
     cashTotal: nullableAmount(row.cash_total),
@@ -1099,11 +1138,22 @@ function ensureLookthroughLayer(root: InvestmentLayer, kind: "weib" | "eib", cur
   return { root: created, layer: created };
 }
 
+function withheldLines(record: PeresecUnderlying): boolean {
+  return record.linesAvailable === false || record.depth === "unavailable";
+}
+
+/** Portal book for this snapshot. An unnamed unavailable row is not treated as EIB. */
+function retainedLayer(record: PeresecUnderlying): "weib" | "eib" | null {
+  if (record.layer === "weib" || record.layer === "eib") return record.layer;
+  if (record.depth === "weib" || record.depth === "eib") return record.depth;
+  return null;
+}
+
 function stampLookthrough(layer: InvestmentLayer, record: PeresecUnderlying): void {
   layer.linesAsOf = record.asOf;
   layer.netAssetValue = record.netAssetValue;
   layer.cashTotal = record.cashTotal;
-  if (record.depth === "unavailable") {
+  if (withheldLines(record)) {
     layer.linesAvailable = false;
     layer.lines = [];
     return;
@@ -1116,8 +1166,10 @@ function stampLookthrough(layer: InvestmentLayer, record: PeresecUnderlying): vo
  * WEIB is the layer inside an asset-swap investment. EIB is inside WEIB.
  * Side series match the parent asset, or the same account when an older
  * snapshot stored them under their own names. A null value is kept.
- * Look-through lines from `peresec_underlying` sit on the deepest available
- * layer and do not replace that layer's daily points.
+ * Look-through lines from `peresec_underlying` sit on the book the portal
+ * returned. They do not replace that layer's daily points and are not summed
+ * into it. A WEIB book with its own equities or cash stays on WEIB even when
+ * `deeper_eib` is set.
  */
 export function investmentLayers(series: readonly StatementSeries[], asset: string): InvestmentLayer | null {
   const parent = series.find((item) => item.kind === "as" && item.asset === asset);
@@ -1136,7 +1188,8 @@ export function investmentLayers(series: readonly StatementSeries[], asset: stri
   }
   const record = parent?.underlying;
   if (!record) return root;
-  const kind = record.depth === "weib" ? "weib" : "eib";
+  const kind = retainedLayer(record);
+  if (!kind) return root;
   if (!root) root = blankLayer(kind, record.currency);
   const placed = ensureLookthroughLayer(root, kind, record.currency || root.currency);
   stampLookthrough(placed.layer, record);

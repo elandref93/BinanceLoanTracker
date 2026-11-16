@@ -34,5 +34,12 @@ export interface PortfolioAsset {
    * no earlier point, and absent when `change24hPct` is already set.
    */
   priorValue?: number;
+  /**
+   * Net external cash between `priorValue` and the latest balance, in the
+   * same units as `qty`. Deposits are positive and withdrawals are negative.
+   * Absent when that interval has no external flow. Null when a flow in the
+   * interval could not be converted; the day percent is then omitted.
+   */
+  dayExternalFlow?: number | null;
   positions: AssetPosition[];
 }

@@ -2165,6 +2165,9 @@ components:
         priorValue:
           type: number
           description: Previous point on this holding's balance series (Peresec asset-swap, or Interactive Brokers equity). Absent when there is no earlier point, and absent when a 24-hour ticker percent is already set.
+        dayExternalFlow:
+          type: ["number", "null"]
+          description: Net external cash (contributions minus withdrawals) between that previous point and the latest balance, in the same units as qty. Deposits are positive and withdrawals are negative. Absent when that interval has no external flow. Null when a flow in the interval could not be converted; the partial sum is not published and the day percent is omitted. The day percent is (qty - priorValue - dayExternalFlow) / priorValue.
         positions:
           type: array
           items: { $ref: "#/components/schemas/AssetPosition" }

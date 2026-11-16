@@ -266,9 +266,18 @@ describe("portfolio holdings", () => {
     assert.ok(down != null && down < 0);
     assert.equal(statementDayPct(100, null), null);
     assert.equal(statementDayPct(100, undefined), null);
+    assert.equal(statementDayPct(180, 100, 80), 0);
+    assert.equal(statementDayPct(60, 100, -40), 0);
+    assert.equal(statementDayPct(180, null, 80), null);
     assert.equal(holdingMovePct({ qty: 100, change24hPct: 2.4, priorValue: 80 }), null);
     assert.equal(holdingMovePct({ qty: 100, change24hPct: null, priorValue: 80 }), 25);
+    assert.equal(holdingMovePct({ qty: 180, change24hPct: null, priorValue: 100, dayExternalFlow: 80 }), 0);
+    assert.equal(statementDayPct(180, 100, null), null);
+    assert.equal(holdingMovePct({ qty: 180, change24hPct: null, priorValue: 100, dayExternalFlow: null }), null);
     assert.equal(holdingMovePct({ qty: 100, change24hPct: null }), null);
+    const unknownFlow = listHoldings([asset({ asset: "Peresec note", qty: 180, priorValue: 100, dayExternalFlow: null })], labels);
+    assert.equal(unknownFlow[0]?.dayExternalFlow, null);
+    assert.equal(holdingMovePct(unknownFlow[0]!), null);
     const rows = listHoldings([asset({ asset: "Peresec note", qty: 100, priorValue: 80 })], labels);
     assert.equal(rows[0]?.priorValue, 80);
     assert.equal(holdingMovePct(rows[0]!), 25);

@@ -599,7 +599,7 @@ function balanceSeries(state: Pick<PortfolioState, "statementSeries">, asset: st
  * One value per portal day. A later `perec-as` point replaces brokerage on
  * that day. Null values and side layers are left out rather than treated as zero.
  */
-function datedBalances(series: readonly StatementSeries[]): { value: number }[] {
+function datedBalancePoints(series: readonly StatementSeries[]): { date: string; value: number }[] {
   const byDate = new Map<string, { value: number; product: string }>();
   for (const item of series) {
     for (const point of item.points) {
@@ -611,7 +611,67 @@ function datedBalances(series: readonly StatementSeries[]): { value: number }[] 
       byDate.set(point.date, { value: point.value, product: point.product });
     }
   }
-  return [...byDate.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([, point]) => ({ value: point.value }));
+  return [...byDate.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([date, point]) => ({ date, value: point.value }));
+}
+
+function datedBalances(series: readonly StatementSeries[]): { value: number }[] {
+  return datedBalancePoints(series);
+}
+
+/** External cash in the same units as the statement balance. */
+function flowInBalanceUnits(amount: number, flowCurrency: string, seriesCurrency: string, fx: number | null): number | null {
+  if (!Number.isFinite(amount) || amount === 0) return null;
+  const flowCode = flowCurrency || seriesCurrency;
+  const seriesCode = seriesCurrency || flowCode;
+  if (!flowCode || !seriesCode) return null;
+  if (flowCode === seriesCode) return amount;
+  if (fx == null || !(fx > 0)) return null;
+  if (flowCode === "USD" && seriesCode === "ZAR") return amount * fx;
+  if (flowCode === "ZAR" && seriesCode === "USD") return amount / fx;
+  return null;
+}
+
+/**
+ * Net deposits minus withdrawals between the previous balance point and the
+ * latest one. A flow on the previous day already sits inside that balance.
+ * Null when there is no earlier point or that interval has no external cash.
+ * `"incomplete"` when any flow in the interval cannot be converted. The
+ * partial sum is not returned, and a zero amount is not a failed conversion.
+ */
+export function statementDayExternalFlow(
+  state: Pick<PortfolioState, "statementSeries" | "positions" | "change24h" | "fx">,
+  asset: string,
+  set: Set<string> | null,
+  latest: number,
+): number | null | "incomplete" {
+  if (state.change24h[asset] != null) return null;
+  const series = balanceSeries(state, asset, set);
+  const points = datedBalancePoints(series);
+  if (points.length === 0 || !Number.isFinite(latest)) return null;
+  const last = points[points.length - 1];
+  if (!last) return null;
+  const same = Math.abs(last.value - latest) <= Math.max(1e-6, Math.abs(latest) * 1e-8);
+  const prior = same ? points[points.length - 2] : last;
+  if (!prior || !Number.isFinite(prior.value) || !(prior.value > 0)) return null;
+  const endDate = same ? last.date : prior.date;
+  let net = 0;
+  let found = false;
+  let failed = false;
+  for (const item of series) {
+    for (const flow of item.flows ?? []) {
+      if (!QUOTE_DAY.test(flow.date) || !(flow.date > prior.date) || flow.date > endDate) continue;
+      if (!Number.isFinite(flow.amount) || flow.amount === 0) continue;
+      const native = flowInBalanceUnits(flow.amount, flow.currency, item.currency, state.fx);
+      if (native == null) {
+        failed = true;
+        continue;
+      }
+      net += native;
+      found = true;
+    }
+  }
+  if (failed) return "incomplete";
+  return found && Number.isFinite(net) && net !== 0 ? net : null;
 }
 
 /** Previous observation before `latest`. The same balance means the point before it; a newer balance uses the last recorded point. */
@@ -768,6 +828,9 @@ function assetRows(derived: Derived, set: Set<string> | null): PortfolioAsset[] 
     }
     const prior = statementPriorValue(state, derived.points, row.asset, set, row.qty);
     if (prior != null) row.priorValue = prior;
+    const dayFlow = statementDayExternalFlow(state, row.asset, set, row.qty);
+    if (dayFlow === "incomplete") row.dayExternalFlow = null;
+    else if (typeof dayFlow === "number") row.dayExternalFlow = dayFlow;
   }
   return [...rows.values()].sort((a, b) => b.usd - a.usd);
 }

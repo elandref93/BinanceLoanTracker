@@ -32,8 +32,14 @@ export type HoldingRow = {
   quoteDate?: string;
   /** Currency of that holding balance. The amount is `qty`. */
   quoteCurrency?: string;
-  /** Previous balance point. The day badge is `qty` versus this value. */
+  /** Previous balance point. The day badge is `qty` versus this value, after external cash. */
   priorValue?: number;
+  /**
+   * Net deposits minus withdrawals between `priorValue` and `qty`, in the same units.
+   * Absent when that interval has no external cash. Null when a flow could not
+   * be converted; the day move is then omitted instead of treating it as zero.
+   */
+  dayExternalFlow?: number | null;
 };
 
 export type Labels = {
@@ -186,19 +192,32 @@ export function statementQuoteParts(row: {
 
 /**
  * Percent from the previous balance point to the latest balance.
- * That is the point's change divided by the previous value.
- * Null when there is no earlier point, or that point is not a positive balance.
+ * External deposits and withdrawals in that interval are removed first.
+ * Null when there is no earlier point, that point is not a positive balance,
+ * or `externalFlow` is null because a conversion did not finish.
+ * An omitted flow is zero: the interval had no external cash.
  */
-export function statementDayPct(latest: number, prior: number | null | undefined): number | null {
+export function statementDayPct(
+  latest: number,
+  prior: number | null | undefined,
+  externalFlow: number | null = 0,
+): number | null {
   if (typeof prior !== "number" || !Number.isFinite(prior) || !(prior > 0)) return null;
   if (!Number.isFinite(latest)) return null;
-  return ((latest - prior) / prior) * 100;
+  if (externalFlow == null || !Number.isFinite(externalFlow)) return null;
+  return ((latest - prior - externalFlow) / prior) * 100;
 }
 
 /** A 24-hour ticker percent is the only badge on that coin. Statement rows use the previous point. */
-export function holdingMovePct(row: { qty: number; change24hPct: number | null; priorValue?: number | null }): number | null {
+export function holdingMovePct(row: {
+  qty: number;
+  change24hPct: number | null;
+  priorValue?: number | null;
+  dayExternalFlow?: number | null;
+}): number | null {
   if (row.change24hPct != null) return null;
-  return statementDayPct(row.qty, row.priorValue);
+  if (row.dayExternalFlow === null) return null;
+  return statementDayPct(row.qty, row.priorValue, row.dayExternalFlow ?? 0);
 }
 
 export function assetName(asset: string): string {
@@ -521,6 +540,11 @@ export function listHoldings(assets: readonly PortfolioAsset[], labels: Labels):
       ...(asset.quoteDate ? { quoteDate: asset.quoteDate } : {}),
       ...(asset.quoteCurrency ? { quoteCurrency: asset.quoteCurrency } : {}),
       ...(typeof asset.priorValue === "number" ? { priorValue: asset.priorValue } : {}),
+      ...(asset.dayExternalFlow === null
+        ? { dayExternalFlow: null }
+        : typeof asset.dayExternalFlow === "number"
+          ? { dayExternalFlow: asset.dayExternalFlow }
+          : {}),
     }))
     .sort((a, b) => b.usd - a.usd || a.asset.localeCompare(b.asset));
 }

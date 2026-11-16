@@ -1000,6 +1000,9 @@ describe("pickle rick holdings", () => {
             assets: [
               { name: "Sample equity", instrument_code: "EQ1", asset_class: "equity", currency: "USD", quantity: 12, market_price: 1, market_value: 4, zar_value: 4 },
               { name: "Unpriced note", instrument_code: "NOTE", asset_class: "other", currency: "USD", quantity: null, market_price: null, market_value: null, zar_value: null },
+              { name: "Sample hedge", instrument_code: "HF", asset_class: "Hedge Fund", currency: "USD", quantity: 1, market_price: 1, market_value: 1, zar_value: 1 },
+              { name: "Sample etp", instrument_code: "ETP1", asset_class: "ETP", currency: "USD", quantity: 2, market_price: 1, market_value: 2, zar_value: 2 },
+              { name: "Sample option", instrument_code: "OPT", asset_class: "Equity Option", currency: "USD", quantity: 1, market_price: 1, market_value: 1, zar_value: 1 },
             ],
             cash: [{ name: "Sample cash", currency: "USD", quantity: 3, settled_balance: 3, accruals: null, market_value: 3, zar_value: 3 }],
           },
@@ -1041,6 +1044,8 @@ describe("pickle rick holdings", () => {
     assert.equal(trustAs?.underlying?.cashTotal, null);
     assert.equal(trustAs?.underlying?.lines.some((line) => line.name === "Sample equity" && line.quantity === 12), true);
     assert.equal(personalAs?.underlying?.depth, "unavailable");
+    assert.equal(personalAs?.underlying?.layer, "eib");
+    assert.equal(personalAs?.underlying?.linesAvailable, false);
     assert.equal(personalAs?.underlying?.netAssetValue, null);
     assert.equal(personalAs?.underlying?.cashTotal, null);
     assert.deepEqual(personalAs?.underlying?.lines, []);
@@ -1065,8 +1070,14 @@ describe("pickle rick holdings", () => {
     assert.equal(trustLayers?.inside?.linesAsOf, "2026-10-21");
     assert.equal(trustLayers?.inside?.cashTotal, null);
     assert.equal(trustLayers?.inside?.lines?.find((line) => line.name === "Sample equity")?.quantity, 12);
+    assert.equal(trustLayers?.inside?.lines?.find((line) => line.name === "Sample equity")?.assetClass, "equity");
     assert.equal(trustLayers?.inside?.lines?.find((line) => line.name === "Sample cash")?.quantity, 3);
+    assert.equal(trustLayers?.inside?.lines?.find((line) => line.name === "Sample cash")?.assetClass, undefined);
     assert.equal(trustLayers?.inside?.lines?.find((line) => line.name === "Unpriced note")?.quantity, null);
+    assert.equal(trustLayers?.inside?.lines?.find((line) => line.name === "Unpriced note")?.assetClass, "other");
+    assert.equal(trustLayers?.inside?.lines?.find((line) => line.name === "Sample hedge")?.assetClass, "Hedge Fund");
+    assert.equal(trustLayers?.inside?.lines?.find((line) => line.name === "Sample etp")?.assetClass, "ETP");
+    assert.equal(trustLayers?.inside?.lines?.find((line) => line.name === "Sample option")?.assetClass, "Equity Option");
     assert.equal(trustLayers?.inside?.lines?.find((line) => line.name === "Unpriced note")?.value, null);
     assert.equal(trustLayers?.inside?.lines?.some((line) => line.quantity === 0 || line.value === 0), false);
     assert.equal(personalLayers?.lines, undefined);
@@ -1155,8 +1166,302 @@ describe("pickle rick holdings", () => {
     assert.equal(layers?.cashTotal, null);
     assert.equal(layers?.inside, null);
     assert.equal(layers?.lines?.find((line) => line.name === "WEIB equity")?.quantity, 6);
+    assert.equal(layers?.lines?.find((line) => line.name === "WEIB equity")?.assetClass, "equity");
     assert.equal(layers?.lines?.find((line) => line.name === "WEIB cash")?.kind, "cash");
+    assert.equal(layers?.lines?.find((line) => line.name === "WEIB cash")?.assetClass, undefined);
     assert.equal(mapped.series.find((item) => item.kind === "weib")?.points[0]?.value, 4);
     assert.equal(mapped.series.some((item) => item.kind === "eib"), false);
+  });
+
+  it("mapPickleRickHoldings_weibWithDeeperEib_showsBookLinesWithoutChild", () => {
+    const mapped = mapPickleRickHoldings(
+      {
+        holdings: [
+          row({
+            key: "investment:3",
+            account_number: "0454918",
+            kind: "investment",
+            name: "Personal Peresec",
+            institution: "Peresec",
+            currency: "USD",
+            balance: 11,
+            as_of: "2026-11-16",
+          }),
+        ],
+        history: [
+          {
+            key: "0454918|perec-weib",
+            account_number: "0454918",
+            product: "perec-weib",
+            currency: "USD",
+            history: [{ date: "2026-11-16", value: 6, currency: "USD", change: 1, product: "perec-weib" }],
+          },
+        ],
+        peresec_underlying: [
+          {
+            as_of: "2026-11-16",
+            layer: "weib",
+            fund_code: "WEIB 2",
+            deeper_eib: "EIB 2",
+            lines_available: true,
+            currency: "USD",
+            net_asset_value: 4,
+            cash_total: 1,
+            rolls_up_into: "investment:3",
+            sleeve: null,
+            holder: "Example Holder",
+            account_number: "9999001",
+            equities: [
+              {
+                name: "Sleeve line",
+                instrument_code: "EIB 2",
+                asset_class: "Equity",
+                currency: "USD",
+                quantity: 2,
+                market_value: 5,
+                zar_value: 5,
+                zar_exposure: 5,
+                exp_nav: 80,
+              },
+            ],
+            derivatives: [],
+            cash: [
+              {
+                name: "USD cash",
+                currency: "USD",
+                quantity: -1,
+                settled_balance: -1,
+                accruals: 0,
+                market_value: -1,
+                zar_value: -1,
+                zar_exposure: -1,
+                exp_nav: -1,
+              },
+            ],
+            assets: [{ name: "Sleeve line", instrument_code: "EIB 2", asset_class: "Equity", currency: "USD", quantity: 9, market_value: 9 }],
+          },
+        ],
+      },
+      null,
+      profiles,
+    );
+    const personal = mapped.positions.find((position) => position.linkId === "investment:3");
+    assert.equal(personal?.qty, 11);
+    assert.equal(mapped.positions.length, 1);
+    const underlying = mapped.series.find((item) => item.key === "investment:3")?.underlying;
+    assert.equal(underlying?.depth, "weib");
+    assert.deepEqual(
+      underlying?.lines.map((line) => line.name),
+      ["Sleeve line", "USD cash"],
+    );
+    assert.equal(underlying?.lines.find((line) => line.name === "Sleeve line")?.kind, "equity");
+    assert.equal(underlying?.lines.find((line) => line.name === "Sleeve line")?.quantity, 2);
+    assert.equal(underlying?.lines.find((line) => line.name === "Sleeve line")?.costPrice, null);
+    assert.equal(underlying?.lines.find((line) => line.name === "USD cash")?.kind, "cash");
+    assert.equal(underlying?.lines.find((line) => line.name === "USD cash")?.quantity, -1);
+    assert.equal(underlying?.lines.find((line) => line.name === "USD cash")?.settledBalance, -1);
+    assert.equal(underlying?.lines.some((line) => line.kind === "asset" || line.kind === "derivative"), false);
+    assert.equal(JSON.stringify(underlying).includes("Example Holder"), false);
+    assert.equal(JSON.stringify(underlying).includes("9999001"), false);
+    assert.equal(mapped.series.some((item) => item.kind === "eib"), false);
+    const layers = investmentLayers(mapped.series, personal?.asset ?? "");
+    assert.equal(layers?.kind, "weib");
+    assert.equal(layers?.value, 6);
+    assert.equal(layers?.inside, null);
+    assert.equal(layers?.linesAvailable, true);
+    assert.equal(layers?.lines?.find((line) => line.name === "Sleeve line")?.quantity, 2);
+    assert.equal(layers?.lines?.find((line) => line.name === "USD cash")?.quantity, -1);
+    assert.equal(layers?.lines?.some((line) => line.quantity === 9), false);
+  });
+
+  it("mapPickleRickHoldings_unavailableWeib_keepsTheReportedLayer", () => {
+    const mapped = mapPickleRickHoldings(
+      {
+        holdings: [
+          row({
+            key: "investment:3",
+            account_number: "0454918",
+            kind: "investment",
+            name: "Personal Peresec",
+            institution: "Peresec",
+            currency: "USD",
+            balance: 11,
+            as_of: "2026-11-16",
+          }),
+        ],
+        history: [
+          {
+            key: "0454918|perec-weib",
+            account_number: "0454918",
+            product: "perec-weib",
+            currency: "USD",
+            history: [{ date: "2026-11-16", value: 6, currency: "USD", change: 1, product: "perec-weib" }],
+          },
+        ],
+        peresec_underlying: [
+          {
+            as_of: "2026-11-16",
+            layer: "weib",
+            fund_code: "WEIB 2",
+            deeper_eib: "EIB 2",
+            lines_available: false,
+            currency: "USD",
+            net_asset_value: null,
+            cash_total: null,
+            rolls_up_into: "investment:3",
+            equities: [{ name: "Hidden sleeve", instrument_code: "EIB 2", asset_class: "Equity", currency: "USD", quantity: 2, market_value: 5 }],
+            derivatives: [],
+            cash: [{ name: "Hidden cash", currency: "USD", quantity: 1, market_value: 1 }],
+            assets: [{ name: "Hidden sleeve", instrument_code: "EIB 2", asset_class: "Equity", currency: "USD", quantity: 9, market_value: 9 }],
+          },
+        ],
+      },
+      null,
+      profiles,
+    );
+    const underlying = mapped.series.find((item) => item.key === "investment:3")?.underlying;
+    assert.equal(underlying?.depth, "weib");
+    assert.equal(underlying?.layer, "weib");
+    assert.equal(underlying?.linesAvailable, false);
+    assert.deepEqual(underlying?.lines, []);
+    assert.equal(JSON.stringify(underlying).includes("Hidden cash"), false);
+    assert.equal(JSON.stringify(underlying).includes("Hidden sleeve"), false);
+    const personal = mapped.positions.find((position) => position.linkId === "investment:3");
+    const layers = investmentLayers(mapped.series, personal?.asset ?? "");
+    assert.equal(layers?.kind, "weib");
+    assert.equal(layers?.inside, null);
+    assert.equal(layers?.linesAvailable, false);
+    assert.deepEqual(layers?.lines, []);
+    assert.equal(mapped.series.some((item) => item.kind === "eib"), false);
+  });
+
+  it("mapPickleRickHoldings_portalTables_skipDuplicateAssetsAndKeepParentBalance", () => {
+    const mapped = mapPickleRickHoldings(
+      {
+        holdings: [
+          row({
+            key: "investment:1",
+            account_number: "0433383",
+            kind: "investment",
+            name: "Trust Peresec",
+            institution: "Peresec",
+            currency: "USD",
+            balance: 11,
+            as_of: "2026-11-16",
+          }),
+        ],
+        history: [
+          {
+            key: "0433383|perec-weib",
+            account_number: "0433383",
+            product: "perec-weib",
+            currency: "USD",
+            history: [{ date: "2026-11-16", value: 6, currency: "USD", change: 1, product: "perec-weib" }],
+          },
+          {
+            key: "0433383|perec-eib",
+            account_number: "0433383",
+            product: "perec-eib",
+            currency: "USD",
+            history: [{ date: "2026-11-16", value: 3, currency: "USD", change: null, product: "perec-eib" }],
+          },
+        ],
+        peresec_underlying: [
+          {
+            as_of: "2026-11-16",
+            layer: "eib",
+            fund_code: "EIB 1",
+            deeper_eib: "EIB 1",
+            lines_available: true,
+            currency: "USD",
+            net_asset_value: 5,
+            cash_total: 1,
+            rolls_up_into: "investment:1",
+            sleeve: null,
+            holder: "Example Holder",
+            account_number: "9999001",
+            equities: [
+              {
+                name: "Hedge line",
+                instrument_code: "HF",
+                asset_class: "Hedge Fund",
+                currency: "USD",
+                quantity: 2,
+                cost_price: 1,
+                market_price: 2,
+                market_value: 4,
+                pnl: 1,
+                zar_value: 4,
+                zar_exposure: 4,
+                exp_nav: 10,
+              },
+              {
+                name: "Etp line",
+                instrument_code: "ETP1",
+                asset_class: "ETP",
+                currency: "USD",
+                quantity: 1,
+                market_price: 1,
+                market_value: 1,
+                pnl: null,
+                zar_value: 1,
+                zar_exposure: 1,
+                exp_nav: 0,
+              },
+            ],
+            derivatives: [
+              {
+                name: "Short option",
+                instrument_code: "OPT",
+                asset_class: "Equity Option",
+                currency: "USD",
+                quantity: -2,
+                cost_price: 1,
+                market_price: 1,
+                market_value: -1,
+                pnl: -1,
+                zar_value: -1,
+                zar_exposure: 1,
+                exp_nav: 1,
+              },
+            ],
+            cash: [{ name: "Cash (acc 123456)", currency: "USD", quantity: 1, settled_balance: 1, accruals: null, market_value: 1, zar_value: 1, zar_exposure: 1, exp_nav: 2 }],
+            assets: [
+              { name: "Hedge line", instrument_code: "HF", asset_class: "Hedge Fund", currency: "USD", quantity: 2, market_value: 4 },
+              { name: "Extra asset", instrument_code: "X", asset_class: "Equity", currency: "USD", quantity: 9, market_value: 9 },
+            ],
+          },
+        ],
+      },
+      null,
+      profiles,
+    );
+    const trust = mapped.positions.find((position) => position.linkId === "investment:1");
+    assert.equal(trust?.qty, 11);
+    assert.equal(mapped.positions.length, 1);
+    const lines = mapped.series.find((item) => item.key === "investment:1")?.underlying?.lines ?? [];
+    assert.deepEqual(
+      lines.map((line) => line.name),
+      ["Hedge line", "Etp line", "Short option", "Cash"],
+    );
+    assert.equal(lines.find((line) => line.name === "Etp line")?.costPrice, null);
+    assert.equal(lines.find((line) => line.name === "Etp line")?.expNav, 0);
+    assert.equal(lines.find((line) => line.name === "Short option")?.kind, "derivative");
+    assert.equal(lines.find((line) => line.name === "Short option")?.quantity, -2);
+    assert.equal(lines.find((line) => line.name === "Short option")?.value, -1);
+    assert.equal(lines.some((line) => line.kind === "asset" || line.name === "Extra asset"), false);
+    assert.equal(JSON.stringify(lines).includes("123456"), false);
+    assert.equal(JSON.stringify(lines).includes("Example Holder"), false);
+    assert.equal(JSON.stringify(lines).includes("9999001"), false);
+    const layers = investmentLayers(mapped.series, trust?.asset ?? "");
+    assert.equal(layers?.value, 6);
+    assert.equal(layers?.lines, undefined);
+    assert.equal(layers?.inside?.value, 3);
+    assert.equal(layers?.inside?.lines?.find((line) => line.name === "Short option")?.quantity, -2);
+    assert.equal(layers?.inside?.lines?.find((line) => line.name === "Etp line")?.costPrice, null);
+    const counted = mapped.positions
+      .filter((position) => position.includeInTotal !== false && position.balanceKnown !== false)
+      .reduce((sum, position) => sum + position.qty * (mapped.prices[position.asset] ?? 0), 0);
+    assert.equal(counted, 11);
   });
 });

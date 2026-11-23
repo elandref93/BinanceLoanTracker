@@ -116,14 +116,14 @@
   },
   "private": true,
   "devDependencies": {
-    "prettier": "^3.9.10",
+    "prettier": "^3.10.1",
     "typescript": "~7.0.2"
   },
   "optionalDependencies": {
     "@esbuild/linux-x64": "0.28.2",
     "@esbuild/win32-x64": "0.28.2",
-    "@rollup/rollup-linux-x64-gnu": "4.68.2",
-    "@rollup/rollup-win32-x64-msvc": "4.68.2",
+    "@rollup/rollup-linux-x64-gnu": "4.68.8",
+    "@rollup/rollup-win32-x64-msvc": "4.68.8",
     "@tailwindcss/oxide-linux-x64-gnu": "4.3.5",
     "@tailwindcss/oxide-win32-x64-msvc": "4.3.5",
     "lightningcss-linux-x64-gnu": "1.33.0",

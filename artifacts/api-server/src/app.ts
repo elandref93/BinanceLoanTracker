@@ -11,6 +11,7 @@ import type { Logger } from "pino";
 import cookieParser from "cookie-parser";
 import { isBrowserOriginAllowed } from "./lib/browserOrigin";
 import { edgeGateEnabled, requestMayPassEdge } from "./lib/edgeAccess";
+import { mountLedgerWeb, resolveLedgerWebRoot } from "./lib/ledgerWeb";
 import { httpLogSerializers, logger } from "./lib/logger";
 import { clerkMiddleware } from "@clerk/express";
 import { attachBrowserAuth } from "./lib/requestAuth";
@@ -180,6 +181,15 @@ if (process.env.CLERK_SECRET_KEY) {
 
 app.use("/api", attachBrowserAuth());
 app.use("/api", router);
+
+// The edge gate above already ran. Static files and index.html are mounted
+// after it, so a denied client gets 403 and never the sign-in page. Client
+// routes fall back to index.html. /api is not part of that fallback.
+const ledgerWebRoot = resolveLedgerWebRoot();
+if (ledgerWebRoot) {
+  mountLedgerWeb(app, ledgerWebRoot);
+  logger.info({ op: "web" }, "ledger dashboard mounted");
+}
 
 // Last-resort error handler: sanitize so we never leak stack traces or
 // internal error messages to the client. Per-route handlers (e.g. binance)

@@ -32,6 +32,8 @@ on:
     branches: [main]
     paths:
       - 'artifacts/api-server/**'
+      - 'artifacts/ledger-web/**'
+      - 'lib/api-client-react/**'
       - 'lib/api-zod/**'
       - 'lib/db/**'
       - 'lib/api-spec/**'

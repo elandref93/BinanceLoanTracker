@@ -7,7 +7,7 @@ import { ApiConfigProvider } from "@/apiConfig";
 import { ClerkGate } from "@/auth/ClerkGate";
 import { ClerkSessionBridge } from "@/auth/ClerkSessionBridge";
 import { ClerkSignOutRegistrar } from "@/auth/signOut";
-import { readWebEnv, type WebEnv } from "@/env";
+import { resolveClerkPublishableKey, resolveWebEnv, type WebEnv } from "@/env";
 import {
   AccountDetailPage,
   AccountsPage,
@@ -108,9 +108,10 @@ export function App({ env, clerkPublishableKey }: { env: WebEnv; clerkPublishabl
 }
 
 export function AppRoot(): ReactNode {
+  const runtime = typeof window === "undefined" ? undefined : window.__LEDGER_PUBLIC__;
   let env: WebEnv;
   try {
-    env = readWebEnv(import.meta.env);
+    env = resolveWebEnv(import.meta.env, runtime);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Invalid environment";
     return (
@@ -119,7 +120,9 @@ export function AppRoot(): ReactNode {
       </p>
     );
   }
-  const rawClerkKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
-  const clerkPublishableKey = typeof rawClerkKey === "string" ? rawClerkKey.trim() : "";
+  const clerkPublishableKey = resolveClerkPublishableKey(
+    import.meta.env.VITE_CLERK_PUBLISHABLE_KEY,
+    runtime,
+  );
   return <App env={env} clerkPublishableKey={clerkPublishableKey} />;
 }

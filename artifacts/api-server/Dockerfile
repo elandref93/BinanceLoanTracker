@@ -40,6 +40,37 @@ COPY lib/db/               ./lib/db/
 
 RUN pnpm --filter @workspace/api-server run build
 
+# ---------- Dashboard stage ----------
+# Tailwind, lightningcss, and Rollup publish glibc binaries. Workspace
+# overrides drop the musl builds, so Vite is built on bookworm. The runtime
+# image stays alpine. Do not copy artifacts/ledger-mobile (it is not in the repo).
+# VITE_API_BASE_URL is empty: the built SPA calls /api on this same host.
+FROM node:26.12.1-bookworm-slim AS web
+RUN npm install -g pnpm@10.26.1
+
+WORKDIR /repo
+
+COPY pnpm-workspace.yaml pnpm-lock.yaml package.json tsconfig.json tsconfig.base.json ./
+COPY artifacts/api-server/package.json      ./artifacts/api-server/
+COPY artifacts/ledger-web/package.json      ./artifacts/ledger-web/
+COPY artifacts/mockup-sandbox/package.json  ./artifacts/mockup-sandbox/
+COPY lib/api-client-react/package.json      ./lib/api-client-react/
+COPY lib/api-spec/package.json              ./lib/api-spec/
+COPY lib/api-zod/package.json               ./lib/api-zod/
+COPY lib/db/package.json                    ./lib/db/
+COPY scripts/package.json                   ./scripts/
+COPY scripts/ensure-pnpm.mjs                ./scripts/
+
+# Root optionalDependencies pin the glibc Rollup, Tailwind, and lightningcss
+# binaries. The ledger-web filter alone does not install that package.
+RUN pnpm install --no-frozen-lockfile --filter @workspace/ledger-web... --filter .
+
+COPY artifacts/ledger-web/     ./artifacts/ledger-web/
+COPY lib/api-client-react/     ./lib/api-client-react/
+
+ENV VITE_API_BASE_URL=
+RUN pnpm --filter @workspace/ledger-web run build
+
 # ---------- Runtime stage ----------
 FROM node:26.12.1-alpine AS runtime
 ENV NODE_ENV=production
@@ -47,6 +78,9 @@ WORKDIR /app
 
 # esbuild bundle is fully self-contained — copy only dist/.
 COPY --from=build /repo/artifacts/api-server/dist ./dist
+# Built dashboard. Served by the API process on this same host.
+COPY --from=web /repo/artifacts/ledger-web/dist ./web
+ENV LEDGER_WEB_ROOT=/app/web
 
 # Azure App Service injects PORT; default to 8080 for local docker run.
 ENV PORT=8080

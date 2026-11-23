@@ -33,3 +33,33 @@ export function readWebEnv(source: { VITE_API_BASE_URL?: string }): WebEnv {
   });
   return { apiBaseUrl: parsed.VITE_API_BASE_URL.replace(/\/+$/, "") };
 }
+
+export type LedgerRuntimePublic = {
+  /** Present on the Azure host. Empty string means same-origin `/api`. */
+  apiBaseUrl?: string;
+  clerkPublishableKey?: string;
+};
+
+/**
+ * The page served by the API includes runtime config and that config wins.
+ * Production always sends an empty apiBaseUrl so the dashboard calls this host.
+ */
+export function resolveWebEnv(
+  build: { VITE_API_BASE_URL?: string },
+  runtime?: LedgerRuntimePublic,
+): WebEnv {
+  if (runtime && "apiBaseUrl" in runtime) {
+    return readWebEnv({ VITE_API_BASE_URL: runtime.apiBaseUrl ?? "" });
+  }
+  return readWebEnv(build);
+}
+
+export function resolveClerkPublishableKey(
+  buildValue: string | undefined,
+  runtime?: LedgerRuntimePublic,
+): string {
+  if (runtime && typeof runtime.clerkPublishableKey === "string") {
+    return runtime.clerkPublishableKey.trim();
+  }
+  return typeof buildValue === "string" ? buildValue.trim() : "";
+}

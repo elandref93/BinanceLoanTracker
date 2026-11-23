@@ -8,3 +8,12 @@ interface ImportMetaEnv {
 interface ImportMeta {
   readonly env: ImportMetaEnv;
 }
+
+interface LedgerRuntimePublicConfig {
+  apiBaseUrl?: string;
+  clerkPublishableKey?: string;
+}
+
+interface Window {
+  __LEDGER_PUBLIC__?: LedgerRuntimePublicConfig;
+}

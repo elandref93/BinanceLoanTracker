@@ -19,7 +19,6 @@ WORKDIR /repo
 # costs nothing and keeps `pnpm install` happy.
 COPY pnpm-workspace.yaml pnpm-lock.yaml package.json tsconfig.json tsconfig.base.json ./
 COPY artifacts/api-server/package.json      ./artifacts/api-server/
-COPY artifacts/ledger-mobile/package.json   ./artifacts/ledger-mobile/
 COPY artifacts/mockup-sandbox/package.json  ./artifacts/mockup-sandbox/
 COPY lib/api-client-react/package.json      ./lib/api-client-react/
 COPY lib/api-spec/package.json              ./lib/api-spec/

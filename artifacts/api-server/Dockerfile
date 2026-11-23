@@ -6,9 +6,8 @@
 
 # ---------- Build stage ----------
 FROM node:26.12.1-alpine AS build
-# corepack reads the pnpm version from the workspace's root package.json
-# (the "packageManager" field) so we don't have to hard-code it here.
-RUN corepack enable
+# Node 26 no longer ships Corepack. Install the pnpm version declared in package.json.
+RUN npm install -g pnpm@10.26.1
 
 WORKDIR /repo
 

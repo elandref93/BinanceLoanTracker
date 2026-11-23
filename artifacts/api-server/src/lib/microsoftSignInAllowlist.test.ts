@@ -1,13 +1,16 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { isAllowedMicrosoftSignIn, MICROSOFT_SIGN_IN_EMAIL } from "./microsoftSignInAllowlist";
+import { isAllowedMicrosoftSignIn } from "./microsoftSignInAllowlist";
+
+const MICROSOFT_SIGN_IN_EMAIL = "owner@example.com";
+process.env.LEDGER_SIGN_IN_EMAIL = MICROSOFT_SIGN_IN_EMAIL;
 
 describe("isAllowedMicrosoftSignIn", () => {
   it("isAllowedMicrosoftSignIn_trimmedMixedCase_allowsOnlyThatAddress", () => {
     assert.equal(
       isAllowedMicrosoftSignIn({
-        email: "  ElandReFourie18@Gmail.com ",
+        email: "  Owner@Example.com ",
         emailVerified: true,
       }),
       true,

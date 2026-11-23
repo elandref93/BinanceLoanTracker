@@ -51,6 +51,8 @@ async function prepareServer(): Promise<void> {
     appServiceStorageEnabled: isAppServiceStorageEnabled(),
     encryptionKeyConfigured: isCryptoConfigured(),
     allowedOrigins: process.env.ALLOWED_ORIGINS,
+    allowedClientIps: process.env.ALLOWED_CLIENT_IPS,
+    signInEmail: process.env.LEDGER_SIGN_IN_EMAIL,
     dataDirIsEphemeralFallback: isUsingEphemeralDataDir(),
   });
   if (startup.missing.length > 0) {

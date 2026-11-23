@@ -82,12 +82,16 @@ jobs:
       - name: Container smoke test
         run: |
           set -euo pipefail
+          smoke_session="$(openssl rand -base64 48)"
+          smoke_key="$(openssl rand -base64 32)"
           docker run -d --name smoke -p 18080:8080 \
             -e PORT=8080 \
             -e APPLE_BUNDLE_ID=com.ubuntu.life.ledger \
-            -e SESSION_JWT_SECRET=smoke_test_secret_at_least_32_bytes_xxxxxxx \
-            -e CREDENTIAL_ENCRYPTION_KEY=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA= \
+            -e SESSION_JWT_SECRET="$smoke_session" \
+            -e CREDENTIAL_ENCRYPTION_KEY="$smoke_key" \
             -e ALLOWED_ORIGINS=http://127.0.0.1:18080 \
+            -e ALLOWED_CLIENT_IPS=127.0.0.1 \
+            -e LEDGER_SIGN_IN_EMAIL=owner@example.com \
             -e ACCOUNT_SYNC_DIR=/tmp/ledger-account-sync \
             ${{ env.IMAGE_NAME }}:ci
           for i in $(seq 1 15); do

@@ -1,7 +1,7 @@
 import type { NextFunction, Request, Response } from "express";
 
 import { logger } from "./logger";
-import { verifyWebSession, signWebSession, type SessionClaims } from "./sessionJwt";
+import { verifyWebSession, signWebSession, WebSessionClosedError, type SessionClaims } from "./sessionJwt";
 import {
   WEB_CSRF_COOKIE,
   WEB_SESSION_COOKIE,
@@ -90,12 +90,27 @@ export function attachBrowserAuth() {
       }
 
       if (resolved.kind === "cookie" && !isLogout(req)) {
-        const fresh = await signWebSession({
-          sub: resolved.claims.sub,
-          email: resolved.claims.email,
-          name: resolved.claims.name,
-        });
-        setWebSessionCookie(res, fresh);
+        if (typeof resolved.claims.sid === "string" && typeof resolved.claims.abs === "number") {
+          try {
+            const fresh = await signWebSession(
+              {
+                sub: resolved.claims.sub,
+                email: resolved.claims.email,
+                name: resolved.claims.name,
+              },
+              Date.now(),
+              { sid: resolved.claims.sid, abs: resolved.claims.abs },
+            );
+            setWebSessionCookie(res, fresh);
+          } catch (err) {
+            if (!(err instanceof WebSessionClosedError)) throw err;
+            req.userId = undefined;
+            req.authVia = undefined;
+            req.sessionClaims = undefined;
+            next();
+            return;
+          }
+        }
         // Slide the CSRF cookie with the session. Reuse the current token so
         // other tabs keep a match; mint one only when it is missing.
         const csrf = cookieValue(req, WEB_CSRF_COOKIE);

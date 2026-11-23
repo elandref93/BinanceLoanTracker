@@ -11,6 +11,10 @@ import { newCsrfToken, setCsrfCookie, setWebSessionCookie } from "../lib/webSess
 const router: IRouter = Router();
 const BEARER = /^Bearer\s+(\S+)$/i;
 
+function clearStoredSession(req: { authVia?: string }, res: Parameters<typeof clearBrowserSession>[0]): void {
+  if (req.authVia === "cookie") clearBrowserSession(res);
+}
+
 function displayName(firstName: string | null, lastName: string | null): string | undefined {
   const name = [firstName, lastName]
     .filter((part): part is string => typeof part === "string" && part.trim().length > 0)
@@ -33,7 +37,7 @@ router.post("/", async (req, res) => {
 
   const token = req.header("authorization")?.match(BEARER)?.[1];
   if (!token) {
-    clearBrowserSession(res);
+    clearStoredSession(req, res);
     res.status(401).json({ error: "Unauthorized" });
     return;
   }
@@ -46,7 +50,7 @@ router.post("/", async (req, res) => {
     const clerkUserId = typeof payload.sub === "string" ? payload.sub : "";
     if (clerkUserId.length === 0 || sessionId.length === 0) {
       await revokeClerkSession(clerk, sessionId);
-      clearBrowserSession(res);
+      clearStoredSession(req, res);
       res.status(401).json({ error: "Unauthorized" });
       return;
     }
@@ -54,7 +58,7 @@ router.post("/", async (req, res) => {
     const session = await clerk.sessions.getSession(sessionId);
     if (session.userId !== clerkUserId) {
       await revokeClerkSession(clerk, sessionId);
-      clearBrowserSession(res);
+      clearStoredSession(req, res);
       res.status(401).json({ error: "Unauthorized" });
       return;
     }
@@ -76,7 +80,7 @@ router.post("/", async (req, res) => {
     });
     if (decision.outcome !== "session") {
       await revokeClerkSession(clerk, sessionId);
-      clearBrowserSession(res);
+      clearStoredSession(req, res);
       logger.info(
         { op: "auth.clerk", reason: decision.reason, strategy: client.lastAuthenticationStrategy },
         "clerk sign-in rejected — no session issued",
@@ -99,7 +103,7 @@ router.post("/", async (req, res) => {
     res.status(204).end();
   } catch (err) {
     await revokeClerkSession(clerk, sessionId);
-    clearBrowserSession(res);
+    clearStoredSession(req, res);
     if (err instanceof SigningKeyMissingError) {
       logger.warn(
         { op: "auth.clerk", reason: "signing_unavailable" },

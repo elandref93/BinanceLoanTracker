@@ -30,20 +30,11 @@ router.get("/healthz", (_req, res) => {
       { op: "health", status: 503, missing },
       "healthz degraded — required env vars missing",
     );
-    res.status(503).json({
-      status: "degraded",
-      missing,
-    });
+    res.status(503).json(HealthCheckResponse.parse({ status: "degraded" }));
     return;
   }
 
-  const data = HealthCheckResponse.parse({ status: "ok" });
-  // `version` is a deploy marker so we can confirm which build is actually
-  // live on Azure (the health schema only validates `status`; the extra field
-  // rides along in the JSON). Prefer the CI-injected commit, fall back to a
-  // hand-bumped tag that changes whenever the backend is meaningfully updated.
-  const version = process.env.GIT_COMMIT ?? "2026-09-10-apple-identity-link";
-  res.json({ ...data, version });
+  res.json(HealthCheckResponse.parse({ status: "ok" }));
 });
 
 // Readiness is separate from liveness on purpose. Azure App Service probes
@@ -64,7 +55,7 @@ router.get("/readyz", async (_req, res) => {
       "readyz not ready",
     );
   }
-  res.status(status === "ready" ? 200 : 503).json(body);
+  res.status(status === "ready" ? 200 : 503).json({ status: body.status });
 });
 
 async function dataDirCheck(): Promise<"ok" | "unavailable"> {

@@ -28,8 +28,11 @@ describe("web session idle", () => {
     const mobileClaims = decodeJwt(mobile);
     assert.equal(webClaims.exp! - webClaims.iat!, WEB_SESSION_IDLE_SECONDS);
     assert.equal(webClaims.chn, "web");
+    assert.equal(typeof webClaims.sid, "string");
+    assert.equal(typeof webClaims.abs, "number");
     assert.equal(mobileClaims.exp! - mobileClaims.iat!, MOBILE_SESSION_LIFETIME_SECONDS);
     assert.equal(mobileClaims.chn, undefined);
+    assert.equal(mobileClaims.sid, undefined);
     assert.equal(MOBILE_SESSION_LIFETIME_SECONDS, 60 * 60 * 24 * 30);
     const asCookie = await verifyWebSession(mobile);
     assert.equal(asCookie.ok, false);

@@ -28,8 +28,8 @@ import { isCryptoConfigured } from "../lib/secretCrypto";
 import { userStorageKey } from "../lib/userWriteLock";
 import { loadDerived, type Derived } from "../lib/portfolio/derived";
 import { readLedger } from "../lib/portfolio/ledgerStore";
-import { ensureImportRunning, isImportRunning } from "../lib/portfolio/importer";
-import { isSnapshotRunning, nextRefreshAllowedAt, refreshUser, snapshotNow } from "../lib/portfolio/service";
+import { isImportRunning } from "../lib/portfolio/importer";
+import { isSnapshotRunning, nextRefreshAllowedAt, refreshUser } from "../lib/portfolio/service";
 import { normaliseAsset, portfolioAssetParam } from "../lib/portfolio/types";
 import {
   buildAnalytics,
@@ -51,18 +51,12 @@ function hashFor(req: Request): string {
   return userStorageKey(req.userId!);
 }
 
-/** Loads the derived views, taking a first snapshot if the user has none yet. */
+/** Loads a saved snapshot. Reads never call an exchange; refresh does that. */
 async function derivedFor(req: Request): Promise<Derived | Unavailable> {
   if (!isCryptoConfigured()) return { reason: "encryption_not_configured" };
-  const hash = hashFor(req);
-  const existing = await loadDerived(hash);
+  const existing = await loadDerived(hashFor(req));
   if (existing) return existing;
-  const creds = await loadDecryptedByHash(hash);
-  if (!creds || (creds.binance.length === 0 && creds.luno.length === 0)) return { reason: "no_accounts" };
-  if (!isSnapshotRunning(hash) && nextRefreshAllowedAt(hash) > Date.now()) return { reason: "snapshot_failed" };
-  await snapshotNow(hash, creds);
-  void ensureImportRunning(hash, creds);
-  return (await loadDerived(hash)) ?? { reason: "snapshot_failed" };
+  return { reason: "snapshot_failed" };
 }
 
 function isUnavailable(value: Derived | Unavailable): value is Unavailable {
@@ -670,11 +664,6 @@ router.get("/import-status", async (req, res, next) => {
     const hash = hashFor(req);
     const derived = await loadDerived(hash);
     const ledger = derived?.ledger ?? (await readLedger(hash));
-    const unfinished = Object.values(ledger?.cursors ?? {}).some((cursor) => cursor.state !== "unavailable" && !cursor.backfillDone);
-    if (unfinished) {
-      const creds = await loadDecryptedByHash(hash);
-      if (creds && (creds.binance.length > 0 || creds.luno.length > 0)) void ensureImportRunning(hash, creds);
-    }
     const body = buildImportStatus(derived, ledger);
     if (isImportRunning(hash) && body.state !== "error") body.state = "running";
     res.json(body);

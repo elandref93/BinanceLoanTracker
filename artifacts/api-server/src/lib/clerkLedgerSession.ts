@@ -6,9 +6,8 @@
  * Every other strategy or account is rejected with no session.
  */
 
+import { allowedSignInEmail } from "./allowedSignInEmail";
 import { CLERK_PROFILE_STORAGE_KEY } from "./profileStorageKey";
-
-export const CLERK_SIGN_IN_EMAIL = "elandrefourie18@gmail.com";
 
 export { CLERK_PROFILE_STORAGE_KEY };
 
@@ -80,7 +79,8 @@ export function decideClerkLedgerSession(input: {
     return { outcome: "rejected", reason: "not_allowed" };
   }
   const email = input.email.trim().toLowerCase();
-  if (email.length === 0 || email !== CLERK_SIGN_IN_EMAIL) {
+  const allowed = allowedSignInEmail();
+  if (email.length === 0 || allowed.length === 0 || email !== allowed) {
     return { outcome: "rejected", reason: "not_allowed" };
   }
 

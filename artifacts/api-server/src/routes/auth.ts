@@ -1,5 +1,7 @@
 import { Router, type IRouter } from "express";
 
+import { revokeWebSession } from "../lib/sessionRevocation";
+import { WEB_SESSION_ABSOLUTE_SECONDS } from "../lib/sessionJwt";
 import { clearBrowserSession } from "../lib/requestAuth";
 
 const router: IRouter = Router();
@@ -22,9 +24,23 @@ router.get("/session", (req, res) => {
   });
 });
 
-router.post("/logout", (_req, res) => {
-  clearBrowserSession(res);
-  res.status(204).end();
+router.post("/logout", async (req, res, next) => {
+  try {
+    // A cross-site form does not send the SameSite=Lax session cookie, so it
+    // must not receive a clearing Set-Cookie either. CSRF already ran when
+    // the cookie was present.
+    if (req.authVia !== "cookie" || !req.sessionClaims) {
+      res.status(204).end();
+      return;
+    }
+    if (typeof req.sessionClaims.sid === "string" && typeof req.sessionClaims.abs === "number") {
+      await revokeWebSession(req.sessionClaims.sid, (req.sessionClaims.abs + WEB_SESSION_ABSOLUTE_SECONDS) * 1000);
+    }
+    clearBrowserSession(res);
+    res.status(204).end();
+  } catch (err) {
+    next(err);
+  }
 });
 
 export default router;

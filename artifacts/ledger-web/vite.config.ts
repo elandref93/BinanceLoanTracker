@@ -23,6 +23,19 @@ function readDevHttps(): { key: Buffer; cert: Buffer } | undefined {
 
 const devHttps = readDevHttps();
 
+const contentSecurityPolicy = [
+  "default-src 'self'",
+  "base-uri 'self'",
+  "form-action 'self'",
+  "frame-ancestors 'none'",
+  "script-src 'self' https://*.clerk.accounts.dev https://*.clerk.com",
+  "connect-src 'self' https://*.clerk.accounts.dev https://*.clerk.com https://clerk.shared.lcl.dev",
+  "frame-src 'self' https://*.clerk.accounts.dev https://*.clerk.com",
+  "img-src 'self' data: https://img.clerk.com",
+  "style-src 'self' 'unsafe-inline'",
+  "worker-src 'self'",
+].join("; ");
+
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   resolve: {
@@ -55,5 +68,11 @@ export default defineConfig({
     port,
     host: "0.0.0.0",
     strictPort: true,
+    headers: {
+      "Content-Security-Policy": contentSecurityPolicy,
+      "X-Content-Type-Options": "nosniff",
+      "Referrer-Policy": "no-referrer",
+      "X-Frame-Options": "DENY",
+    },
   },
 });

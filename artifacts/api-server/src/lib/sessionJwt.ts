@@ -9,6 +9,9 @@ import {
 } from "jose";
 import { createPrivateKey, createPublicKey, type KeyObject } from "node:crypto";
 
+import { randomBytes } from "node:crypto";
+
+import { isWebSessionRevoked } from "./sessionRevocation";
 import { WEB_SESSION_IDLE_SECONDS } from "./webSession";
 
 const AUDIENCE = "binance-loan-tracker-mobile";
@@ -29,6 +32,8 @@ const RS_ALG = "RS256";
 const HS_ALG = "HS256";
 const TOKEN_LIFETIME_SECONDS = 60 * 60 * 24 * 30; // 30 days — mobile bearer only
 const WEB_CHANNEL = "web";
+/** Sliding idle cannot extend a browser session past this, measured from first issue. */
+export const WEB_SESSION_ABSOLUTE_SECONDS = 60 * 60 * 24 * 7;
 
 /**
  * Thrown when neither RS256 nor the legacy HMAC secret is configured.
@@ -55,6 +60,10 @@ export interface SessionClaims {
   name?: string;
   /** Set only on browser cookie sessions. Mobile bearers omit it. */
   chn?: typeof WEB_CHANNEL;
+  /** Browser session id. Stable across idle refreshes. Absent on mobile bearers. */
+  sid?: string;
+  /** Unix seconds when the browser session was first issued. Does not slide. */
+  abs?: number;
 }
 
 export function getOidcIssuer(): string {
@@ -202,6 +211,8 @@ async function signToken(
     ...(claims.email !== undefined ? { email: claims.email } : {}),
     ...(claims.name !== undefined ? { name: claims.name } : {}),
     ...(claims.chn !== undefined ? { chn: claims.chn } : {}),
+    ...(claims.sid !== undefined ? { sid: claims.sid } : {}),
+    ...(claims.abs !== undefined ? { abs: claims.abs } : {}),
   })
     .setAudience(AUDIENCE)
     .setSubject(claims.sub)
@@ -239,17 +250,42 @@ export async function signSession(claims: SessionClaims): Promise<string> {
   );
 }
 
+export class WebSessionClosedError extends Error {
+  readonly code = "session_closed" as const;
+
+  constructor() {
+    super("Browser session can no longer be renewed.");
+    this.name = "WebSessionClosedError";
+  }
+}
+
 /**
- * Browser cookie JWT. `exp` is one idle window after this call. Re-issuing on
- * a later request slides the window; the mobile bearer is a different token.
+ * Browser cookie JWT. `exp` is one idle window after this call, and never
+ * later than seven days after the session was first issued. Re-issuing keeps
+ * the same `sid` and `abs`. Production web sessions are RS256 only.
  */
 export async function signWebSession(
-  claims: Omit<SessionClaims, "chn">,
+  claims: Omit<SessionClaims, "chn" | "sid" | "abs">,
   nowMs: number = Date.now(),
+  continuity?: { sid: string; abs: number },
 ): Promise<string> {
+  if (process.env.NODE_ENV === "production") {
+    const rsa = await getRsaCurrent();
+    if (!rsa) throw new SigningKeyMissingError();
+  }
+  const nowSec = Math.floor(nowMs / 1000);
+  const abs = continuity?.abs ?? nowSec;
+  const deadline = abs + WEB_SESSION_ABSOLUTE_SECONDS;
+  if (nowSec >= deadline) throw new WebSessionClosedError();
+  const lifetime = Math.min(WEB_SESSION_IDLE_SECONDS, deadline - nowSec);
   return signToken(
-    { ...claims, chn: WEB_CHANNEL },
-    WEB_SESSION_IDLE_SECONDS,
+    {
+      ...claims,
+      chn: WEB_CHANNEL,
+      sid: continuity?.sid ?? randomBytes(16).toString("hex"),
+      abs,
+    },
+    lifetime,
     nowMs,
   );
 }
@@ -285,6 +321,8 @@ async function verifyWith(
         email: typeof payload.email === "string" ? payload.email : undefined,
         name: typeof payload.name === "string" ? payload.name : undefined,
         chn: payload.chn === WEB_CHANNEL ? WEB_CHANNEL : undefined,
+        sid: typeof payload.sid === "string" ? payload.sid : undefined,
+        abs: typeof payload.abs === "number" ? payload.abs : undefined,
       },
     };
   } catch (err) {
@@ -361,10 +399,30 @@ export async function verifySession(
 
 /** Browser cookie only. A mobile bearer is rejected even if its signature is valid. */
 export async function verifyWebSession(token: string): Promise<SessionVerifyResult> {
+  let alg: string | undefined;
+  try {
+    alg = decodeProtectedHeader(token).alg;
+  } catch {
+    return { ok: false, reason: "malformed" };
+  }
+  // The HMAC secret must not mint a web session once this process is production.
+  if (process.env.NODE_ENV === "production" && alg !== RS_ALG) {
+    return { ok: false, reason: "invalid_signature" };
+  }
   const result = await verifySession(token);
   if (!result.ok) return result;
   if (result.claims.chn !== WEB_CHANNEL) {
     return { ok: false, reason: "wrong_audience_or_issuer" };
+  }
+  if (typeof result.claims.sid !== "string" || typeof result.claims.abs !== "number") {
+    return { ok: false, reason: "malformed" };
+  }
+  const deadline = result.claims.abs + WEB_SESSION_ABSOLUTE_SECONDS;
+  if (Math.floor(Date.now() / 1000) >= deadline) {
+    return { ok: false, reason: "expired" };
+  }
+  if (await isWebSessionRevoked(result.claims.sid)) {
+    return { ok: false, reason: "invalid_signature" };
   }
   return result;
 }

@@ -5,13 +5,15 @@ import { describe, it } from "node:test";
 import {
   CLERK_APPLE_STRATEGY,
   CLERK_PROFILE_STORAGE_KEY,
-  CLERK_SIGN_IN_EMAIL,
   clerkProfileForAppleSignIn,
   clerkVerifiedEmail,
   decideClerkLedgerSession,
 } from "./clerkLedgerSession";
 import { SigningKeyMissingError } from "./sessionJwt";
 import { userStorageKey } from "./userWriteLock";
+
+const CLERK_SIGN_IN_EMAIL = "owner@example.com";
+process.env.LEDGER_SIGN_IN_EMAIL = CLERK_SIGN_IN_EMAIL;
 
 describe("SigningKeyMissingError", () => {
   it("SigningKeyMissingError_missingKey_isNotAnAllowlistRejection", () => {
@@ -25,7 +27,7 @@ describe("SigningKeyMissingError", () => {
 describe("decideClerkLedgerSession", () => {
   it("decideClerkLedgerSession_trimmedMixedCase_allowsOnlyThatVerifiedAddress", () => {
     const decision = decideClerkLedgerSession({
-      email: "  ElandReFourie18@Gmail.com ",
+      email: "  Owner@Example.com ",
       emailVerified: true,
       strategy: CLERK_APPLE_STRATEGY,
       candidates: [{ canonicalSub: "apple-user", normalizedEmail: CLERK_SIGN_IN_EMAIL }],
@@ -146,7 +148,7 @@ describe("clerkVerifiedEmail", () => {
         emailAddresses: [
           {
             id: "em_1",
-            emailAddress: "ElandReFourie18@Gmail.com",
+            emailAddress: "Owner@Example.com",
             verification: { status: "verified" },
           },
           {
@@ -156,7 +158,7 @@ describe("clerkVerifiedEmail", () => {
           },
         ],
       }),
-      { email: "ElandReFourie18@Gmail.com", emailVerified: true },
+      { email: "Owner@Example.com", emailVerified: true },
     );
   });
 

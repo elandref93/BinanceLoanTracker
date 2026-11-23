@@ -18,6 +18,8 @@ function decision(overrides: Partial<Parameters<typeof evaluateProductionStartup
     appServiceStorageEnabled: false,
     encryptionKeyConfigured: true,
     allowedOrigins: "https://ledger.example",
+    allowedClientIps: "102.65.11.235,102.36.24.176",
+    signInEmail: "owner@example.com",
     dataDirIsEphemeralFallback: false,
     ...overrides,
   });
@@ -30,6 +32,8 @@ describe("evaluateProductionStartup", () => {
       appServiceStorageEnabled: false,
       encryptionKeyConfigured: false,
       allowedOrigins: "  , ",
+      allowedClientIps: " ",
+      signInEmail: "",
       dataDirIsEphemeralFallback: true,
     });
     assert.equal(result.enforce, true);
@@ -37,6 +41,8 @@ describe("evaluateProductionStartup", () => {
       "CREDENTIAL_ENCRYPTION_KEY",
       "persistent data directory",
       "ALLOWED_ORIGINS",
+      "ALLOWED_CLIENT_IPS",
+      "LEDGER_SIGN_IN_EMAIL",
     ]);
   });
 

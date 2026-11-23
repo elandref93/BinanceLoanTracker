@@ -11,6 +11,8 @@ export interface ProductionStartupInput {
   appServiceStorageEnabled: boolean;
   encryptionKeyConfigured: boolean;
   allowedOrigins: string | undefined;
+  allowedClientIps: string | undefined;
+  signInEmail: string | undefined;
   dataDirIsEphemeralFallback: boolean;
 }
 
@@ -43,6 +45,12 @@ export function evaluateProductionStartup(
   if (!dataDirPersistent) missing.push("persistent data directory");
   if (!hasExplicitAllowedOrigins(input.allowedOrigins)) {
     missing.push("ALLOWED_ORIGINS");
+  }
+  if (!hasExplicitAllowedOrigins(input.allowedClientIps)) {
+    missing.push("ALLOWED_CLIENT_IPS");
+  }
+  if ((input.signInEmail ?? "").trim().length === 0) {
+    missing.push("LEDGER_SIGN_IN_EMAIL");
   }
   return {
     enforce: input.nodeEnv === "production",

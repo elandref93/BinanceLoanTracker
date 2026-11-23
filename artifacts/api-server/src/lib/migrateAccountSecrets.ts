@@ -27,7 +27,16 @@ import { stripAccountSyncSecrets } from "./stripAccountSecrets";
  */
 
 const ACCOUNT_BLOB = /^[a-f0-9]{64}\.json$/;
-const SECRET_FIELDS = new Set(["apiKey", "apiSecret"]);
+const SECRET_FIELDS = new Set([
+  "apiKey",
+  "apiSecret",
+  "keySecret",
+  "secretKey",
+  "token",
+  "refreshToken",
+  "accessToken",
+  "privateKey",
+]);
 
 export interface AccountSecretMigrationSummary {
   scanned: number;

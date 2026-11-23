@@ -7,7 +7,16 @@
  * timestamps) stay so the phone can keep syncing metadata with its Bearer token.
  */
 
-const SECRET_FIELDS = new Set(["apiKey", "apiSecret"]);
+const SECRET_FIELDS = new Set([
+  "apiKey",
+  "apiSecret",
+  "keySecret",
+  "secretKey",
+  "token",
+  "refreshToken",
+  "accessToken",
+  "privateKey",
+]);
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return false;

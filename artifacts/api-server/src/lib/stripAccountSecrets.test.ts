@@ -59,6 +59,8 @@ describe("stripAccountSyncSecrets", () => {
       name: "Trust",
       apiKey: "k",
       apiSecret: "s",
+      token: "t",
+      privateKey: "p",
     });
     assert.deepEqual(stripped, { id: "legacy", name: "Trust" });
   });

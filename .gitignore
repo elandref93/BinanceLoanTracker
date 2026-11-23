@@ -55,6 +55,9 @@ Thumbs.db
 
 # Per-user account sync, encrypted credentials, and identity files.
 artifacts/api-server/data/
+/data/
+**/*.creds.json
+secrets/
 
 # Azure deployment / diagnostics artifacts (downloaded locally; never committed)
 applogs/

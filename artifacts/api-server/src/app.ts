@@ -10,6 +10,7 @@ import router from "./routes";
 import type { Logger } from "pino";
 import cookieParser from "cookie-parser";
 import { isBrowserOriginAllowed } from "./lib/browserOrigin";
+import { edgeGateEnabled, requestMayPassEdge } from "./lib/edgeAccess";
 import { httpLogSerializers, logger } from "./lib/logger";
 import { clerkMiddleware } from "@clerk/express";
 import { attachBrowserAuth } from "./lib/requestAuth";
@@ -50,42 +51,34 @@ export function httpRequestLogger(baseLogger: Logger = logger) {
 
 app.use(httpRequestLogger());
 
-// CORS: pin to the configured front-end origins instead of reflecting any
-// Origin header. The mobile app talks server-to-server (no Origin header at
-// all, which `cors` lets through), so this primarily protects against
-// browser-side abuse if the API URL ever leaks.
 const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS ?? "")
   .split(",")
   .map((s) => s.trim())
   .filter(Boolean);
 
+app.use((req, res, next) => {
+  const origin = req.header("origin");
+  if (origin && !isBrowserOriginAllowed(origin, ALLOWED_ORIGINS, process.env.NODE_ENV)) {
+    res.status(403).json({ error: "Forbidden" });
+    return;
+  }
+  next();
+});
+
+// CORS: pin to the configured front-end origins instead of reflecting any
+// Origin header. Disallowed origins already returned 403 above. A missing
+// Origin is a non-browser client.
 app.use(
   cors({
     credentials: true,
     origin(origin, cb) {
-      // No Origin: non-browser clients. A browser Origin must be listed.
-      // Development also accepts a private-network host so the Vite proxy can
-      // forward a phone page on the LAN. An empty allow-list does not reflect
-      // a public origin.
-      if (isBrowserOriginAllowed(origin, ALLOWED_ORIGINS, process.env.NODE_ENV)) {
+      if (!origin || isBrowserOriginAllowed(origin, ALLOWED_ORIGINS, process.env.NODE_ENV)) {
         return cb(null, true);
       }
-      return cb(new Error("CORS: origin not allowed"));
+      return cb(null, false);
     },
   }),
 );
-
-// Defensive headers for any browser surface that touches the API.
-app.use((_req, res, next) => {
-  res.setHeader("X-Content-Type-Options", "nosniff");
-  res.setHeader("Referrer-Policy", "no-referrer");
-  res.setHeader("X-Frame-Options", "DENY");
-  next();
-});
-
-app.use(express.json({ limit: "256kb" }));
-app.use(express.urlencoded({ extended: true, limit: "256kb" }));
-app.use(cookieParser());
 
 // Lightweight per-IP rate limiter — no external dep. Buckets:
 // - sign-in exchange:  10 req / 5 min
@@ -121,7 +114,6 @@ function rateLimit(opts: { max: number; windowMs: number; keyPrefix: string }) {
   };
 }
 
-// Janitor: drop expired buckets every 5 min so the Map can't grow unbounded.
 setInterval(
   () => {
     const now = Date.now();
@@ -130,21 +122,37 @@ setInterval(
   5 * 60 * 1000,
 ).unref();
 
-// Only the sign-in exchange gets the strict bucket. The session probe runs on
-// every app focus, so it shares the default bucket and a failed probe is never
-// treated as a sign-out by the web app.
-app.use(
-  "/api/auth/clerk",
-  rateLimit({ max: 10, windowMs: 5 * 60 * 1000, keyPrefix: "auth" }),
-);
-app.use(
-  "/api/auth/session",
-  rateLimit({ max: 60, windowMs: 60 * 1000, keyPrefix: "session" }),
-);
-app.use(
-  "/api",
-  rateLimit({ max: 120, windowMs: 60 * 1000, keyPrefix: "api" }),
-);
+// Count requests before the body parser so a flood of large bodies is limited first.
+app.use("/api/auth/clerk", rateLimit({ max: 10, windowMs: 5 * 60 * 1000, keyPrefix: "auth" }));
+app.use("/api/auth/session", rateLimit({ max: 60, windowMs: 60 * 1000, keyPrefix: "session" }));
+app.use("/api", rateLimit({ max: 120, windowMs: 60 * 1000, keyPrefix: "api" }));
+
+// Home and office addresses, or a device certificate. This runs before the body
+// is read. The probe is the only path that stays open.
+app.use((req, res, next) => {
+  if (!edgeGateEnabled()) {
+    next();
+    return;
+  }
+  const pathOnly = (req.originalUrl || req.url || "").split("?")[0];
+  if (pathOnly === "/api/healthz" || requestMayPassEdge(req)) {
+    next();
+    return;
+  }
+  res.status(403).json({ error: "Forbidden" });
+});
+
+app.use(express.json({ limit: "256kb" }));
+app.use(express.urlencoded({ extended: true, limit: "256kb" }));
+app.use(cookieParser());
+
+// Defensive headers for any browser surface that touches the API.
+app.use((_req, res, next) => {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("Referrer-Policy", "no-referrer");
+  res.setHeader("X-Frame-Options", "DENY");
+  next();
+});
 
 // Clerk attaches its own auth object when a Clerk session cookie is present.
 // Mobile requests carry a Ledger bearer; those skip Clerk so an app token is
@@ -204,9 +212,9 @@ app.use(
     // `warn` — they stay visible in the Azure log stream but never create a
     // Sentry issue. Genuine 5xx server faults still log at `error` → Sentry.
     if (isClientError) {
-      logger.warn({ err, path: req.path, status }, "client request error");
+      logger.warn({ path: req.path, status }, "client request error");
     } else {
-      logger.error({ err, path: req.path, status }, "unhandled route error");
+      logger.error({ path: req.path, status }, "unhandled route error");
     }
 
     if (res.headersSent) return;

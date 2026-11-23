@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
+import os from "node:os";
+import path from "node:path";
 import { after, before, describe, it } from "node:test";
 import type { Express } from "express";
 
@@ -8,6 +10,7 @@ import { signSession, signWebSession } from "./sessionJwt";
 import { WEB_CSRF_COOKIE, WEB_SESSION_COOKIE } from "./webSession";
 
 process.env.SESSION_JWT_SECRET = "web-session-test-secret-32-characters-min";
+process.env.ACCOUNT_SYNC_DIR = path.join(os.tmpdir(), "ledger-browser-auth-test");
 
 type HttpResult = {
   status: number;
@@ -135,5 +138,11 @@ describe("browser cookie auth", { concurrency: 1 }, () => {
     assert.match(cleared[0] ?? "", /SameSite=Lax/);
     assert.equal((cleared[0] ?? "").toLowerCase().includes("domain="), false);
     assert.match(cleared[0] ?? "", /^__Host-ledger_session=/);
+  });
+
+  it("logoutWithoutCookie_doesNotClearCookies", async () => {
+    const logout = await request(port, "POST", "/api/auth/logout");
+    assert.equal(logout.status, 204);
+    assert.equal(setCookies(logout.headers).length, 0);
   });
 });

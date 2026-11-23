@@ -15,19 +15,16 @@
  */
 import * as Sentry from "@sentry/node";
 
-// Public client ingest key (DSN). Safe to embed — write-only, ships in clients
-// by design. Overridable via SENTRY_DSN.
-const SENTRY_DSN =
-  process.env.SENTRY_DSN ||
-  "https://89c2e44f30df4acdafd2ffe248d57701@o4511503179907072.ingest.us.sentry.io/4511503185149952";
-
+// Public ingest key. Set SENTRY_DSN in the environment. Nothing is sent when it is absent.
 let started = false;
 
 export function initSentry(): void {
+  const dsn = process.env.SENTRY_DSN?.trim() ?? "";
+  if (dsn.length === 0) return;
   if (started) return;
   started = true;
   Sentry.init({
-    dsn: SENTRY_DSN,
+    dsn,
     environment: process.env.NODE_ENV || "production",
     // Errors only — no performance tracing for this small private service.
     tracesSampleRate: 0,

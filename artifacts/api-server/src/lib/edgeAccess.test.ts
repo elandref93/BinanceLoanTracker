@@ -2,7 +2,13 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { Request } from "express";
 
-import { clientCertificateAllowed, describeEdgeClient, isAllowedClientIp, requestMayPassEdge } from "./edgeAccess";
+import {
+  clientCertificateAllowed,
+  describeEdgeClient,
+  isAllowedClientIp,
+  normalizeIp,
+  requestMayPassEdge,
+} from "./edgeAccess";
 
 function request(partial: { ip?: string; header?: string }): Request {
   return {
@@ -20,8 +26,12 @@ describe("isAllowedClientIp", () => {
     const env = { ALLOWED_CLIENT_IPS: "102.65.11.235, 102.36.24.176" };
     assert.equal(isAllowedClientIp("::ffff:102.65.11.235", env), true);
     assert.equal(isAllowedClientIp("102.36.24.176", env), true);
+    assert.equal(isAllowedClientIp("102.36.24.176:58512", env), true);
+    assert.equal(isAllowedClientIp("::ffff:102.65.11.235:443", env), true);
+    assert.equal(isAllowedClientIp("8.8.8.8:1234", env), false);
     assert.equal(isAllowedClientIp("8.8.8.8", env), false);
     assert.equal(isAllowedClientIp("", env), false);
+    assert.equal(normalizeIp("[2001:db8::10]:443"), "2001:db8::10");
   });
 });
 
@@ -30,6 +40,7 @@ describe("requestMayPassEdge", () => {
     const env = { ALLOWED_CLIENT_IPS: "102.65.11.235", WEBSITE_SITE_NAME: "ledger" };
     assert.equal(requestMayPassEdge(request({ ip: "203.0.113.9" }), env), false);
     assert.equal(requestMayPassEdge(request({ ip: "102.65.11.235" }), env), true);
+    assert.equal(requestMayPassEdge(request({ ip: "102.65.11.235:58512" }), env), true);
   });
 
   it("requestMayPassEdge_headerOffAzure_isNotTrusted", () => {

@@ -20,8 +20,23 @@ export function allowedClientIps(env: NodeJS.ProcessEnv = process.env): string[]
     .filter((item) => item.length > 0);
 }
 
+/**
+ * Azure App Service sends one X-Forwarded-For hop as `address:port`.
+ * The port is the client's ephemeral source port, so it has to come off
+ * before the allowlist comparison. Bracketed IPv6 keeps its colons.
+ */
 export function normalizeIp(value: string): string {
-  return value.trim().replace(/^::ffff:/i, "").toLowerCase();
+  let ip = value.trim();
+  const bracketed = ip.match(/^\[([^\]]+)\](?::\d+)?$/);
+  if (bracketed) {
+    ip = bracketed[1] ?? "";
+  }
+  ip = ip.replace(/^::ffff:/i, "");
+  const v4WithPort = ip.match(/^(\d{1,3}(?:\.\d{1,3}){3}):\d+$/);
+  if (v4WithPort) {
+    ip = v4WithPort[1] ?? "";
+  }
+  return ip.toLowerCase();
 }
 
 export function isAllowedClientIp(ip: string, env: NodeJS.ProcessEnv = process.env): boolean {

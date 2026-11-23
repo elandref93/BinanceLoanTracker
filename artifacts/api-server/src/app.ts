@@ -10,7 +10,7 @@ import router from "./routes";
 import type { Logger } from "pino";
 import cookieParser from "cookie-parser";
 import { isBrowserOriginAllowed } from "./lib/browserOrigin";
-import { edgeGateEnabled, requestMayPassEdge } from "./lib/edgeAccess";
+import { describeEdgeClient, edgeGateEnabled, requestMayPassEdge } from "./lib/edgeAccess";
 import { mountLedgerWeb, resolveLedgerWebRoot } from "./lib/ledgerWeb";
 import { httpLogSerializers, logger } from "./lib/logger";
 import { clerkMiddleware } from "@clerk/express";
@@ -140,6 +140,8 @@ app.use((req, res, next) => {
     next();
     return;
   }
+  // IP and cert presence only. The certificate body is never logged.
+  logger.warn({ op: "edge.denied", path: pathOnly, ...describeEdgeClient(req) }, "edge gate denied request");
   res.status(403).json({ error: "Forbidden" });
 });
 

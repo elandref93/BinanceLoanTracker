@@ -67,3 +67,31 @@ export function requestMayPassEdge(req: Request, env: NodeJS.ProcessEnv = proces
   const ip = normalizeIp(req.ip ?? req.socket.remoteAddress ?? "");
   return isAllowedClientIp(ip, env) || clientCertificateAllowed(req, env);
 }
+
+/** What the gate compared. Never includes the certificate body. */
+export function describeEdgeClient(req: Request): {
+  clientIp: string;
+  socketIp: string;
+  forwardedHops: number;
+  forwardedIps: string[];
+  clientCertPresent: boolean;
+} {
+  const header = req.headers["x-forwarded-for"];
+  const raw = Array.isArray(header) ? header.join(",") : typeof header === "string" ? header : "";
+  const forwardedIps = raw
+    .split(",")
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0 && item.length <= 64)
+    .slice(0, 8);
+  const certHeader = req.headers["x-arr-clientcert"];
+  const clientCertPresent = Array.isArray(certHeader)
+    ? certHeader.some((value) => value.trim().length > 0)
+    : typeof certHeader === "string" && certHeader.trim().length > 0;
+  return {
+    clientIp: normalizeIp(req.ip ?? req.socket?.remoteAddress ?? ""),
+    socketIp: normalizeIp(req.socket?.remoteAddress ?? ""),
+    forwardedHops: forwardedIps.length,
+    forwardedIps,
+    clientCertPresent,
+  };
+}

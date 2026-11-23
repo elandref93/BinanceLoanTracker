@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { Request } from "express";
 
-import { clientCertificateAllowed, isAllowedClientIp, requestMayPassEdge } from "./edgeAccess";
+import { clientCertificateAllowed, describeEdgeClient, isAllowedClientIp, requestMayPassEdge } from "./edgeAccess";
 
 function request(partial: { ip?: string; header?: string }): Request {
   return {
@@ -44,5 +44,24 @@ describe("requestMayPassEdge", () => {
       ),
       false,
     );
+  });
+});
+
+describe("describeEdgeClient", () => {
+  it("describeEdgeClient_forwardedChain_reportsIpHopsAndCertPresence", () => {
+    const viewed = describeEdgeClient({
+      ip: "::ffff:169.254.129.1",
+      socket: { remoteAddress: "::ffff:169.254.129.1" },
+      headers: {
+        "x-forwarded-for": "102.36.24.176, 169.254.254.1",
+        "x-arr-clientcert": "present-but-not-logged",
+      },
+    } as unknown as Request);
+    assert.equal(viewed.clientIp, "169.254.129.1");
+    assert.equal(viewed.socketIp, "169.254.129.1");
+    assert.equal(viewed.forwardedHops, 2);
+    assert.deepEqual(viewed.forwardedIps, ["102.36.24.176", "169.254.254.1"]);
+    assert.equal(viewed.clientCertPresent, true);
+    assert.equal(JSON.stringify(viewed).includes("present-but-not-logged"), false);
   });
 });

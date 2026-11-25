@@ -1,8 +1,16 @@
-import { X509Certificate } from "node:crypto";
+import { createHmac, timingSafeEqual, X509Certificate } from "node:crypto";
 import type { Request } from "express";
 
 /** Networks that may open Ledger without a device certificate. */
 export const DEFAULT_ALLOWED_CLIENT_IPS = ["102.65.11.235", "102.36.24.176"] as const;
+
+/** Headers set by our TLS proxy. The MAC is what makes them trustworthy. */
+export const LEDGER_CLIENT_CERT_HEADER = "x-ledger-client-cert";
+export const LEDGER_CLIENT_IP_HEADER = "x-ledger-client-ip";
+export const LEDGER_CERT_MAC_HEADER = "x-ledger-cert-mac";
+
+const CERT_HEADER_MAX = 20_000;
+const PROXY_SECRET_MIN = 32;
 
 export function edgeGateEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
   const flag = env.EDGE_ACCESS_GATE?.trim().toLowerCase();
@@ -45,42 +53,180 @@ export function isAllowedClientIp(ip: string, env: NodeJS.ProcessEnv = process.e
   return allowedClientIps(env).includes(normalized);
 }
 
+/** Hex serial, no separators, no leading zeros. */
+export function normalizeSerial(serial: string): string {
+  const hex = serial.toLowerCase().replace(/[^0-9a-f]/g, "").replace(/^0+/, "");
+  return hex.length > 0 ? hex : "0";
+}
+
 export function revokedCertSerials(env: NodeJS.ProcessEnv = process.env): Set<string> {
   return new Set(
     (env.EDGE_REVOKED_CERT_SERIALS ?? "")
       .split(",")
-      .map((item) => item.trim().toLowerCase().replace(/:/g, ""))
-      .filter((item) => item.length > 0),
+      .map((item) => normalizeSerial(item))
+      .filter((item) => item.length > 0 && item !== "0"),
   );
 }
 
 /**
- * True when the platform-forwarded client certificate chains to our CA.
- * The header is trusted only on Azure, or when EDGE_TRUST_CLIENT_CERT=1,
- * because a client can otherwise send the header itself.
+ * App settings store the CA as one line with the two characters `\` and `n`
+ * between PEM lines. OpenSSL needs real newlines.
  */
-export function clientCertificateAllowed(req: Request, env: NodeJS.ProcessEnv = process.env): boolean {
-  const trustHeader = env.EDGE_TRUST_CLIENT_CERT === "1" || Boolean(env.WEBSITE_SITE_NAME?.trim());
-  if (!trustHeader) return false;
-  const caPem = env.EDGE_CLIENT_CA_PEM?.trim() ?? "";
-  if (caPem.length === 0) return false;
-  const header = req.header("x-arr-clientcert");
-  if (!header) return false;
+export function decodeConfiguredPem(value: string): string {
+  return value.trim().replace(/^\uFEFF/, "").replace(/\\n/g, "\n");
+}
+
+/**
+ * Azure forwards the leaf as base64 DER in X-ARR-ClientCert. A proxy or an
+ * older front end may URL-encode that value, turn `+` into a space, or send
+ * a PEM. The certificate bytes are not logged by callers.
+ */
+export function readClientCertificate(header: string): X509Certificate | null {
+  if (header.length === 0 || header.length > CERT_HEADER_MAX) return null;
+  let value = header.trim();
+  if (value.includes("%")) {
+    try {
+      value = decodeURIComponent(value);
+    } catch {
+      return null;
+    }
+  }
   try {
-    const cert = new X509Certificate(Buffer.from(header, "base64"));
+    if (value.includes("-----BEGIN")) {
+      return new X509Certificate(decodeConfiguredPem(value));
+    }
+    const standard = value
+      .replace(/ /g, "+")
+      .replace(/[\r\n\t]/g, "")
+      .replace(/-/g, "+")
+      .replace(/_/g, "/");
+    return new X509Certificate(Buffer.from(standard, "base64"));
+  } catch {
+    return null;
+  }
+}
+
+export function certificateIsTrusted(
+  cert: X509Certificate,
+  env: NodeJS.ProcessEnv = process.env,
+): boolean {
+  try {
+    const caPem = decodeConfiguredPem(env.EDGE_CLIENT_CA_PEM ?? "");
+    if (!caPem.includes("BEGIN CERTIFICATE")) return false;
     const ca = new X509Certificate(caPem);
-    if (cert.validTo && Date.parse(cert.validTo) <= Date.now()) return false;
+    const now = Date.now();
+    if (cert.validFromDate.getTime() > now) return false;
+    if (cert.validToDate.getTime() <= now) return false;
     if (!cert.verify(ca.publicKey)) return false;
-    const serial = cert.serialNumber.toLowerCase().replace(/:/g, "");
-    return !revokedCertSerials(env).has(serial);
+    return !revokedCertSerials(env).has(normalizeSerial(cert.serialNumber));
   } catch {
     return false;
   }
 }
 
+/** Same bytes the TLS proxy signs. Empty cert header means no certificate. */
+export function attestationMac(secret: string, ip: string, certHeader: string): string {
+  return createHmac("sha256", secret).update(`${ip}\n${certHeader}`, "utf8").digest("hex");
+}
+
+function headerText(req: Request, name: string): string {
+  const value = req.header(name);
+  if (Array.isArray(value)) return value[0] ?? "";
+  return value?.trim() ?? "";
+}
+
+function macMatches(secret: string, ip: string, certHeader: string, presented: string): boolean {
+  const expected = attestationMac(secret, ip, certHeader);
+  const left = Buffer.from(expected);
+  const right = Buffer.from(presented.trim().toLowerCase());
+  if (left.length !== right.length) return false;
+  return timingSafeEqual(left, right);
+}
+
+/**
+ * The TLS proxy saw this TCP peer and, when present, this client certificate.
+ * Azure's front end replaces X-Forwarded-For with the proxy address, so the
+ * phone address has to travel in the signed header instead.
+ */
+function readAttestation(
+  req: Request,
+  env: NodeJS.ProcessEnv,
+): { ip: string; certHeader: string } | null {
+  const secret = env.EDGE_CERT_PROXY_SECRET ?? "";
+  if (secret.length < PROXY_SECRET_MIN) return null;
+  const ip = headerText(req, LEDGER_CLIENT_IP_HEADER);
+  const mac = headerText(req, LEDGER_CERT_MAC_HEADER);
+  if (!ip || !mac || ip.length > 128 || mac.length > 128) return null;
+  if (ip.includes("\n") || ip.includes("\r")) return null;
+  const certHeader = headerText(req, LEDGER_CLIENT_CERT_HEADER);
+  if (certHeader.length > CERT_HEADER_MAX) return null;
+  if (!macMatches(secret, ip, certHeader, mac)) return null;
+  return { ip, certHeader };
+}
+
+function platformTrustsClientCert(env: NodeJS.ProcessEnv): boolean {
+  return env.EDGE_TRUST_CLIENT_CERT === "1" || Boolean(env.WEBSITE_SITE_NAME?.trim());
+}
+
+export interface EdgeAccessDecision {
+  allowed: boolean;
+  ipAllowed: boolean;
+  certAllowed: boolean;
+  clientCertPresent: boolean;
+  /** Address compared with the allowlist, port already removed. */
+  clientIp: string;
+}
+
+/**
+ * ipAllowed and certAllowed are independent. A home address may pass with
+ * certAllowed false. A valid device certificate may pass with ipAllowed false.
+ */
+export function evaluateEdgeAccess(
+  req: Request,
+  env: NodeJS.ProcessEnv = process.env,
+): EdgeAccessDecision {
+  const attested = readAttestation(req, env);
+  const clientIp = normalizeIp(
+    attested?.ip ?? req.ip ?? req.socket?.remoteAddress ?? "",
+  );
+  const ipAllowed = isAllowedClientIp(clientIp, env);
+
+  let clientCertPresent = false;
+  let cert: X509Certificate | null = null;
+  if (attested) {
+    if (attested.certHeader.length > 0) {
+      clientCertPresent = true;
+      cert = readClientCertificate(attested.certHeader);
+    }
+  } else {
+    const header = headerText(req, "x-arr-clientcert");
+    if (header.length > 0) {
+      clientCertPresent = true;
+      if (platformTrustsClientCert(env)) cert = readClientCertificate(header);
+    }
+  }
+  const certAllowed = cert ? certificateIsTrusted(cert, env) : false;
+  return {
+    allowed: ipAllowed || certAllowed,
+    ipAllowed,
+    certAllowed,
+    clientCertPresent,
+    clientIp,
+  };
+}
+
+/**
+ * True when the platform-forwarded client certificate chains to our CA.
+ * The header is trusted only on Azure, or when EDGE_TRUST_CLIENT_CERT=1,
+ * because a client can otherwise send the header itself. A proxy attestation
+ * is a separate path and does not require that flag.
+ */
+export function clientCertificateAllowed(req: Request, env: NodeJS.ProcessEnv = process.env): boolean {
+  return evaluateEdgeAccess(req, env).certAllowed;
+}
+
 export function requestMayPassEdge(req: Request, env: NodeJS.ProcessEnv = process.env): boolean {
-  const ip = normalizeIp(req.ip ?? req.socket.remoteAddress ?? "");
-  return isAllowedClientIp(ip, env) || clientCertificateAllowed(req, env);
+  return evaluateEdgeAccess(req, env).allowed;
 }
 
 /** What the gate compared. Never includes the certificate body. */

@@ -10,7 +10,7 @@ import router from "./routes";
 import type { Logger } from "pino";
 import cookieParser from "cookie-parser";
 import { isBrowserOriginAllowed } from "./lib/browserOrigin";
-import { describeEdgeClient, edgeGateEnabled, requestMayPassEdge } from "./lib/edgeAccess";
+import { edgeGateEnabled, evaluateEdgeAccess } from "./lib/edgeAccess";
 import { mountLedgerWeb, resolveLedgerWebRoot } from "./lib/ledgerWeb";
 import { httpLogSerializers, logger } from "./lib/logger";
 import { clerkMiddleware } from "@clerk/express";
@@ -136,12 +136,26 @@ app.use((req, res, next) => {
     return;
   }
   const pathOnly = (req.originalUrl || req.url || "").split("?")[0];
-  if (pathOnly === "/api/healthz" || requestMayPassEdge(req)) {
+  if (pathOnly === "/api/healthz") {
     next();
     return;
   }
-  // IP and cert presence only. The certificate body is never logged.
-  logger.warn({ op: "edge.denied", path: pathOnly, ...describeEdgeClient(req) }, "edge gate denied request");
+  const decision = evaluateEdgeAccess(req);
+  // Booleans only. The certificate body, serial, and proxy MAC are never logged.
+  const fields = {
+    op: decision.allowed ? "edge.allowed" : "edge.denied",
+    path: pathOnly,
+    clientIp: decision.clientIp,
+    ipAllowed: decision.ipAllowed,
+    certAllowed: decision.certAllowed,
+    clientCertPresent: decision.clientCertPresent,
+  };
+  if (decision.allowed) {
+    logger.info(fields, "edge gate allowed request");
+    next();
+    return;
+  }
+  logger.warn(fields, "edge gate denied request");
   res.status(403).json({ error: "Forbidden" });
 });
 

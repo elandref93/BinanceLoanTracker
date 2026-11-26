@@ -1,4 +1,7 @@
 param(
+    # API host, not the site. This probe is Azure's /api/healthz path on the App
+    # Service. For the user-facing site use
+    # https://blt-ledger-edge.southafricanorth.cloudapp.azure.com/ instead.
     [string]$Url     = 'https://binance-loan-tracker-backend.azurewebsites.net/api/healthz',
     [int]   $Tries   = 30,
     [int]   $DelaySec = 10

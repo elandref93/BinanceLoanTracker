@@ -21,7 +21,10 @@ work, the backend acts as its own OIDC provider.
 - **Two issuers are accepted on verify**: the OIDC URL issuer (RS256, default
   `https://binance-loan-tracker-backend.azurewebsites.net`, overridable via
   `SESSION_JWT_ISSUER`) and the legacy bare name `binance-loan-tracker-backend`
-  (HS256). Audience is unchanged: `binance-loan-tracker-mobile`.
+  (HS256). Audience is unchanged: `binance-loan-tracker-mobile`. The issuer must
+  stay the App Service hostname — never the edge's public name
+  (`https://blt-ledger-edge.southafricanorth.cloudapp.azure.com/`): every mobile
+  bearer already issued carries the App Service issuer and would stop verifying.
 - **`/.well-known/openid-configuration` + `/.well-known/jwks.json` must stay
   mounted at the ROOT, before the `/api` auth gate and rate limiters** — Easy
   Auth fetches them unauthenticated. `kid` is the RFC 7638 JWK thumbprint and

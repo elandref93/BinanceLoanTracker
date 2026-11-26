@@ -10,6 +10,6 @@ Publishing an `eas update` from this container must go through a Replit-managed 
 **How to apply:**
 - `configureWorkflow({ name: "Publish OTA", outputType: "console", command: <below> })`, then poll `getWorkflowStatus` until output shows `Published!`, then `removeWorkflow`.
 - Command: `cd artifacts/ledger-mobile && EXPO_PUBLIC_DOMAIN=binance-loan-tracker-backend.azurewebsites.net EXPO_USE_METRO_WORKSPACE_ROOT=1 CI=1 NODE_OPTIONS=--max-old-space-size=8192 ./node_modules/.bin/eas update --branch production --message "..." --non-interactive`
-- `EXPO_TOKEN` secret is set (auth). `EXPO_PUBLIC_DOMAIN` is NOT in env — must be inlined (points at the Azure backend in production).
+- `EXPO_TOKEN` secret is set (auth). `EXPO_PUBLIC_DOMAIN` is NOT in env — must be inlined. It is the API host the mobile app calls (`binance-loan-tracker-backend.azurewebsites.net`), not a site address: that host returns 403 for the dashboard and answers only `/api/healthz`. The user-facing site is `https://blt-ledger-edge.southafricanorth.cloudapp.azure.com/`.
 - Runtime version is `appVersion` (1.0.0); branch `production`. The first OTA carrying a new feature is itself invisible — the device applies it on next cold launch (checkAutomatically ON_LOAD, fallbackToCacheTimeout 0), so user must open→close→open once before any new UI appears.
 - Changing `fallbackToCacheTimeout` / native config requires a native rebuild (`tf:build`), not an OTA.

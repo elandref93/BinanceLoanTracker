@@ -63,6 +63,12 @@ function rewriteLocation(value, backendOrigin, publicOrigin) {
   return publicOrigin + value.slice(backendOrigin.length);
 }
 
+function oneHeader(req, name) {
+  const value = req.headers[name];
+  const text = Array.isArray(value) ? value.join(",") : String(value ?? "");
+  return text.replace(/[\r\n]/g, " ").trim().slice(0, 180);
+}
+
 export function proxyRequest(req, res, options) {
   // nginx proved the private key during TLS and replaced these from the socket.
   // This process is bound to localhost, so the internet cannot set them.
@@ -114,6 +120,10 @@ export function proxyRequest(req, res, options) {
     op: "edge.proxy",
     path: (req.url || "").split("?")[0],
     clientCertPresent: certB64.length > 0,
+    peer: ip,
+    forwardedFor: oneHeader(req, "x-forwarded-for"),
+    realIp: oneHeader(req, "x-real-ip"),
+    forwarded: oneHeader(req, "forwarded"),
   });
 }
 

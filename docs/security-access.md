@@ -35,9 +35,9 @@ That writes, under `secrets/access/`:
 
 On the device: Settings, then the downloaded profile, Install. The private key stays in the keychain, behind the device passcode. The first visit, Safari asks to use the certificate. Later visits use it for this host.
 
-Open Ledger at `https://blt-ledger-edge.southafricanorth.azurecontainer.io/` only. When Safari asks, choose the Ledger certificate. That certificate is what admits the phone on cellular and on home Wi-Fi.
+Open Ledger at `https://blt-ledger-edge.southafricanorth.cloudapp.azure.com/` only. When Safari asks, choose the Ledger certificate. That certificate is what admits the phone on cellular and on home Wi-Fi.
 
-The API still treats the two network addresses and a valid device certificate as separate passes, and it strips a trailing source port before the address comparison. The pass counts only when the edge signs the address and certificate with `EDGE_CERT_PROXY_SECRET`. Azure Container Instances does not show the visitor's address to the container: the TCP peer is an Azure proxy in `10.92.0.0/16`. A home visit through the edge therefore does not match the allowlist. The device certificate does.
+The API still treats the two network addresses and a valid device certificate as separate passes, and it strips a trailing source port before the address comparison. The pass counts only when the edge signs the address and certificate with `EDGE_CERT_PROXY_SECRET`. TLS ends on a virtual machine in South Africa North, so the edge reads the visitor's socket address. A home visit from an allowlisted address opens the site with no certificate. A device certificate still opens it from any other network. The previous container hostname is not a second copy of the site.
 
 `https://binance-loan-tracker-backend.azurewebsites.net/` is not a second copy of the site. A browser there receives Forbidden, including from an allowlisted address, because that request did not come through the edge. `/api/healthz` on that host stays a status probe for Azure. Its body is `{ "status": "ok" }` or `{ "status": "degraded" }`. It does not list which settings are missing. `/api/readyz` is behind the same gate as the rest of the API.
 

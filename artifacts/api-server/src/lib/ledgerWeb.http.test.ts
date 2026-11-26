@@ -7,6 +7,8 @@ import path from "node:path";
 import { after, before, describe, it } from "node:test";
 import type { Express } from "express";
 
+import { attestationMac } from "./edgeAccess";
+
 delete process.env.SENTRY_DSN;
 delete process.env.CLERK_SECRET_KEY;
 process.env.NODE_ENV = "production";
@@ -27,9 +29,14 @@ process.env.LEDGER_WEB_ROOT = webRoot;
 
 type HttpResult = { status: number; body: string };
 
-function request(port: number, method: string, requestPath: string): Promise<HttpResult> {
+function request(
+  port: number,
+  method: string,
+  requestPath: string,
+  headers?: Record<string, string>,
+): Promise<HttpResult> {
   return new Promise((resolve, reject) => {
-    const req = http.request({ hostname: "127.0.0.1", port, method, path: requestPath }, (res) => {
+    const req = http.request({ hostname: "127.0.0.1", port, method, path: requestPath, headers }, (res) => {
       const chunks: Buffer[] = [];
       res.on("data", (chunk: Buffer) => chunks.push(chunk));
       res.on("end", () => {
@@ -61,6 +68,8 @@ describe("ledger web behind the edge gate", { concurrency: 1 }, () => {
     await new Promise<void>((resolve, reject) => {
       server.close((err) => (err ? reject(err) : resolve()));
     });
+    delete process.env.WEBSITE_SITE_NAME;
+    delete process.env.EDGE_CERT_PROXY_SECRET;
     rmSync(webRoot, { recursive: true, force: true });
   });
 
@@ -114,6 +123,27 @@ describe("ledger web behind the edge gate", { concurrency: 1 }, () => {
     const api = await request(port, "GET", "/api/not-a-real-route");
     assert.notEqual(api.status, 200);
     assert.equal(api.body.includes("LedgerIndexMarker"), false);
+
+    const health = await request(port, "GET", "/api/healthz");
+    assert.equal(health.status, 200);
+    assert.equal(health.body, '{"status":"ok"}');
+  });
+
+  it("azureHost_allowlistedIpWithoutEdge_is403UntilAttested", async () => {
+    process.env.WEBSITE_SITE_NAME = "binance-loan-tracker-backend";
+    process.env.EDGE_CERT_PROXY_SECRET = "test-proxy-secret-0123456789abcdef";
+    process.env.ALLOWED_CLIENT_IPS = "127.0.0.1";
+    const denied = await request(port, "GET", "/");
+    assert.equal(denied.status, 403);
+    assert.equal(denied.body.includes("LedgerIndexMarker"), false);
+
+    const mac = attestationMac(process.env.EDGE_CERT_PROXY_SECRET, "127.0.0.1", "");
+    const allowed = await request(port, "GET", "/", {
+      "x-ledger-client-ip": "127.0.0.1",
+      "x-ledger-cert-mac": mac,
+    });
+    assert.equal(allowed.status, 200);
+    assert.equal(allowed.body.includes("LedgerIndexMarker"), true);
 
     const health = await request(port, "GET", "/api/healthz");
     assert.equal(health.status, 200);

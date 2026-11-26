@@ -124,12 +124,26 @@ describe("isAllowedClientIp", () => {
   });
 });
 
+function attestedRequest(ip: string, certHeader = ""): Request {
+  const headers: Record<string, string> = {
+    "x-ledger-client-ip": ip,
+    "x-ledger-cert-mac": attestationMac(proxySecret, ip, certHeader),
+  };
+  if (certHeader.length > 0) headers["x-ledger-client-cert"] = certHeader;
+  return request({ ip: "20.1.1.1", headers });
+}
+
 describe("requestMayPassEdge", () => {
   it("requestMayPassEdge_unknownIpWithoutCert_refuses", () => {
     const env = { ALLOWED_CLIENT_IPS: "102.65.11.235", WEBSITE_SITE_NAME: "ledger" };
     assert.equal(requestMayPassEdge(request({ ip: "203.0.113.9" }), env), false);
-    assert.equal(requestMayPassEdge(request({ ip: "102.65.11.235" }), env), true);
-    assert.equal(requestMayPassEdge(request({ ip: "102.65.11.235:58512" }), env), true);
+    assert.equal(requestMayPassEdge(request({ ip: "102.65.11.235" }), env), false);
+    assert.equal(requestMayPassEdge(request({ ip: "102.65.11.235:58512" }), env), false);
+    const direct = evaluateEdgeAccess(request({ ip: "102.65.11.235:58512" }), env);
+    assert.equal(direct.clientIp, "102.65.11.235");
+    assert.equal(direct.ipAllowed, true);
+    assert.equal(direct.certAllowed, false);
+    assert.equal(direct.allowed, false);
   });
 
   it("requestMayPassEdge_headerOffAzure_isNotTrusted", () => {
@@ -149,16 +163,14 @@ describe("requestMayPassEdge", () => {
 
 describe("clientCertificateAllowed", () => {
   const env = {
-    ALLOWED_CLIENT_IPS: "102.65.11.235",
+    ALLOWED_CLIENT_IPS: "102.65.11.235,102.36.24.176",
     WEBSITE_SITE_NAME: "ledger",
     EDGE_CLIENT_CA_PEM: issued.caEscaped,
+    EDGE_CERT_PROXY_SECRET: proxySecret,
   };
 
   it("clientCertificateAllowed_escapedCaAndBase64Der_allows", () => {
-    const decision = evaluateEdgeAccess(
-      request({ ip: "203.0.113.9", header: issued.leafB64 }),
-      env,
-    );
+    const decision = evaluateEdgeAccess(attestedRequest("203.0.113.9", issued.leafB64), env);
     assert.equal(decision.ipAllowed, false);
     assert.equal(decision.certAllowed, true);
     assert.equal(decision.clientCertPresent, true);
@@ -167,34 +179,23 @@ describe("clientCertificateAllowed", () => {
   });
 
   it("clientCertificateAllowed_urlEncodedAndPemHeader_allows", () => {
+    const encoded = encodeURIComponent(issued.leafB64);
+    assert.equal(clientCertificateAllowed(attestedRequest("203.0.113.9", encoded), env), true);
     assert.equal(
-      clientCertificateAllowed(
-        request({ ip: "203.0.113.9", header: encodeURIComponent(issued.leafB64) }),
-        env,
-      ),
-      true,
-    );
-    assert.equal(
-      clientCertificateAllowed(
-        request({ ip: "203.0.113.9", header: issued.leafPemEscaped }),
-        env,
-      ),
+      clientCertificateAllowed(attestedRequest("203.0.113.9", issued.leafPemEscaped), env),
       true,
     );
     const spaced = issued.leafB64.replace(/\+/g, " ");
-    assert.equal(
-      clientCertificateAllowed(request({ ip: "203.0.113.9", header: spaced }), env),
-      true,
-    );
+    assert.equal(clientCertificateAllowed(attestedRequest("203.0.113.9", spaced), env), true);
   });
 
   it("clientCertificateAllowed_expiredOrRevoked_refuses", () => {
     assert.equal(
-      clientCertificateAllowed(request({ ip: "203.0.113.9", header: issued.expiredB64 }), env),
+      clientCertificateAllowed(attestedRequest("203.0.113.9", issued.expiredB64), env),
       false,
     );
     const colonSerial = issued.serial.match(/.{1,2}/g)?.join(":") ?? issued.serial;
-    const revoked = evaluateEdgeAccess(request({ ip: "203.0.113.9", header: issued.leafB64 }), {
+    const revoked = evaluateEdgeAccess(attestedRequest("203.0.113.9", issued.leafB64), {
       ...env,
       EDGE_REVOKED_CERT_SERIALS: colonSerial,
     });
@@ -204,12 +205,31 @@ describe("clientCertificateAllowed", () => {
   });
 
   it("evaluateEdgeAccess_allowedIpWithoutCert_keepsCertFalse", () => {
-    const decision = evaluateEdgeAccess(request({ ip: "102.65.11.235:58512" }), env);
+    const decision = evaluateEdgeAccess(attestedRequest("102.65.11.235:58512"), env);
     assert.equal(decision.ipAllowed, true);
     assert.equal(decision.certAllowed, false);
     assert.equal(decision.clientCertPresent, false);
     assert.equal(decision.allowed, true);
     assert.equal(decision.clientIp, "102.65.11.235");
+  });
+
+  it("evaluateEdgeAccess_homeIpAndDeviceCert_allowsBoth", () => {
+    const decision = evaluateEdgeAccess(attestedRequest("102.36.24.176:51515", issued.leafB64), env);
+    assert.equal(decision.clientIp, "102.36.24.176");
+    assert.equal(decision.ipAllowed, true);
+    assert.equal(decision.certAllowed, true);
+    assert.equal(decision.allowed, true);
+  });
+
+  it("evaluateEdgeAccess_directAllowlistedIp_isNotADoor", () => {
+    const decision = evaluateEdgeAccess(
+      request({ ip: "102.65.11.235:58512", header: issued.leafB64 }),
+      env,
+    );
+    assert.equal(decision.ipAllowed, true);
+    assert.equal(decision.clientCertPresent, true);
+    assert.equal(decision.certAllowed, false);
+    assert.equal(decision.allowed, false);
   });
 
   it("evaluateEdgeAccess_proxyAttestation_usesPhoneIpAndCert", () => {
@@ -251,10 +271,10 @@ describe("clientCertificateAllowed", () => {
     assert.equal(decision.allowed, false);
   });
 
-  it("evaluateEdgeAccess_badProxyMac_stillHonoursAzureHeader", () => {
+  it("evaluateEdgeAccess_badProxyMac_doesNotHonourAzureHeader", () => {
     const decision = evaluateEdgeAccess(
       request({
-        ip: "203.0.113.9",
+        ip: "102.65.11.235",
         header: issued.leafB64,
         headers: {
           "x-ledger-client-ip": "102.36.24.176",
@@ -263,10 +283,10 @@ describe("clientCertificateAllowed", () => {
       }),
       { ...env, EDGE_CERT_PROXY_SECRET: proxySecret },
     );
-    assert.equal(decision.clientIp, "203.0.113.9");
-    assert.equal(decision.ipAllowed, false);
-    assert.equal(decision.certAllowed, true);
-    assert.equal(decision.allowed, true);
+    assert.equal(decision.clientIp, "102.65.11.235");
+    assert.equal(decision.ipAllowed, true);
+    assert.equal(decision.certAllowed, false);
+    assert.equal(decision.allowed, false);
   });
 });
 

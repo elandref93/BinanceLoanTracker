@@ -168,6 +168,17 @@ function platformTrustsClientCert(env: NodeJS.ProcessEnv): boolean {
   return env.EDGE_TRUST_CLIENT_CERT === "1" || Boolean(env.WEBSITE_SITE_NAME?.trim());
 }
 
+/**
+ * Production and any host that has the proxy secret accept user traffic only
+ * from the TLS edge. A matching source address or an Azure client-certificate
+ * header is not a second door. Local runs without either setting keep the
+ * direct check so tests and dev do not need the proxy.
+ */
+function attestationRequired(env: NodeJS.ProcessEnv): boolean {
+  const secret = env.EDGE_CERT_PROXY_SECRET ?? "";
+  return secret.length >= PROXY_SECRET_MIN || platformTrustsClientCert(env);
+}
+
 export interface EdgeAccessDecision {
   allowed: boolean;
   ipAllowed: boolean;
@@ -180,12 +191,16 @@ export interface EdgeAccessDecision {
 /**
  * ipAllowed and certAllowed are independent. A home address may pass with
  * certAllowed false. A valid device certificate may pass with ipAllowed false.
+ * On Azure, or whenever the proxy secret is set, neither fact opens the API
+ * unless the edge's MAC is valid. That is what stops the App Service hostname
+ * being a second copy of the site.
  */
 export function evaluateEdgeAccess(
   req: Request,
   env: NodeJS.ProcessEnv = process.env,
 ): EdgeAccessDecision {
   const attested = readAttestation(req, env);
+  const requireEdge = attestationRequired(env);
   const clientIp = normalizeIp(
     attested?.ip ?? req.ip ?? req.socket?.remoteAddress ?? "",
   );
@@ -198,16 +213,20 @@ export function evaluateEdgeAccess(
       clientCertPresent = true;
       cert = readClientCertificate(attested.certHeader);
     }
-  } else {
+  } else if (!requireEdge) {
     const header = headerText(req, "x-arr-clientcert");
     if (header.length > 0) {
       clientCertPresent = true;
       if (platformTrustsClientCert(env)) cert = readClientCertificate(header);
     }
+  } else {
+    const header = headerText(req, "x-arr-clientcert");
+    if (header.length > 0) clientCertPresent = true;
   }
   const certAllowed = cert ? certificateIsTrusted(cert, env) : false;
+  const identityAllowed = ipAllowed || certAllowed;
   return {
-    allowed: ipAllowed || certAllowed,
+    allowed: requireEdge ? attested !== null && identityAllowed : identityAllowed,
     ipAllowed,
     certAllowed,
     clientCertPresent,
@@ -216,10 +235,10 @@ export function evaluateEdgeAccess(
 }
 
 /**
- * True when the platform-forwarded client certificate chains to our CA.
- * The header is trusted only on Azure, or when EDGE_TRUST_CLIENT_CERT=1,
- * because a client can otherwise send the header itself. A proxy attestation
- * is a separate path and does not require that flag.
+ * True when the edge-attested certificate chains to our CA.
+ * On Azure the platform certificate header is not a substitute for that
+ * attestation. Off Azure, and only when no proxy secret is configured, a
+ * platform header is still read so local checks can exercise the parser.
  */
 export function clientCertificateAllowed(req: Request, env: NodeJS.ProcessEnv = process.env): boolean {
   return evaluateEdgeAccess(req, env).certAllowed;

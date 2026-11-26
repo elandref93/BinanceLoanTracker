@@ -128,8 +128,10 @@ app.use("/api/auth/clerk", rateLimit({ max: 10, windowMs: 5 * 60 * 1000, keyPref
 app.use("/api/auth/session", rateLimit({ max: 60, windowMs: 60 * 1000, keyPrefix: "session" }));
 app.use("/api", rateLimit({ max: 120, windowMs: 60 * 1000, keyPrefix: "api" }));
 
-// Home and office addresses, or a device certificate. This runs before the body
-// is read. The probe is the only path that stays open.
+// The edge attests the client address and, when present, the device certificate.
+// Either one is enough. A direct call to this host is refused, including from
+// an allowlisted address, because Azure's own TLS front does not present the
+// device CA. /api/healthz stays open for the platform probe.
 app.use((req, res, next) => {
   if (!edgeGateEnabled()) {
     next();

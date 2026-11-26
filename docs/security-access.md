@@ -35,13 +35,13 @@ That writes, under `secrets/access/`:
 
 On the device: Settings, then the downloaded profile, Install. The private key stays in the keychain, behind the device passcode. The first visit, Safari asks to use the certificate. Later visits use it for this host.
 
-At home, Safari may still ask. Cancelling is fine when the address is one of the two above. On a mobile network, choose the Ledger certificate. Cancelling there does not open the site.
+Open Ledger at `https://blt-ledger-edge.southafricanorth.azurecontainer.io/` only. When Safari asks, choose the Ledger certificate. That certificate is what admits the phone on cellular and on home Wi-Fi.
 
-Azure App Service asks for a certificate but does not require one (`clientCertMode` Optional). The API then allows the request when the source address is on the list or the certificate chains to `EDGE_CLIENT_CA_PEM`, is inside its dates, and its serial is not revoked. Platform IP rules cannot express that “or”, so the main site is not locked to those two addresses at the Azure network filter. Doing so would drop the phone before the certificate was considered. The Kudu/SCM site is locked to those two addresses. It is an admin back door, not the app.
+The API still treats the two network addresses and a valid device certificate as separate passes, and it strips a trailing source port before the address comparison. The pass counts only when the edge signs the address and certificate with `EDGE_CERT_PROXY_SECRET`. Azure Container Instances does not show the visitor's address to the container: the TCP peer is an Azure proxy in `10.92.0.0/16`. A home visit through the edge therefore does not match the allowlist. The device certificate does.
 
-`/api/healthz` is the only path excluded, so Azure can probe it. The body is `{ "status": "ok" }` or `{ "status": "degraded" }`. It does not list which settings are missing. `/api/readyz` is behind the same gate as the rest of the API.
+`https://binance-loan-tracker-backend.azurewebsites.net/` is not a second copy of the site. A browser there receives Forbidden, including from an allowlisted address, because that request did not come through the edge. `/api/healthz` on that host stays a status probe for Azure. Its body is `{ "status": "ok" }` or `{ "status": "degraded" }`. It does not list which settings are missing. `/api/readyz` is behind the same gate as the rest of the API.
 
-The default `*.azurewebsites.net` hostname uses this same gate. It is not a second, open copy of the site.
+The Kudu/SCM site is locked to the two addresses. It is an admin back door, not the app.
 
 The web app and `/api` stay on one host. The session cookie is `__Host-` and is not sent to a different API host.
 

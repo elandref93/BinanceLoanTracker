@@ -37,15 +37,58 @@ const PROXY_OWNED_HEADERS = [
   "x-arr-clientcert",
   // Clerk treats this as an override for the request origin.
   "x-clerk-clerk-url",
+  // Attestation: only this process may make these claims.
+  "x-ledger-client-ip",
+  "x-ledger-ip-mac",
+  "x-ledger-client-cert",
+  "x-ledger-cert-mac",
 ];
 
 export function decodeConfiguredPem(value) {
   return value.trim().replace(/^\uFEFF/, "").replace(/\\n/g, "\n");
 }
 
-/** Must match attestationMac in the API. Empty cert means the phone sent none. */
-export function attestationMac(secret, ip, certHeader) {
-  return crypto.createHmac("sha256", secret).update(`${ip}\n${certHeader}`, "utf8").digest("hex");
+/** Must match ipAttestationMac in the API. */
+export function ipAttestationMac(secret, ip) {
+  return crypto.createHmac("sha256", secret).update(`ip\n${ip}`, "utf8").digest("hex");
+}
+
+/** Must match certAttestationMac in the API. Signs the certificate header alone. */
+export function certAttestationMac(secret, certHeader) {
+  return crypto
+    .createHmac("sha256", secret)
+    .update(`cert\n${certHeader}`, "utf8")
+    .digest("hex");
+}
+
+/**
+ * nginx hands over `$ssl_client_escaped_cert`: a URL-escaped PEM document, and
+ * the literal `-` when the visitor presented no certificate. The API reads a
+ * certificate from base64 DER, and a short header survives every hop. A PEM in
+ * a header is ~1.4 KB and carries `%` and newlines that intermediaries rewrite,
+ * which silently invalidated the MAC over it.
+ *
+ * Anything that does not parse as a certificate is dropped rather than
+ * forwarded, so a broken header can never claim to be a device identity.
+ */
+export function toCertificateHeader(escapedPem) {
+  const value = String(escapedPem ?? "").trim();
+  if (value.length === 0 || value === "-") return "";
+  let pem = value;
+  if (value.includes("%")) {
+    try {
+      pem = decodeURIComponent(value);
+    } catch {
+      return "";
+    }
+  }
+  if (!pem.includes("BEGIN CERTIFICATE")) return "";
+  try {
+    const der = new crypto.X509Certificate(decodeConfiguredPem(pem)).raw;
+    return Buffer.from(der).toString("base64");
+  } catch {
+    return "";
+  }
 }
 
 
@@ -88,17 +131,89 @@ function oneHeader(req, name) {
   return text.replace(/[\r\n]/g, " ").trim().slice(0, 180);
 }
 
+/**
+ * App Streams sends a request on a connection it kept idle, then holds the
+ * socket without reading. No response deadline is applied at that layer, so a
+ * client that reuses a connection sees zero bytes until it gives up. Answering
+ * every request immediately keeps that failure from reaching the browser.
+ */
+const UPSTREAM_DEADLINE_MS = 20_000;
+
+/** A connection per request. A pooled socket can be closed under us. */
+const upstreamAgent = new https.Agent({
+  keepAlive: false,
+  maxSockets: 128,
+});
+
+/**
+ * Retire this edge's cached TLS certificates while it still runs, so a renewal
+ * replaces the file instead of leaving a certificate that expires in place.
+ */
+function scheduleCertRenewal(hostname) {
+  const certPath = path.join(CERT_DIR, "fullchain.pem");
+  const readRemaining = () => {
+    try {
+      const cert = new crypto.X509Certificate(fs.readFileSync(certPath, "utf8"));
+      return cert.validToDate.getTime() - Date.now();
+    } catch {
+      return null;
+    }
+  };
+  const tick = () => {
+    const remains = readRemaining();
+    if (remains === null) return;
+    // Renew at 30 days; retry daily when the renewal window has opened.
+    if (remains > 30 * 24 * 60 * 60 * 1000) return;
+    void renewCertificate(hostname).catch(() => {});
+  };
+  const timer = setInterval(tick, 12 * 60 * 60 * 1000);
+  timer.unref();
+  return timer;
+}
+
+async function renewCertificate(hostname) {
+  log({ op: "acme.renew.start", host: hostname });
+  const material = await issueCertificate(hostname, (token, keyAuthorization) => {
+    const dir = path.join(CERT_DIR, ".well-known", "acme-challenge");
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, token), keyAuthorization);
+  });
+  rememberCert(material.certPem, material.keyPem);
+  const reload = spawnSync("nginx", ["-s", "reload"], { stdio: ["ignore", "pipe", "pipe"] });
+  if (reload.status !== 0) throw new Error("nginx reload failed");
+  log({ op: "acme.renewed", host: hostname });
+}
+
 export function proxyRequest(req, res, options) {
   // nginx proved the private key during TLS and replaced these from the socket.
   // This process is bound to localhost, so the internet cannot set them.
   const ip = String(req.headers["x-edge-ip"] ?? "").trim();
-  const certB64 = String(req.headers["x-edge-cert"] ?? "").trim();
+  const certHeader = toCertificateHeader(req.headers["x-edge-cert"]);
   const host = oneHeader(req, "host");
+
+  // A request that was answered, or that the client walked away from, must not
+  // hold an upstream socket or a timer.
+  let settled = false;
+  const finish = (status, body) => {
+    if (settled) return;
+    settled = true;
+    clearTimeout(deadline);
+    if (res.headersSent) {
+      res.end();
+      return;
+    }
+    res.writeHead(status, { "content-type": "application/json", "cache-control": "no-store" });
+    res.end(body);
+  };
+
+  const deadline = setTimeout(() => {
+    log({ op: "edge.upstream.timeout", path: (req.url || "").split("?")[0], peer: ip });
+    finish(504, '{"error":"Gateway timeout"}');
+  }, UPSTREAM_DEADLINE_MS);
+  deadline.unref();
+
   const headers = { ...req.headers };
   for (const name of HOP_BY_HOP) delete headers[name];
-  delete headers["x-ledger-client-cert"];
-  delete headers["x-ledger-client-ip"];
-  delete headers["x-ledger-cert-mac"];
   delete headers["x-edge-ip"];
   delete headers["x-edge-cert"];
   for (const name of PROXY_OWNED_HEADERS) delete headers[name];
@@ -110,9 +225,15 @@ export function proxyRequest(req, res, options) {
   if (host) headers["x-forwarded-host"] = host;
   headers["x-forwarded-proto"] = "https";
   if (ip) headers["x-forwarded-for"] = ip;
+
+  // Attestation headers. nginx strips every client-supplied copy, so a value
+  // here is always this edge's own statement about its TCP peer.
   headers["x-ledger-client-ip"] = ip;
-  headers["x-ledger-cert-mac"] = attestationMac(options.secret, ip, certB64);
-  if (certB64) headers["x-ledger-client-cert"] = certB64;
+  headers["x-ledger-ip-mac"] = ipAttestationMac(options.secret, ip);
+  if (certHeader) {
+    headers["x-ledger-client-cert"] = certHeader;
+    headers["x-ledger-cert-mac"] = certAttestationMac(options.secret, certHeader);
+  }
 
   const upstream = https.request(
     {
@@ -122,9 +243,17 @@ export function proxyRequest(req, res, options) {
       path: req.url,
       headers,
       servername: options.backendHost,
-      timeout: 60_000,
+      agent: upstreamAgent,
+      // Per-socket inactivity deadline, independent of the overall deadline.
+      timeout: UPSTREAM_DEADLINE_MS,
     },
     (up) => {
+      if (settled) {
+        up.destroy();
+        return;
+      }
+      settled = true;
+      clearTimeout(deadline);
       const out = { ...up.headers };
       if (typeof out.location === "string") {
         out.location = rewriteLocation(out.location, options.backendOrigin, options.publicOrigin);
@@ -133,21 +262,34 @@ export function proxyRequest(req, res, options) {
           rewriteLocation(item, options.backendOrigin, options.publicOrigin),
         );
       }
+      // The backend answers in one frame; a chunked reply to a browser that
+      // already gave up only leaks a socket.
+      out["content-type"] ??= "text/plain; charset=utf-8";
       res.writeHead(up.statusCode ?? 502, out);
       up.pipe(res);
+      up.on("error", () => res.destroy());
     },
   );
-  upstream.on("timeout", () => upstream.destroy(new Error("backend timeout")));
+  upstream.on("timeout", () => {
+    upstream.destroy(new Error("backend timeout"));
+  });
   upstream.on("error", () => {
-    if (!res.headersSent) res.writeHead(502, { "content-type": "application/json" });
-    res.end('{"error":"Bad gateway"}');
+    log({ op: "edge.upstream.error", path: (req.url || "").split("?")[0] });
+    finish(502, '{"error":"Bad gateway"}');
+  });
+  res.on("close", () => {
+    if (!settled) {
+      settled = true;
+      clearTimeout(deadline);
+      upstream.destroy();
+    }
   });
   req.on("aborted", () => upstream.destroy());
   req.pipe(upstream);
   log({
     op: "edge.proxy",
     path: (req.url || "").split("?")[0],
-    clientCertPresent: certB64.length > 0,
+    clientCertPresent: certHeader.length > 0,
     peer: ip,
     forwardedFor: oneHeader(req, "x-forwarded-for"),
     realIp: oneHeader(req, "x-real-ip"),
@@ -202,8 +344,25 @@ async function main() {
   writePem(path.join(CERT_DIR, "ca.crt"), caPem);
 
   const local = http.createServer((req, res) => {
+    // This process listens on loopback only, behind nginx. A liveness probe
+    // must not travel to the API: it answers for the edge itself.
+    const pathOnly = (req.url || "").split("?")[0];
+    if (pathOnly === "/api/edge-healthz") {
+      const body = JSON.stringify({ status: "ok", host: hostname });
+      res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
+      res.end(body);
+      return;
+    }
     proxyRequest(req, res, { backendHost, backendOrigin, publicOrigin, secret });
   });
+  // Node closes an idle connection after 5s by default. nginx holds its
+  // upstream connection longer than that and will reuse a socket this process
+  // has already closed, writing the next request into a dying socket: the
+  // browser then sees zero bytes until it gives up. Keeping this above every
+  // keep-alive window on the nginx side removes the race.
+  local.keepAliveTimeout = 75_000;
+  local.headersTimeout = 90_000;
+  local.requestTimeout = 120_000;
   await new Promise((resolve, reject) => {
     local.once("error", reject);
     local.listen(8080, "127.0.0.1", resolve);
@@ -239,6 +398,9 @@ async function main() {
   } else {
     log({ op: "acme.reused", host: hostname });
   }
+  // A 90-day certificate must be replaced before it expires, not after the
+  // browser starts refusing the connection.
+  scheduleCertRenewal(hostname);
   log({ op: "edge.listen", host: hostname });
 }
 

@@ -7,7 +7,7 @@ import path from "node:path";
 import { after, before, describe, it } from "node:test";
 import type { Express } from "express";
 
-import { attestationMac } from "./edgeAccess";
+import { ipAttestationMac } from "./edgeAccess";
 
 delete process.env.SENTRY_DSN;
 delete process.env.CLERK_SECRET_KEY;
@@ -137,16 +137,23 @@ describe("ledger web behind the edge gate", { concurrency: 1 }, () => {
     assert.equal(denied.status, 403);
     assert.equal(denied.body.includes("LedgerIndexMarker"), false);
 
-    const mac = attestationMac(process.env.EDGE_CERT_PROXY_SECRET, "127.0.0.1", "");
+    const mac = ipAttestationMac(process.env.EDGE_CERT_PROXY_SECRET, "127.0.0.1");
     const allowed = await request(port, "GET", "/", {
       "x-ledger-client-ip": "127.0.0.1",
-      "x-ledger-cert-mac": mac,
+      "x-ledger-ip-mac": mac,
     });
     assert.equal(allowed.status, 200);
     assert.equal(allowed.body.includes("LedgerIndexMarker"), true);
+  });
 
+  it("azureHost_healthzWithoutEdge_is403", async () => {
+    // The retired hostname answers nothing of any nature, the health route
+    // included. Its probe runs through the edge on the single public URL.
+    process.env.WEBSITE_SITE_NAME = "binance-loan-tracker-backend";
+    process.env.EDGE_CERT_PROXY_SECRET = "test-proxy-secret-0123456789abcdef";
+    process.env.ALLOWED_CLIENT_IPS = "127.0.0.1";
     const health = await request(port, "GET", "/api/healthz");
-    assert.equal(health.status, 200);
-    assert.equal(health.body, '{"status":"ok"}');
+    assert.equal(health.status, 403);
+    assert.equal(health.body.includes("status"), false);
   });
 });

@@ -8,7 +8,7 @@ Use that name. Do not use the numeric address, and do not use either of the host
 
 ## Addresses that are not the site
 
-- `https://binance-loan-tracker-backend.azurewebsites.net/` is **not** a site address. It is the API host behind the edge, and a browser there receives Forbidden, including from an allowlisted address, because that request did not come through the edge. Only `/api/healthz` answers there, so Azure can probe the app. Its body is `{ "status": "ok" }` or `{ "status": "degraded" }` and it never lists which settings are missing. `/api/readyz` and the dashboard stay behind the gate.
+- `https://binance-loan-tracker-backend.azurewebsites.net/` is **not** a site address and answers nothing. It is the API host behind the edge, and it refuses **every** path, `/api/healthz` included, unless the request carries the edge's signed attestation. The health probe lives on the public address above instead, so the retired host is silent even to a scanner.
 - `https://blt-ledger-edge.southafricanorth.azurecontainer.io/` no longer exists. The container instance that answered on it is gone and the name does not resolve. Nothing points at it any more.
 - `20.164.41.232` is the edge machine's address, not a site address. The certificate is issued for the name above, so browsing to the address fails the name check.
 

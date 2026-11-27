@@ -8,9 +8,11 @@ import type { Request } from "express";
 
 import {
   attestationMac,
+  certAttestationMac,
   clientCertificateAllowed,
   describeEdgeClient,
   evaluateEdgeAccess,
+  ipAttestationMac,
   isAllowedClientIp,
   normalizeIp,
   requestMayPassEdge,
@@ -127,9 +129,12 @@ describe("isAllowedClientIp", () => {
 function attestedRequest(ip: string, certHeader = ""): Request {
   const headers: Record<string, string> = {
     "x-ledger-client-ip": ip,
-    "x-ledger-cert-mac": attestationMac(proxySecret, ip, certHeader),
+    "x-ledger-ip-mac": ipAttestationMac(proxySecret, ip),
   };
-  if (certHeader.length > 0) headers["x-ledger-client-cert"] = certHeader;
+  if (certHeader.length > 0) {
+    headers["x-ledger-client-cert"] = certHeader;
+    headers["x-ledger-cert-mac"] = certAttestationMac(proxySecret, certHeader);
+  }
   return request({ ip: "20.1.1.1", headers });
 }
 
@@ -137,12 +142,15 @@ describe("requestMayPassEdge", () => {
   it("requestMayPassEdge_unknownIpWithoutCert_refuses", () => {
     const env = { ALLOWED_CLIENT_IPS: "102.65.11.235", WEBSITE_SITE_NAME: "ledger" };
     assert.equal(requestMayPassEdge(request({ ip: "203.0.113.9" }), env), false);
+    // A bare socket address on the App Service hostname is not a door, even
+    // when it is allowlisted: only the edge may make that claim.
     assert.equal(requestMayPassEdge(request({ ip: "102.65.11.235" }), env), false);
     assert.equal(requestMayPassEdge(request({ ip: "102.65.11.235:58512" }), env), false);
     const direct = evaluateEdgeAccess(request({ ip: "102.65.11.235:58512" }), env);
-    assert.equal(direct.clientIp, "102.65.11.235");
-    assert.equal(direct.ipAllowed, true);
+    assert.equal(direct.clientIp, "");
+    assert.equal(direct.ipAllowed, false);
     assert.equal(direct.certAllowed, false);
+    assert.equal(direct.edgeAttested, false);
     assert.equal(direct.allowed, false);
   });
 
@@ -226,22 +234,23 @@ describe("clientCertificateAllowed", () => {
       request({ ip: "102.65.11.235:58512", header: issued.leafB64 }),
       env,
     );
-    assert.equal(decision.ipAllowed, true);
+    assert.equal(decision.ipAllowed, false);
     assert.equal(decision.clientCertPresent, true);
     assert.equal(decision.certAllowed, false);
+    assert.equal(decision.edgeAttested, false);
     assert.equal(decision.allowed, false);
   });
 
   it("evaluateEdgeAccess_proxyAttestation_usesPhoneIpAndCert", () => {
     const attestedIp = "102.65.11.235";
-    const mac = attestationMac(proxySecret, attestedIp, issued.leafB64);
     const decision = evaluateEdgeAccess(
       request({
         ip: "20.1.1.1",
         headers: {
           "x-ledger-client-ip": attestedIp,
+          "x-ledger-ip-mac": ipAttestationMac(proxySecret, attestedIp),
           "x-ledger-client-cert": issued.leafB64,
-          "x-ledger-cert-mac": mac,
+          "x-ledger-cert-mac": certAttestationMac(proxySecret, issued.leafB64),
         },
       }),
       { ...env, EDGE_CERT_PROXY_SECRET: proxySecret, WEBSITE_SITE_NAME: "" },
@@ -252,22 +261,65 @@ describe("clientCertificateAllowed", () => {
     assert.equal(decision.allowed, true);
   });
 
+  it("evaluateEdgeAccess_rewrittenCertHeader_keepsIpAttestation", () => {
+    // The address MAC is what a home visitor relies on. A certificate header an
+    // intermediary rewrote must not invalidate the address and turn this into a
+    // 403: before the split MACs it did, from an allowlisted address.
+    const attestedIp = "102.36.24.176";
+    const decision = evaluateEdgeAccess(
+      request({
+        ip: "20.1.1.1",
+        headers: {
+          "x-ledger-client-ip": attestedIp,
+          "x-ledger-ip-mac": ipAttestationMac(proxySecret, attestedIp),
+          // Signed by the edge, then rewritten in transit (e.g. % escapes).
+          "x-ledger-client-cert": issued.leafB64,
+          "x-ledger-cert-mac": certAttestationMac(proxySecret, "rewritten-in-transit"),
+        },
+      }),
+      { ...env, EDGE_CERT_PROXY_SECRET: proxySecret, WEBSITE_SITE_NAME: "" },
+    );
+    assert.equal(decision.clientIp, attestedIp);
+    assert.equal(decision.ipAllowed, true);
+    assert.equal(decision.certAllowed, false);
+    assert.equal(decision.edgeAttested, true);
+    assert.equal(decision.allowed, true);
+  });
+
   it("evaluateEdgeAccess_badProxyMac_isIgnored", () => {
     const decision = evaluateEdgeAccess(
       request({
         ip: "203.0.113.9",
         headers: {
           "x-ledger-client-ip": "102.36.24.176",
+          "x-ledger-ip-mac": "ab".repeat(32),
           "x-ledger-client-cert": issued.leafB64,
           "x-ledger-cert-mac": "ab".repeat(32),
         },
       }),
       { ...env, EDGE_CERT_PROXY_SECRET: proxySecret, WEBSITE_SITE_NAME: "" },
     );
-    assert.equal(decision.clientIp, "203.0.113.9");
+    // An unsigned claim is not a fact, and the socket is Azure's front end.
+    assert.equal(decision.clientIp, "");
     assert.equal(decision.ipAllowed, false);
     assert.equal(decision.certAllowed, false);
     assert.equal(decision.clientCertPresent, false);
+    assert.equal(decision.edgeAttested, false);
+    assert.equal(decision.allowed, false);
+  });
+
+  it("evaluateEdgeAccess_unattestedForwardedFor_isNotAnAddress", () => {
+    // Azure passes the visitor's X-Forwarded-For through unchanged, so reading
+    // req.ip here would let anyone claim an allowlisted address with a header.
+    const decision = evaluateEdgeAccess(
+      request({
+        ip: "102.65.11.235",
+        headers: { "x-forwarded-for": "102.65.11.235" },
+      }),
+      { ...env, EDGE_CERT_PROXY_SECRET: proxySecret },
+    );
+    assert.equal(decision.clientIp, "");
+    assert.equal(decision.ipAllowed, false);
     assert.equal(decision.allowed, false);
   });
 
@@ -278,13 +330,13 @@ describe("clientCertificateAllowed", () => {
         header: issued.leafB64,
         headers: {
           "x-ledger-client-ip": "102.36.24.176",
-          "x-ledger-cert-mac": "ab".repeat(32),
+          "x-ledger-ip-mac": "ab".repeat(32),
         },
       }),
       { ...env, EDGE_CERT_PROXY_SECRET: proxySecret },
     );
-    assert.equal(decision.clientIp, "102.65.11.235");
-    assert.equal(decision.ipAllowed, true);
+    assert.equal(decision.clientIp, "");
+    assert.equal(decision.ipAllowed, false);
     assert.equal(decision.certAllowed, false);
     assert.equal(decision.allowed, false);
   });

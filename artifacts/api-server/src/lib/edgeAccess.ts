@@ -4,9 +4,12 @@ import type { Request } from "express";
 /** Networks that may open Ledger without a device certificate. */
 export const DEFAULT_ALLOWED_CLIENT_IPS = ["102.65.11.235", "102.36.24.176"] as const;
 
-/** Headers set by our TLS proxy. The MAC is what makes them trustworthy. */
+/** Headers set by our TLS proxy. The MACs are what make them trustworthy. */
 export const LEDGER_CLIENT_CERT_HEADER = "x-ledger-client-cert";
 export const LEDGER_CLIENT_IP_HEADER = "x-ledger-client-ip";
+/** Signs the address alone. */
+export const LEDGER_IP_MAC_HEADER = "x-ledger-ip-mac";
+/** Signs the certificate header alone. */
 export const LEDGER_CERT_MAC_HEADER = "x-ledger-cert-mac";
 
 const CERT_HEADER_MAX = 20_000;
@@ -129,6 +132,21 @@ export function attestationMac(secret: string, ip: string, certHeader: string): 
   return createHmac("sha256", secret).update(`${ip}\n${certHeader}`, "utf8").digest("hex");
 }
 
+/**
+ * Address-only attestation. The peer address and the device certificate are
+ * signed separately so a rewritten certificate header cannot invalidate the
+ * address fact, and vice versa. Before this split, one unreadable certificate
+ * header turned a correctly allowlisted visitor into a 403.
+ */
+export function ipAttestationMac(secret: string, ip: string): string {
+  return createHmac("sha256", secret).update(`ip\n${ip}`, "utf8").digest("hex");
+}
+
+/** Certificate-only attestation. Signs the exact header the edge sent. */
+export function certAttestationMac(secret: string, certHeader: string): string {
+  return createHmac("sha256", secret).update(`cert\n${certHeader}`, "utf8").digest("hex");
+}
+
 function headerText(req: Request, name: string): string {
   const value = req.header(name);
   if (Array.isArray(value)) return value[0] ?? "";
@@ -147,21 +165,64 @@ function macMatches(secret: string, ip: string, certHeader: string, presented: s
  * The TLS proxy saw this TCP peer and, when present, this client certificate.
  * Azure's front end replaces X-Forwarded-For with the proxy address, so the
  * phone address has to travel in the signed header instead.
+ *
+ * The address and the certificate are signed by two separate MACs. They
+ * describe two independent facts, and one being unreadable must not erase the
+ * other: a certificate header rewritten in transit used to invalidate the MAC
+ * over the pair and turn an allowlisted visitor into a 403.
  */
-function readAttestation(
-  req: Request,
-  env: NodeJS.ProcessEnv,
-): { ip: string; certHeader: string } | null {
+interface EdgeAttestation {
+  /** Attested address, empty when only the certificate was attested. */
+  ip: string;
+  certHeader: string;
+  ipAttested: boolean;
+  certAttested: boolean;
+}
+
+function safeEqual(left: string, right: string): boolean {
+  const expected = Buffer.from(left);
+  const presented = Buffer.from(right.trim().toLowerCase());
+  if (expected.length !== presented.length) return false;
+  return timingSafeEqual(expected, presented);
+}
+
+function readAttestation(req: Request, env: NodeJS.ProcessEnv): EdgeAttestation | null {
   const secret = env.EDGE_CERT_PROXY_SECRET ?? "";
   if (secret.length < PROXY_SECRET_MIN) return null;
-  const ip = headerText(req, LEDGER_CLIENT_IP_HEADER);
-  const mac = headerText(req, LEDGER_CERT_MAC_HEADER);
-  if (!ip || !mac || ip.length > 128 || mac.length > 128) return null;
-  if (ip.includes("\n") || ip.includes("\r")) return null;
+
+  const ipHeader = headerText(req, LEDGER_CLIENT_IP_HEADER);
+  const ipMac = headerText(req, LEDGER_IP_MAC_HEADER);
   const certHeader = headerText(req, LEDGER_CLIENT_CERT_HEADER);
-  if (certHeader.length > CERT_HEADER_MAX) return null;
-  if (!macMatches(secret, ip, certHeader, mac)) return null;
-  return { ip, certHeader };
+  const certMac = headerText(req, LEDGER_CERT_MAC_HEADER);
+
+  let ipAttested = false;
+  if (ipHeader.length > 0 && ipHeader.length <= 128 && ipMac.length > 0 && ipMac.length <= 128) {
+    if (!ipHeader.includes("\n") && !ipHeader.includes("\r")) {
+      ipAttested = safeEqual(ipAttestationMac(secret, ipHeader), ipMac);
+    }
+  }
+
+  let certAttested = false;
+  let attestedCert = "";
+  if (
+    certHeader.length > 0 &&
+    certHeader.length <= CERT_HEADER_MAX &&
+    certMac.length > 0 &&
+    certMac.length <= 128
+  ) {
+    if (safeEqual(certAttestationMac(secret, certHeader), certMac)) {
+      certAttested = true;
+      attestedCert = certHeader;
+    }
+  }
+
+  if (!ipAttested && !certAttested) return null;
+  return {
+    ip: ipAttested ? ipHeader : "",
+    certHeader: attestedCert,
+    ipAttested,
+    certAttested,
+  };
 }
 
 function platformTrustsClientCert(env: NodeJS.ProcessEnv): boolean {
@@ -186,14 +247,22 @@ export interface EdgeAccessDecision {
   clientCertPresent: boolean;
   /** Address compared with the allowlist, port already removed. */
   clientIp: string;
+  /** True when the edge signed something on this request. */
+  edgeAttested: boolean;
+  /** Raw socket address, used to recognise the platform's own probe. */
+  socketIp: string;
 }
 
 /**
  * ipAllowed and certAllowed are independent. A home address may pass with
  * certAllowed false. A valid device certificate may pass with ipAllowed false.
  * On Azure, or whenever the proxy secret is set, neither fact opens the API
- * unless the edge's MAC is valid. That is what stops the App Service hostname
+ * unless the edge attested it. That is what stops the App Service hostname
  * being a second copy of the site.
+ *
+ * The address is only taken from the edge's signed header. Falling back to
+ * req.ip would read the visitor's `X-Forwarded-For` (which Azure forwards
+ * unchanged), letting anyone claim an allowlisted address by writing a header.
  */
 export function evaluateEdgeAccess(
   req: Request,
@@ -202,7 +271,7 @@ export function evaluateEdgeAccess(
   const attested = readAttestation(req, env);
   const requireEdge = attestationRequired(env);
   const clientIp = normalizeIp(
-    attested?.ip ?? req.ip ?? req.socket?.remoteAddress ?? "",
+    attested?.ip || (requireEdge ? "" : (req.ip ?? req.socket?.remoteAddress ?? "")),
   );
   const ipAllowed = isAllowedClientIp(clientIp, env);
 
@@ -231,6 +300,8 @@ export function evaluateEdgeAccess(
     certAllowed,
     clientCertPresent,
     clientIp,
+    edgeAttested: attested !== null,
+    socketIp: normalizeIp(req.socket?.remoteAddress ?? ""),
   };
 }
 

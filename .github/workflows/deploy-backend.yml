@@ -52,6 +52,9 @@ env:
   AZURE_WEBAPP_NAME: binance-loan-tracker-backend
   ACR_LOGIN_SERVER:  binancetrackeracr.azurecr.io
   IMAGE_NAME:        binance-loan-backend
+  # The only URL that serves Ledger. The App Service hostname denies every
+  # path, so nothing may probe it.
+  PUBLIC_EDGE_HOST:  blt-ledger-edge.southafricanorth.cloudapp.azure.com
 
 jobs:
   build-and-deploy:
@@ -134,14 +137,25 @@ jobs:
       # The ACR webhook tells App Service to pull. Give Azure a generous
       # window: image pull on a Basic plan can take ~1-3 minutes the first
       # time and the platform restarts the container on every settings touch.
+      #
+      # The App Service hostname answers nothing a visitor or a probe can reach,
+      # so the probe goes through the one public URL. The edge serves
+      # /api/healthz itself (edge liveness) and proxies /api/edge-healthz to
+      # this API, so this proves the whole edge -> API channel.
       - name: Live health check
         run: |
           set -euo pipefail
-          url="https://${{ env.AZURE_WEBAPP_NAME }}.azurewebsites.net/api/healthz"
+          url="https://${{ env.PUBLIC_EDGE_HOST }}/api/healthz"
+          channel="https://${{ env.PUBLIC_EDGE_HOST }}/api/edge-healthz"
           echo "Probing $url for up to 6 minutes ..."
           for i in $(seq 1 36); do
             if curl -sSf --max-time 10 "$url" > /tmp/healthz.json; then
               echo "live healthz OK on attempt $i: $(cat /tmp/healthz.json)"
+              if curl -sSf --max-time 10 "$channel" > /tmp/edge.json; then
+                echo "edge -> API channel OK: $(cat /tmp/edge.json)"
+              else
+                echo "edge answered but the API channel did not; it may still be starting"
+              fi
               exit 0
             fi
             echo "  attempt $i failed; sleeping 10s"

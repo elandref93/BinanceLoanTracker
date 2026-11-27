@@ -129,25 +129,31 @@ app.use("/api/auth/session", rateLimit({ max: 60, windowMs: 60 * 1000, keyPrefix
 app.use("/api", rateLimit({ max: 120, windowMs: 60 * 1000, keyPrefix: "api" }));
 
 // The edge attests the client address and, when present, the device certificate.
-// Either one is enough. A direct call to this host is refused, including from
-// an allowlisted address, because Azure's own TLS front does not present the
-// device CA. /api/healthz stays open for the platform probe.
+// Either one is enough. Nothing else opens this app. A direct call to the App
+// Service hostname is refused on EVERY path, /api/healthz included, because on
+// that hostname the health route was the last thing still answering and made
+// the retired host look alive.
+//
+// There is no probe exemption here on purpose. Azure proxies visitor traffic
+// from its platform address (169.254.x.x), which also carries the platform's own
+// health probe, so a socket address cannot tell the two apart and an "allow the
+// probe" rule would open the door for every visitor. The App Service health
+// check path is therefore unset, and the only probe that exists runs through
+// the edge on the single public URL.
 app.use((req, res, next) => {
   if (!edgeGateEnabled()) {
     next();
     return;
   }
   const pathOnly = (req.originalUrl || req.url || "").split("?")[0];
-  if (pathOnly === "/api/healthz") {
-    next();
-    return;
-  }
   const decision = evaluateEdgeAccess(req);
   // Booleans only. The certificate body, serial, and proxy MAC are never logged.
   const fields = {
     op: decision.allowed ? "edge.allowed" : "edge.denied",
     path: pathOnly,
     clientIp: decision.clientIp,
+    socketIp: decision.socketIp,
+    edgeAttested: decision.edgeAttested,
     ipAllowed: decision.ipAllowed,
     certAllowed: decision.certAllowed,
     clientCertPresent: decision.clientCertPresent,

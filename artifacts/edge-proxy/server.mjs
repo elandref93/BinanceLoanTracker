@@ -20,6 +20,25 @@ const HOP_BY_HOP = new Set([
   "upgrade",
 ]);
 
+/**
+ * Headers that describe where a request came from and how it was addressed.
+ * A client can type these inside TLS, so every one of them is dropped here and
+ * the edge writes its own value. The backend builds absolute URLs (Clerk's
+ * sign-in handshake redirect_url among them) from the addressed host, so a
+ * client-set value is both a wrong-origin bug and a redirect-poisoning hole.
+ */
+const PROXY_OWNED_HEADERS = [
+  "forwarded",
+  "x-forwarded-for",
+  "x-forwarded-host",
+  "x-forwarded-port",
+  "x-forwarded-proto",
+  "x-real-ip",
+  "x-arr-clientcert",
+  // Clerk treats this as an override for the request origin.
+  "x-clerk-clerk-url",
+];
+
 export function decodeConfiguredPem(value) {
   return value.trim().replace(/^\uFEFF/, "").replace(/\\n/g, "\n");
 }
@@ -74,6 +93,7 @@ export function proxyRequest(req, res, options) {
   // This process is bound to localhost, so the internet cannot set them.
   const ip = String(req.headers["x-edge-ip"] ?? "").trim();
   const certB64 = String(req.headers["x-edge-cert"] ?? "").trim();
+  const host = oneHeader(req, "host");
   const headers = { ...req.headers };
   for (const name of HOP_BY_HOP) delete headers[name];
   delete headers["x-ledger-client-cert"];
@@ -81,7 +101,15 @@ export function proxyRequest(req, res, options) {
   delete headers["x-ledger-cert-mac"];
   delete headers["x-edge-ip"];
   delete headers["x-edge-cert"];
+  for (const name of PROXY_OWNED_HEADERS) delete headers[name];
   headers.host = options.backendHost;
+  // The backend is addressed as its own hostname, so it has to be told the host
+  // the visitor actually asked for. Clerk reads this to build the handshake
+  // redirect_url; without it sign-in sends the browser to the App Service
+  // hostname, where the edge gate answers 403.
+  if (host) headers["x-forwarded-host"] = host;
+  headers["x-forwarded-proto"] = "https";
+  if (ip) headers["x-forwarded-for"] = ip;
   headers["x-ledger-client-ip"] = ip;
   headers["x-ledger-cert-mac"] = attestationMac(options.secret, ip, certB64);
   if (certB64) headers["x-ledger-client-cert"] = certB64;

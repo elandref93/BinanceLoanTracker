@@ -344,15 +344,20 @@ async function main() {
   writePem(path.join(CERT_DIR, "ca.crt"), caPem);
 
   const local = http.createServer((req, res) => {
-    // This process listens on loopback only, behind nginx. A liveness probe
-    // must not travel to the API: it answers for the edge itself.
+    // This process listens on loopback only, behind nginx. Its liveness probe is
+    // answered here rather than sent to the API: CI and a browser must be able
+    // to ask the single public URL whether the edge is up without a certificate
+    // or an allowlisted address, and the App Service gate does not exempt
+    // /api/healthz any more.
     const pathOnly = (req.url || "").split("?")[0];
-    if (pathOnly === "/api/edge-healthz") {
-      const body = JSON.stringify({ status: "ok", host: hostname });
+    if (pathOnly === "/api/healthz") {
+      const body = JSON.stringify({ status: "ok" });
       res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
       res.end(body);
       return;
     }
+    // /api/readyz is NOT answered here: it travels to the API through the gate,
+    // so it proves the edge -> API channel with the edge's own attestation.
     proxyRequest(req, res, { backendHost, backendOrigin, publicOrigin, secret });
   });
   // Node closes an idle connection after 5s by default. nginx holds its

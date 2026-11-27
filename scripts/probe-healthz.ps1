@@ -3,8 +3,9 @@ param(
     # (binance-loan-tracker-backend.azurewebsites.net) denies every path, so it
     # is not probeable; use the edge instead.
     [string]$Url     = 'https://blt-ledger-edge.southafricanorth.cloudapp.azure.com/api/healthz',
-    # Proves the edge -> API channel, not just the edge.
-    [string]$Channel = 'https://blt-ledger-edge.southafricanorth.cloudapp.azure.com/api/edge-healthz',
+    # Proves the edge -> API channel, not just the edge. This path is proxied
+    # through the gate, so it only answers when the attestation was accepted.
+    [string]$Channel = 'https://blt-ledger-edge.southafricanorth.cloudapp.azure.com/api/readyz',
     [int]   $Tries   = 30,
     [int]   $DelaySec = 10
 )

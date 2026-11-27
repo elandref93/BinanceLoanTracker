@@ -146,11 +146,13 @@ jobs:
         run: |
           set -euo pipefail
           url="https://${{ env.PUBLIC_EDGE_HOST }}/api/healthz"
-          channel="https://${{ env.PUBLIC_EDGE_HOST }}/api/edge-healthz"
+          channel="https://${{ env.PUBLIC_EDGE_HOST }}/api/readyz"
           echo "Probing $url for up to 6 minutes ..."
           for i in $(seq 1 36); do
             if curl -sSf --max-time 10 "$url" > /tmp/healthz.json; then
               echo "live healthz OK on attempt $i: $(cat /tmp/healthz.json)"
+              # /api/readyz is proxied through the gate, so it only answers when
+              # the edge's attestation reached the API and was accepted.
               if curl -sSf --max-time 10 "$channel" > /tmp/edge.json; then
                 echo "edge -> API channel OK: $(cat /tmp/edge.json)"
               else

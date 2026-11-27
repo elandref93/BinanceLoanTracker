@@ -96,7 +96,7 @@ function log(fields) {
   process.stdout.write(`${JSON.stringify({ time: new Date().toISOString(), ...fields })}\n`);
 }
 
-function storedCertUsable(hostname) {
+function storedCertUsable(hostnames) {
   const certPath = path.join(CERT_DIR, "fullchain.pem");
   const keyPath = path.join(CERT_DIR, "privkey.pem");
   if (!fs.existsSync(certPath) || !fs.existsSync(keyPath)) return null;
@@ -105,7 +105,12 @@ function storedCertUsable(hostname) {
     const keyPem = fs.readFileSync(keyPath, "utf8");
     const cert = new crypto.X509Certificate(certPem);
     const names = `${cert.subjectAltName ?? ""}\n${cert.subject}`;
-    const named = names.includes(`DNS:${hostname}`) || names.includes(`CN=${hostname}`);
+    // Every configured name has to be on the certificate. A certificate that
+    // covers only the Azure label leaves the custom domain failing its TLS
+    // check, which is exactly the silent half-broken state to avoid.
+    const named = hostnames.every(
+      (hostname) => names.includes(`DNS:${hostname}`) || names.includes(`CN=${hostname}`),
+    );
     const remains = cert.validToDate.getTime() - Date.now();
     if (!named || remains < 14 * 24 * 60 * 60 * 1000) return null;
     return { certPem, keyPem };
@@ -149,7 +154,7 @@ const upstreamAgent = new https.Agent({
  * Retire this edge's cached TLS certificates while it still runs, so a renewal
  * replaces the file instead of leaving a certificate that expires in place.
  */
-function scheduleCertRenewal(hostname) {
+function scheduleCertRenewal(hostnames) {
   const certPath = path.join(CERT_DIR, "fullchain.pem");
   const readRemaining = () => {
     try {
@@ -164,16 +169,16 @@ function scheduleCertRenewal(hostname) {
     if (remains === null) return;
     // Renew at 30 days; retry daily when the renewal window has opened.
     if (remains > 30 * 24 * 60 * 60 * 1000) return;
-    void renewCertificate(hostname).catch(() => {});
+    void renewCertificate(hostnames).catch(() => {});
   };
   const timer = setInterval(tick, 12 * 60 * 60 * 1000);
   timer.unref();
   return timer;
 }
 
-async function renewCertificate(hostname) {
-  log({ op: "acme.renew.start", host: hostname });
-  const material = await issueCertificate(hostname, (token, keyAuthorization) => {
+async function renewCertificate(hostnames) {
+  log({ op: "acme.renew.start", hosts: hostnames });
+  const material = await issueCertificate(hostnames, (token, keyAuthorization) => {
     const dir = path.join(CERT_DIR, ".well-known", "acme-challenge");
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(path.join(dir, token), keyAuthorization);
@@ -181,7 +186,7 @@ async function renewCertificate(hostname) {
   rememberCert(material.certPem, material.keyPem);
   const reload = spawnSync("nginx", ["-s", "reload"], { stdio: ["ignore", "pipe", "pipe"] });
   if (reload.status !== 0) throw new Error("nginx reload failed");
-  log({ op: "acme.renewed", host: hostname });
+  log({ op: "acme.renewed", hosts: hostnames });
 }
 
 export function proxyRequest(req, res, options) {
@@ -190,6 +195,13 @@ export function proxyRequest(req, res, options) {
   const ip = String(req.headers["x-edge-ip"] ?? "").trim();
   const certHeader = toCertificateHeader(req.headers["x-edge-cert"]);
   const host = oneHeader(req, "host");
+  // The edge answers on every configured name. Redirects and Clerk's
+  // redirect_url must stay on the name the visitor actually used, so the
+  // public origin follows the addressed host and never a fixed one. An
+  // unrecognised Host falls back to the primary name rather than echoing an
+  // attacker-chosen host back inside a Location.
+  const publicOrigin =
+    host && options.publicHostnames?.has(host) ? `https://${host}` : options.publicOrigin;
 
   // A request that was answered, or that the client walked away from, must not
   // hold an upstream socket or a timer.
@@ -222,7 +234,12 @@ export function proxyRequest(req, res, options) {
   // the visitor actually asked for. Clerk reads this to build the handshake
   // redirect_url; without it sign-in sends the browser to the App Service
   // hostname, where the edge gate answers 403.
-  if (host) headers["x-forwarded-host"] = host;
+  //
+  // Only a configured name is forwarded. This value becomes a redirect_url, so
+  // passing a client-chosen Host through would let anyone aim Clerk's
+  // handshake at a host of their choosing.
+  if (host && options.publicHostnames?.has(host)) headers["x-forwarded-host"] = host;
+  else headers["x-forwarded-host"] = options.primaryHostname ?? host;
   headers["x-forwarded-proto"] = "https";
   if (ip) headers["x-forwarded-for"] = ip;
 
@@ -255,11 +272,13 @@ export function proxyRequest(req, res, options) {
       settled = true;
       clearTimeout(deadline);
       const out = { ...up.headers };
+      // Rewrite the backend's own origin to the origin the visitor is on, so a
+      // redirect never sends a phone from the custom domain to the Azure label.
       if (typeof out.location === "string") {
-        out.location = rewriteLocation(out.location, options.backendOrigin, options.publicOrigin);
+        out.location = rewriteLocation(out.location, options.backendOrigin, publicOrigin);
       } else if (Array.isArray(out.location)) {
         out.location = out.location.map((item) =>
-          rewriteLocation(item, options.backendOrigin, options.publicOrigin),
+          rewriteLocation(item, options.backendOrigin, publicOrigin),
         );
       }
       // The backend answers in one frame; a chunked reply to a browser that
@@ -332,8 +351,20 @@ function startNginx() {
 }
 
 async function main() {
-  const hostname = requiredEnv("EDGE_HOSTNAME");
-  if (!/^[a-z0-9.-]+$/.test(hostname)) throw new Error("EDGE_HOSTNAME is not a dns name");
+  // EDGE_HOSTNAME may list more than one name, comma separated. The first is
+  // the primary: it is the certificate CN and the fallback origin. Every name
+  // gets its own HTTP-01 authorization and appears on one certificate, so the
+  // user can reach the same edge on the Azure label and on a custom domain
+  // without any of them being a second-class path.
+  const hostnames = requiredEnv("EDGE_HOSTNAME")
+    .split(",")
+    .map((item) => item.trim().toLowerCase())
+    .filter((item) => item.length > 0);
+  if (hostnames.length === 0) throw new Error("EDGE_HOSTNAME has no name");
+  for (const hostname of hostnames) {
+    if (!/^[a-z0-9.-]+$/.test(hostname)) throw new Error("EDGE_HOSTNAME is not a dns name");
+  }
+  const hostname = hostnames[0];
   const backendOrigin = requiredEnv("BACKEND_ORIGIN").replace(/\/+$/, "");
   const backendHost = new URL(backendOrigin).hostname;
   const secret = requiredEnv("EDGE_CERT_PROXY_SECRET");
@@ -341,6 +372,7 @@ async function main() {
   const caPem = decodeConfiguredPem(requiredEnv("EDGE_CLIENT_CA_PEM"));
   if (!caPem.includes("BEGIN CERTIFICATE")) throw new Error("EDGE_CLIENT_CA_PEM is not a certificate");
   const publicOrigin = `https://${hostname}`;
+  const publicHostnames = new Set(hostnames);
   writePem(path.join(CERT_DIR, "ca.crt"), caPem);
 
   const local = http.createServer((req, res) => {
@@ -350,6 +382,8 @@ async function main() {
     // or an allowlisted address, and the App Service gate does not exempt
     // /api/healthz any more.
     const pathOnly = (req.url || "").split("?")[0];
+    // Any configured name answers the probe, so a network that reaches only
+    // the custom domain still has a working liveness check.
     if (pathOnly === "/api/healthz") {
       const body = JSON.stringify({ status: "ok" });
       res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
@@ -358,7 +392,14 @@ async function main() {
     }
     // /api/readyz is NOT answered here: it travels to the API through the gate,
     // so it proves the edge -> API channel with the edge's own attestation.
-    proxyRequest(req, res, { backendHost, backendOrigin, publicOrigin, secret });
+    proxyRequest(req, res, {
+      backendHost,
+      backendOrigin,
+      publicOrigin,
+      publicHostnames,
+      primaryHostname: hostname,
+      secret,
+    });
   });
   // Node closes an idle connection after 5s by default. nginx holds its
   // upstream connection longer than that and will reuse a socket this process
@@ -373,7 +414,7 @@ async function main() {
     local.listen(8080, "127.0.0.1", resolve);
   });
 
-  const hadCert = Boolean(storedCertUsable(hostname));
+  const hadCert = Boolean(storedCertUsable(hostnames));
   if (!hadCert) ensureTemporaryCert(hostname);
   startNginx();
   let nginxUp = false;
@@ -390,8 +431,8 @@ async function main() {
   if (!nginxUp) throw new Error("nginx did not listen");
 
   if (!hadCert) {
-    log({ op: "acme.start", host: hostname });
-    const material = await issueCertificate(hostname, (token, keyAuthorization) => {
+    log({ op: "acme.start", hosts: hostnames });
+    const material = await issueCertificate(hostnames, (token, keyAuthorization) => {
       const dir = path.join(CERT_DIR, ".well-known", "acme-challenge");
       fs.mkdirSync(dir, { recursive: true });
       fs.writeFileSync(path.join(dir, token), keyAuthorization);
@@ -399,14 +440,14 @@ async function main() {
     rememberCert(material.certPem, material.keyPem);
     const reload = spawnSync("nginx", ["-s", "reload"], { stdio: ["ignore", "pipe", "pipe"] });
     if (reload.status !== 0) throw new Error("nginx reload failed");
-    log({ op: "acme.issued", host: hostname });
+    log({ op: "acme.issued", hosts: hostnames });
   } else {
-    log({ op: "acme.reused", host: hostname });
+    log({ op: "acme.reused", hosts: hostnames });
   }
   // A 90-day certificate must be replaced before it expires, not after the
   // browser starts refusing the connection.
-  scheduleCertRenewal(hostname);
-  log({ op: "edge.listen", host: hostname });
+  scheduleCertRenewal(hostnames);
+  log({ op: "edge.listen", hosts: hostnames });
 }
 
 const entry = process.argv[1] ? path.resolve(process.argv[1]) : "";

@@ -85,8 +85,11 @@ async function post(url, payload, state) {
   throw new Error("acme request failed");
 }
 
-function serverKeyAndCsr(hostname) {
-  if (!/^[a-z0-9.-]+$/.test(hostname)) throw new Error("edge hostname is not a dns name");
+function serverKeyAndCsr(hostnames) {
+  if (hostnames.length === 0) throw new Error("edge hostname list is empty");
+  for (const hostname of hostnames) {
+    if (!/^[a-z0-9.-]+$/.test(hostname)) throw new Error("edge hostname is not a dns name");
+  }
   const dir = mkdtempSync(path.join(tmpdir(), "edge-csr-"));
   try {
     const keyPath = path.join(dir, "key.pem");
@@ -96,8 +99,8 @@ function serverKeyAndCsr(hostname) {
       "openssl",
       [
         "req", "-new", "-key", keyPath,
-        "-subj", `/CN=${hostname}`,
-        "-addext", `subjectAltName=DNS:${hostname}`,
+        "-subj", `/CN=${hostnames[0]}`,
+        "-addext", `subjectAltName=${hostnames.map((name) => `DNS:${name}`).join(",")}`,
         "-outform", "DER", "-out", csrPath,
       ],
       { stdio: ["ignore", "pipe", "pipe"] },
@@ -121,10 +124,18 @@ async function poll(url, state, ready) {
 }
 
 /**
- * Issues a publicly trusted certificate for hostname.
- * `publishChallenge(token, keyAuthorization)` must answer HTTP-01 before it returns.
+ * Issues one publicly trusted certificate covering every name in hostnames.
+ * `publishChallenge(token, keyAuthorization)` must answer HTTP-01 for each
+ * authorization before it returns.
+ *
+ * Two names, one certificate, on purpose: the edge answers on both the Azure
+ * DNS label and the custom domain a restricted network resolves. Each name is
+ * authorized separately, so a name whose DNS record is not in place yet fails
+ * the whole order — add the record first, then restart to pick the name up.
  */
-export async function issueCertificate(hostname, publishChallenge) {
+export async function issueCertificate(hostnames, publishChallenge) {
+  const names = Array.isArray(hostnames) ? hostnames : [hostnames];
+  if (names.length === 0) throw new Error("no hostnames to certify");
   const directory = await readDirectory();
   const { privateKey, publicKey } = crypto.generateKeyPairSync("ec", { namedCurve: "P-256" });
   const jwk = publicJwk(publicKey);
@@ -141,22 +152,34 @@ export async function issueCertificate(hostname, publishChallenge) {
 
   const order = await post(
     directory.newOrder,
-    { identifiers: [{ type: "dns", value: hostname }] },
+    { identifiers: names.map((value) => ({ type: "dns", value })) },
     state,
   );
   const orderUrl = order.response.headers.get("location");
   if (!orderUrl) throw new Error("acme order location missing");
-  const authUrl = order.body?.authorizations?.[0];
-  if (!authUrl) throw new Error("acme authorization missing");
-  const auth = await post(authUrl, null, state);
-  const challenge = (auth.body?.challenges ?? []).find((item) => item.type === "http-01");
-  if (!challenge?.token || !challenge.url) throw new Error("acme http-01 challenge missing");
-  const keyAuthorization = `${challenge.token}.${thumbprint(jwk)}`;
-  publishChallenge(challenge.token, keyAuthorization);
-  await post(challenge.url, {}, state);
-  await poll(authUrl, state, (body) => body?.status === "valid");
+  const authUrls = order.body?.authorizations ?? [];
+  if (authUrls.length === 0) throw new Error("acme authorization missing");
+
+  // Every authorization must be answered before the order can be finalized.
+  // A token is per-authorization, so they are published in one pass and only
+  // then acknowledged.
+  const challenges = [];
+  for (const authUrl of authUrls) {
+    const auth = await post(authUrl, null, state);
+    const challenge = (auth.body?.challenges ?? []).find((item) => item.type === "http-01");
+    if (!challenge?.token || !challenge.url) throw new Error("acme http-01 challenge missing");
+    const keyAuthorization = `${challenge.token}.${thumbprint(jwk)}`;
+    publishChallenge(challenge.token, keyAuthorization);
+    challenges.push({ authUrl, challenge });
+  }
+  for (const { challenge } of challenges) {
+    await post(challenge.url, {}, state);
+  }
+  for (const { authUrl } of challenges) {
+    await poll(authUrl, state, (body) => body?.status === "valid");
+  }
   const ready = await poll(orderUrl, state, (body) => body?.status === "ready" || body?.status === "valid");
-  const { keyPem, csrDer } = serverKeyAndCsr(hostname);
+  const { keyPem, csrDer } = serverKeyAndCsr(names);
   if (ready.status !== "valid") {
     const finalize = ready.finalize;
     if (!finalize) throw new Error("acme finalize url missing");

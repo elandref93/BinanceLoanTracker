@@ -1,100 +1,82 @@
-# Ledger edge: the phone that cannot resolve cloudapp.azure.com
+# Ledger edge: the phone that cannot open the Azure name
+
+**Decision, 2026-11-27: there is no custom domain and none will be bought.**
+The single public URL is `https://blt-ledger-edge.southafricanorth.cloudapp.azure.com/`.
+Anything that assumed `eapfs.co.za` — the DNS record, the switch script, the
+`ALLOWED_ORIGINS` entry — is retired.
 
 ## The symptom
 
-The Ledger web app opened fine at `https://binance-loan-tracker-backend.azurewebsites.net/`
-on the user's iPhone, from home and office. After the move to the single URL
-`https://blt-ledger-edge.southafricanorth.cloudapp.azure.com/` the same phone
-showed **"Safari can't open the page because the server can't be found."**
+The same iPhone opened `https://binance-loan-tracker-backend.azurewebsites.net/`
+fine, from home and office. On the Azure edge name Safari says **"Safari can't
+open the page because the server can't be found."** A Windows PC on the same two
+networks loads the URL fine, and the PC holds *no* device certificate.
 
-## What was ruled out, and how
+## Ruled out, with the measurement
 
-Measured 2026-11-27. Do not re-run these believing they are untested.
+| Hypothesis | Result |
+| --- | --- |
+| Name does not resolve | Resolves to 20.164.41.232 on 1.1.1.1, 1.1.1.3, 9.9.9.9, 8.8.8.8, 208.67.222.222, 94.140.14.14, 185.228.168.9, 76.76.2.0 and the authoritative `ns1-09.azure-dns.com` |
+| IPv6 / AAAA split | No AAAA on the edge name, and none on the VM. Not an IP-family problem |
+| DNSSEC | `azure.com` and `cloudapp.azure.com` are unsigned; no RRSIG anywhere, so nothing to fail validation |
+| Stale negative cache | A TTL is 10 s, SOA negative TTL is 300 s. A cached NXDOMAIN cannot survive five minutes of retries |
+| NSG blocking | `allow-http` (100) and `allow-https` (110) allow `*` inbound; no NIC-level rule overriding them |
+| Broken TLS on the server | TLS 1.2 `ECDHE-RSA-AES256-GCM-SHA384` and TLS 1.3 `TLS_AES_128_GCM_SHA256`/`_256_GCM_SHA384` all negotiate, `Verify return code: 0`, SAN is exactly the edge name, valid to 2027-02-24 |
+| Client-certificate path | Presenting the real `iphone` identity gives `client_verify=SUCCESS` and 200. No cert also works. The CA is `CN=Ledger Device CA`, CA:TRUE |
+| The profile breaks the phone's networking | The `.mobileconfig` payloads are `com.apple.security.root` + `com.apple.security.pkcs12` only — no DNS, no proxy, no VPN payload |
 
-**IPv6 — no.** Neither name publishes an AAAA record, so the split cannot be
-IPv4-only vs IPv6-only:
+**Correction:** the older note here said "TLS advertises CN=Ledger Device CA".
+That is the *client* CA in `ssl_client_certificate`. The server certificate is a
+Let's Encrypt leaf, `CN=blt-ledger-edge.southafricanorth.cloudapp.azure.com`.
 
-| name | A | AAAA |
-| --- | --- | --- |
-| blt-ledger-edge.southafricanorth.cloudapp.azure.com | 20.164.41.232 | none |
-| binance-loan-tracker-backend.azurewebsites.net | CNAME -> waws-prod-jnb21-025-21b2.southafricanorth.cloudapp.azure.com -> 20.87.81.1 | none |
+## What the edge now does about it
 
-The old working App Service name CNAMEs into `*.southafricanorth.cloudapp.azure.com`
-as well, so "cloudapp.azure.com is the broken zone" is not true either.
+Two diagnostics that answer **above the app gate and never proxied to the API**,
+so a device that cannot pass the gate can still prove what it reached:
 
-**Blocklists / family resolvers — no.** The edge name resolves correctly on
-Cloudflare 1.1.1.1 and Family 1.1.1.3, Quad9 9.9.9.9, AdGuard 94.140.14.14,
-CleanBrowsing 185.228.168.9, OpenDNS 208.67.222.222, Comodo 8.26.56.26 and
-ControlD 76.76.2.0. Google DoH with `edns_client_subnet` set to both allowlisted
-egress /24s (102.65.11.235, 102.36.24.176) also returns 20.164.41.232. No
-NXDOMAIN, no block page, nothing filtered.
+- `GET /edge-ping` over HTTPS → `edge ok <client ip> <iso time>`. Works with no
+  certificate and from a non-allowlisted address. Success implies hostname,
+  TLS and route are all fine, isolating the gate as the only remaining variable.
+- `GET /edge-http-ping` over plain HTTP → echoes client address, Host, port,
+  user agent, server time, and the line `ledger edge reachable over HTTP`.
+  Matched **ahead of** `location /` so the 301 upgrade cannot hide it. Also
+  served over TLS for a browser that upgrades the scheme first.
 
-**Server unreachable — no.** Public check nodes (check-host.net, DE/RU/US)
-reached `https://blt-ledger-edge.southafricanorth.cloudapp.azure.com/` and got a
-TLS-terminated 403 in ~0.7 s. Ports 80 and 443 are open in the NSG.
+Both echo only what the socket and request already exposed, strip control
+characters and markup, and reveal nothing about the deployment.
 
-**Certificate — fine.** Let's Encrypt cert, `CN=blt-ledger-edge.southafricanorth.cloudapp.azure.com`,
-SAN covers exactly that name, `Verify return code: 0 (ok)`, valid to 2027-02-24.
+nginx now logs one line per request (`listener`, `peer`, `host`, `uri`, `status`,
+`tls`, `cipher`, `sni`, `client_verify`) and runs `error_log` at `info`. **A
+connection that never completes produces no access-log line at all** — the peer
+address only appears in the "client closed connection while SSL handshaking"
+error line, which is why `info` and not `warn` is the level to use when chasing
+a device that cannot connect.
 
-Conclusion: the failure is **local to that phone's network path**, not something
-this deployment can see from outside. The user does not accept the DNS-filtering
-theory as proven, and correctly so — it was never demonstrated.
+## Reading a capture
 
-## The durable fix: a name the user already owns
+`tcpdump -ni eth0` on this VM sees both directions, and the public IP is
+NAT'd onto eth0, so **a real visitor's source address appears as itself**
+(confirmed: `102.36.24.176 -> 10.0.0.4.443`). The VM's own outbound traffic
+appears as `10.0.0.4 -> 20.164.41.232`, which is easy to mistake for a visitor.
+It is not.
 
-`eapfs.co.za` is delegated to GoDaddy (ns19/ns20.domaincontrol.com) and already
-resolves to Azure: apex and `www` both reach `20.87.81.1` (App Service
-`eap-website`). It resolves on every filtering resolver tested. Add a name under
-it and the phone has a hostname that is *not* on `cloudapp.azure.com`.
-
-The single record, at GoDaddy:
-
-```
-Type: A    Name: ledger    Value: 20.164.41.232    TTL: 600
-```
-
-(Full name, if GoDaddy asks for it: `ledger.eapfs.co.za`.) Do not touch apex, NS,
-MX, TXT/SPF, or `www` — `www` and the apex are live App Service custom domains.
-
-## What the code now does
-
-`EDGE_HOSTNAME` takes a comma-separated list. Every name is authorized
-separately over HTTP-01 and lands on one certificate. `server.mjs` follows the
-addressed host for redirects and Clerk's `redirect_url`, and only ever forwards
-a *configured* name in `x-forwarded-host` (it becomes a redirect target, so a
-client-chosen Host must not pass through). `storedCertUsable` demands every
-configured name be on the certificate, so a half-covered cert is replaced rather
-than served.
-
-`/usr/local/bin/blt-edge-switch` runs from `blt-edge-switch.timer` every 5
-minutes on the VM. It waits until `ledger.eapfs.co.za` resolves to the VM's own
-IP, then adds it to `EDGE_HOSTNAME` and obtains the two-name certificate *without
-removing the Azure label*, then writes `/var/lib/blt-edge/switch.done` and stops.
-Adding the name before the record exists would fail the whole ACME order and
-take the working certificate with it — hence the gate.
-
-## Proof lines to re-check after switching
-
-App Service log (`az webapp log tail -g ubuntu -n binance-loan-tracker-backend`):
-
-```
-edge.allowed path=/api/readyz clientIp=102.36.24.176 ... ipAllowed=true  certAllowed=false
-edge.allowed path=/          clientIp=172.17.0.1     ... ipAllowed=false certAllowed=true
-```
-
-The second line is the device-certificate path from the VM's own non-allowlisted
-egress. `https://binance-loan-tracker-backend.azurewebsites.net/` must stay 403
-on every path, `/api/healthz` included.
+`/usr/local/bin/blt-capture-report` on the VM summarises the running capture and
+filters this PC, the VM and the Azure probe out, so a genuine phone attempt is
+the only thing left visible.
 
 ## Traps
 
-- **Docker Desktop is not running on this PC.** Build the edge image with
+- **Docker Desktop is not running on this PC.** Build with
   `az acr build --registry binancetrackeracr --image binance-loan-edge:<tag> --file artifacts/edge-proxy/Dockerfile artifacts/edge-proxy`.
-- **The VM is not logged in to ACR** after a fresh boot in some cases; log in
-  with the registry admin credential via `--password-stdin`, never echo it.
-- **`set -e` + `pipefail` kills a bash script** on `getent ahostsv4 <missing>`
-  and on `[ -f x ] && exit 0`. Both bit the switch script; both are commented.
+- **Recreating the container must keep the `edge-certs` volume.** Losing it
+  throws away the valid Let's Encrypt certificate and forces a new ACME order.
+  Copy env with `docker inspect` into a `--env-file`, never retype secrets.
+- **`tcpdump -n` writes `host.port` with a dot**, not a colon. Stripping
+  `:[0-9]+$` silently does nothing and makes every peer look like a bare IP.
+- **Norton Web/Mail Shield on this PC intercepts TLS** and produces spurious
+  handshake failures on the first attempt to a new host. Retry before believing
+  a client-side TLS error; take handshake evidence from the VM.
 - **`az.cmd` splits `--query` on `|`** when run with pipes; parse JSON in
   PowerShell instead.
-- **Norton Web/Mail Shield on this PC intercepts TLS** and reports bogus
-  handshake failures for unusual Host headers. Get handshake data from the VM.
+- The old `blt-edge-switch.timer` is **disabled**. `blt-edge-renew.timer` on the
+  same VM is still enabled and must stay that way, or the certificate lapses.

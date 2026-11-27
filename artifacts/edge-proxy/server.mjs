@@ -316,6 +316,88 @@ export function proxyRequest(req, res, options) {
   });
 }
 
+/**
+ * Reachability diagnostics.
+ *
+ * "Safari can't open the page because the server can't be found" is produced
+ * before any byte of the app is involved, so the app's own gate cannot tell a
+ * routing failure from a certificate failure from a 403. These two answers are
+ * deliberately dumb: they echo what the socket and the request said and nothing
+ * about the deployment. They are answered here, above the gate, and never
+ * proxied to the API, so enabling them cannot widen access to Ledger content.
+ *
+ * They are unauthenticated by design — the point is to work from a device that
+ * cannot authenticate — so they must stay free of secrets, addresses, build
+ * identifiers and anything an attacker could use to fingerprint the app.
+ */
+function clientIpFor(req) {
+  return String(req.headers["x-edge-ip"] ?? req.socket?.remoteAddress ?? "").trim();
+}
+
+/**
+ * A header value is echoed back into a text response. Strip the characters that
+ * could forge a line, a header, or markup, and cap the length: this is
+ * diagnostic output, not a faithful copy of input.
+ */
+function echoable(value, maxLength = 200) {
+  return String(value ?? "")
+    .replace(/[^\x20-\x7e]/g, "?")
+    .replace(/[<>&"']/g, "")
+    .slice(0, maxLength);
+}
+
+function sendText(res, status, contentType, body, extraHeaders = {}) {
+  const buffer = Buffer.from(body, "utf8");
+  res.writeHead(status, {
+    "content-type": contentType,
+    "content-length": String(buffer.length),
+    "cache-control": "no-store",
+    ...extraHeaders,
+  });
+  res.end(buffer);
+}
+
+/** `/edge-ping`: TLS reached this edge. Plain text so it also reads in curl. */
+function serveEdgePing(req, res) {
+  const ip = clientIpFor(req);
+  const body = `edge ok ${ip || "unknown"} ${new Date().toISOString()}\n`;
+  sendText(res, 200, "text/plain; charset=utf-8", body);
+}
+
+/**
+ * `/edge-http-ping`: reachability without TLS at all. Answering this over plain
+ * HTTP proves DNS, the route to this VM and port 80 before a certificate, a TLS
+ * version or the gate has been asked for anything.
+ */
+function serveHttpPing(req, res) {
+  const ip = clientIpFor(req);
+  const host = echoable(oneHeader(req, "host"));
+  const agent = echoable(oneHeader(req, "user-agent"), 160);
+  const forwardedFor = echoable(oneHeader(req, "x-forwarded-for"), 120);
+  const port = echoable(req.headers["x-edge-port"], 10) || "80";
+  const now = new Date().toISOString();
+  log({ op: "edge.diagnostic", kind: "http-ping", peer: ip, host, port });
+
+  const body = `ledger edge reachable over HTTP
+
+client   ${ip || "unknown"}
+host     ${host || "(none)"}
+port     ${port}
+agent    ${agent || "(none)"}
+xff      ${forwardedFor || "(none)"}
+time     ${now}
+
+This page came from the edge itself. It needs no certificate and no
+allowlisted network, and it shows that this device reached the server.
+If this loads but https://${host || "the https url"}/ does not, the
+problem is in TLS or the access gate, not in name resolution or routing.
+`;
+  sendText(res, 200, "text/plain; charset=utf-8", body, {
+    // No browser surface beyond this page; the response is inert text.
+    "x-content-type-options": "nosniff",
+  });
+}
+
 function requiredEnv(name) {
   const value = process.env[name]?.trim() ?? "";
   if (!value) throw new Error(`missing ${name}`);
@@ -388,6 +470,16 @@ async function main() {
       const body = JSON.stringify({ status: "ok" });
       res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
       res.end(body);
+      return;
+    }
+    // Answered here and never proxied: these exist to be reachable from a device
+    // that cannot pass the gate, so they must not depend on the API at all.
+    if (pathOnly === "/edge-ping") {
+      serveEdgePing(req, res);
+      return;
+    }
+    if (pathOnly === "/edge-http-ping") {
+      serveHttpPing(req, res);
       return;
     }
     // /api/readyz is NOT answered here: it travels to the API through the gate,

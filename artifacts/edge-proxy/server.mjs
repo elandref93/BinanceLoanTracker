@@ -423,6 +423,35 @@ function ensureTemporaryCert(hostname) {
   if (result.status !== 0) throw new Error("temporary certificate failed");
 }
 
+/**
+ * nginx has no way to read an environment variable, and the edge must answer on
+ * the names it was configured with and on nothing else. The shipped nginx.conf
+ * is therefore a template with two placeholders: the `server_name` line and one
+ * `map` entry per configured name.
+ *
+ * A Host that is not a configured name is refused rather than served, which is
+ * what stops `https://<machine-ip>/` from completing a handshake and showing a
+ * certificate-name warning for an address that is not the site.
+ */
+export function renderNginxConf(template, hostnames) {
+  const names = hostnames.filter((name) => name.length > 0);
+  if (names.length === 0) throw new Error("no hostname to render");
+  const entries = names.map((name) => `    ${name} 1;`).join("\n");
+  return template
+    .replaceAll("__EDGE_SERVER_NAME__", names.join(" "))
+    .replaceAll("__EDGE_HOST_MAP_ENTRIES__", entries);
+}
+
+function writeNginxConf(hostnames) {
+  const templatePath = process.env.EDGE_NGINX_TEMPLATE || "/app/nginx.conf.template";
+  const targetPath = "/etc/nginx/nginx.conf";
+  const template = fs.readFileSync(templatePath, "utf8");
+  const rendered = renderNginxConf(template, hostnames);
+  if (rendered.includes("__EDGE_")) throw new Error("nginx template placeholder left unrendered");
+  fs.writeFileSync(targetPath, rendered);
+  return targetPath;
+}
+
 function startNginx() {
   const child = spawn("nginx", ["-g", "daemon off;"], { stdio: "inherit" });
   child.on("exit", (code) => {
@@ -508,11 +537,21 @@ async function main() {
 
   const hadCert = Boolean(storedCertUsable(hostnames));
   if (!hadCert) ensureTemporaryCert(hostname);
+  // Rendered before nginx starts, so the first process to bind 443 already
+  // refuses a name this edge was not configured for.
+  try {
+    writeNginxConf(hostnames);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "nginx config failed";
+    throw new Error(`nginx config: ${message}`);
+  }
   startNginx();
   let nginxUp = false;
   for (let attempt = 0; attempt < 50; attempt += 1) {
     try {
-      const probe = await fetch("http://127.0.0.1/", { redirect: "manual" });
+      // Probed on the diagnostic path, which answers on every name. `/` would
+      // now be refused for the bare loopback Host nginx sees here.
+      const probe = await fetch("http://127.0.0.1/edge-http-ping", { redirect: "manual" });
       await probe.body?.cancel();
       nginxUp = true;
       break;
